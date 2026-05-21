@@ -4,29 +4,21 @@ category: vault
 triggers_en: ["save this", "save the conversation", "save to vault", "obsidian save"]
 ---
 
-Use the obsidian-second-brain skill. Execute `/obsidian-save`:
+Use the mbs_automation skill. Execute `/obsidian-save`:
 
-1. Read `_CLAUDE.md` first if it exists in the vault root
-2. Scan the entire conversation and identify all vault-worthy items: decisions, tasks, people mentioned, projects started, ideas, learnings, deals, mentions/shoutouts, AND content-worthy items (hooks, data points, swipe-file material, research findings)
-3. Group items by type: people, projects, tasks, decisions, ideas, deals, content
-4. Spawn parallel subagents — one per group — so all note types are handled simultaneously:
-   - **People agent**: search for each person, create or update notes, log interactions
-   - **Projects agent**: search for each project, create or update notes
-   - **Tasks agent**: parse tasks, add to the right kanban columns
-   - **Decisions agent**: find relevant project notes, append to Key Decisions sections
-   - **Ideas agent**: search Ideas/ for related notes, create or append
-   - **Content agent** (if a `social-media/` folder exists in the vault): scan for content-worthy items and route them:
-     - **Hooks, angles, contrarian takes** → append to `social-media/ideas.md` (dated bullet)
-     - **Specific numbers, stats, reusable data points** → append to `social-media/data-points.md` (with source)
-     - **External posts that hit + why** → append to `social-media/swipe-file.md` (link + reason)
-     - **Research findings, frameworks, methodologies** → create `social-media/research/YYYY-MM-DD — topic.md`
-5. After all agents complete: update today's daily note with links to everything saved
-6. Report back: a clean list of what was saved and where
+1. Read `_CLAUDE.md`, `SOUL.md`, `CRITICAL_FACTS.md` at the vault root.
+2. Scan the conversation and identify vault-worthy items: decisions, tasks, people mentioned, projects started, ideas, learnings.
+3. Group by type and route to the right **pillar** (admin/create/culture/health/money/skills/social/sports — see `vault-schema.md`). Spawn parallel subagents, one per group:
+   - **People agent**: search `social/` for each person; create or update their note; log the interaction.
+   - **Projects agent**: search for each project; create or update in the right pillar; ensure active projects have a `next_action`.
+   - **Tasks agent**: parse tasks; add Tasks-plugin lines (`- [ ] ... 📅 YYYY-MM-DD`) to the relevant pillar's todo. (No kanban.)
+   - **Decisions agent**: find the relevant project note; append to its Key Decisions section.
+   - **Ideas agent**: search for related notes; create or append in the right pillar (or `captured/` if unsorted).
+4. After agents complete: append links to everything saved into today's daily note (`daily_notes/tasks/tasks_YYYY-MM-DD.md`) and add a `log` entry.
+5. Report back: a clean list of what was saved and where.
 
-Search before creating anything — duplicate notes are vault rot. Propagate every write to boards, daily note, and linked notes. Never create an orphaned note.
-
-The content agent only runs if `social-media/` exists in the vault. If it doesn't exist, skip silently — don't create the folder unprompted.
+Search before creating — duplicates are vault rot. Propagate every write (daily note, linked notes, log). Never create an orphaned note. **Never auto-archive; never move files without approval.**
 
 ---
 
-**AI-first rule:** Every note created or updated by this command MUST follow `references/ai-first-rules.md` — `## For future Claude` preamble, rich frontmatter (`type`, `date`, `tags`, `ai-first: true`, plus type-specific fields), recency markers per external claim, mandatory `[[wikilinks]]` for every person/project/concept referenced, sources preserved verbatim with URLs inline, and confidence levels where applicable. The vault is for future-Claude retrieval — not human reading.
+**Note rule:** Notes follow `references/ai-first-rules.md` (amnesia test): self-contained, frontmatter (`type`/`date`/`tags`), `next_action` on active projects, recency markers + verbatim sources, mandatory `[[wikilinks]]`. No `## For future Claude` preamble, no `ai-first:` flag — hybrid vault; existing human notes left as-is.

@@ -1,290 +1,146 @@
-# Vault Schema Reference
+# Vault Schema Reference — mbs_automation
 
-## Default: Wiki-Style (LLM-First)
+The structure of P's vault. This is the canonical map; commands route by it. It overrides any generic structure assumptions. Companion to the vault-root `_CLAUDE.md`.
 
-Optimized for vaults where Claude does most or all of the writing. The primary reader is the LLM, not the human. Obsidian is the storage engine; Claude is the interface.
+This vault is **hybrid**, not wiki-style: ~4,500 existing human-readable notes organized by life pillars, with new agent-written notes following the amnesia-test conventions below. The agent is not the sole writer — P writes too, and domain Cowork projects write into their folders.
+
+## Structure — life pillars
 
 ```
-Your Vault/
-├── _CLAUDE.md                  ← Claude's operating manual
-├── index.md                    ← Catalog of all pages (Claude reads this FIRST)
-├── log.md                      ← Chronological log of every vault operation
-├── SOUL.md                     ← Identity, values, communication style
-├── CRITICAL_FACTS.md           ← ~120 tokens, always loaded: timezone, manager, location, company
+/Users/cpreston/Vaults/storage_mbs/
+├── _CLAUDE.md             ← operating manual (read first, every session)
+├── SOUL.md                ← who P is, how to work with him
+├── CRITICAL_FACTS.md      ← what's true right now (family, health, work, locations)
+├── index.md               ← catalog of vault pages (read for navigation)
+├── log.md                 ← append-only operation log
 │
-├── raw/                        ← IMMUTABLE. Claude reads, never writes.
-│   ├── articles/               ← Clipped articles, web pages
-│   ├── transcripts/            ← Meeting notes, podcast transcripts
-│   ├── pdfs/                   ← Documents, reports
-│   └── videos/                 ← YouTube metadata + transcripts
+├── admin/                 ← taxes, cars, citizenships, digital_life, legal, betterment, home, projects
+├── create/                ← ch8 (Charlie Hunter 8-string), strings (cello/bass), photography, writing, gear, design
+├── culture/               ← the arts: art, listen, play (video games), read, watch
+├── daily_notes/           ← two journals: health/ and tasks/ (Journals plugin)
+├── health/                ← physical (health_physical), food, drink, grooming
+├── money/                 ← employers (tadano=P's holding co, verition), network, project_polar
+├── skills/                ← danish, french, backgammon, sewing (non-creative, non-sport learning)
+├── social/                ← friends, dogs, mentors, mentees, travel, acrp, ftd, hockey (incl. watching sports)
+├── sports/                ← tennis, golf, nordic_skating, nordic_skiing, telemark_skiing, rackets (sports P plays)
 │
-├── wiki/                       ← Claude's workspace. Claude maintains everything here.
-│   ├── entities/               ← People, companies, tools (flat, one file per entity)
-│   ├── concepts/               ← Ideas, frameworks, methodologies
-│   ├── projects/               ← Project notes
-│   ├── daily/                  ← Daily notes (one per day)
-│   ├── logs/                   ← Dev logs, work logs
-│   ├── reviews/                ← Weekly / monthly reviews
-│   ├── tasks/                  ← Standalone task notes
-│   └── decisions/              ← ADRs (architectural decision records)
-│
-├── boards/                     ← Kanban boards (Personal, Work, etc.)
-├── templates/                  ← Note templates (Templater plugin)
-└── _trash/                     ← Soft-deleted notes
+├── captured/              ← inbox from external tools (MarkDownload, Glasp, Read It Later)
+├── _to_clean/             ← legacy backlog P drains manually (NOT the agent's job unless asked)
+├── attachments/           ← Obsidian-managed
+└── trash/                 ← OPAQUE. Never read, search, or modify.
 ```
 
-### Key principles:
-- **raw/ is immutable** — original sources go here. Claude reads them but never modifies them. If a wiki page gets corrupted, re-derive from raw.
-- **wiki/ is Claude's workspace** — Claude is the sole writer. Every entity, concept, and project lives here.
-- **index.md is the front door** — Claude reads this first to navigate. Cheaper and faster than searching.
-- **Flat folders over nested** — `wiki/entities/` is a flat list. Harder for humans to browse, perfect for Claude to grep and index.
+### Pillar boundary rules (P's own definitions)
+- **sports** = sports P *plays*. **culture** = the arts. **social** = social activity, *including watching sports with people* (hockey lives in social, not sports or culture).
+- Every pillar has (or gets on demand) an `_archive/` subfolder. See below.
 
----
+## Folder semantics
+- **`_archive/`** — every folder's archive for deprecated items, completed projects, conversation transcripts. Standard name everywhere (never `vaults_*`, never `old/`). Created on demand. **The agent suggests archiving but NEVER moves anything to `_archive/` autonomously — P decides when something is complete.**
+- **`trash/`** — never searched, never read, never touched. Fully opaque.
+- **`captured/`** — inbox; triage source. Don't treat its contents as filed.
+- **`_to_clean/`** — P's manual backlog. Leave alone unless asked.
 
-## Alternative: Obsidian-Style (Human-First)
+### Search tiers
+- `trash/` → never searched.
+- `_archive/` → searched, but ranked historical/low-priority; never surfaced as an active next-step.
+- Everything else → active, in scope.
 
-For users who browse their vault daily in Obsidian. Folders are organized for human spatial memory.
+## Frontmatter schemas
 
-```
-Your Vault/
-├── _CLAUDE.md
-├── index.md
-├── log.md
-├── Home.md                     ← Dashboard with dataview queries
-│
-├── Daily/                      ← Daily notes
-├── Dev Logs/                   ← Technical work logs
-├── Tasks/                      ← Standalone task notes
-├── Projects/                   ← Project notes
-├── People/                     ← One note per person
-├── Boards/                     ← Kanban boards
-│
-├── Knowledge/                  ← Reference material, things learned
-├── Learning/                   ← Books, courses, content consumed
-├── Ideas/                      ← Idea captures
-├── Content/                    ← Content calendar, drafts
-│
-├── Goals/                      ← Annual and life goals
-├── Health/                     ← Health tracking
-├── Finances/                   ← Monthly finance notes
-├── Jobs/                       ← Employment / contract roles
-├── Businesses/                 ← Companies you own
-├── Mentions/                   ← Recognition log
-├── Reviews/                    ← Weekly / monthly reviews
-│
-├── Templates/                  ← Note templates
-└── _trash/                     ← Soft-deleted notes
-```
+New notes the agent writes carry frontmatter. Use **simple timestamps — no bi-temporal `timeline:` arrays** (out of scope per VISION). The `_archive/` history + `log.md` provide the audit trail.
 
----
-
-## Folder Mapping (Wiki ↔ Obsidian)
-
-| Wiki-style | Obsidian-style | What lives here |
-|---|---|---|
-| `raw/articles/` | `Knowledge/` | Original source material |
-| `wiki/entities/` | `People/` + `Jobs/` + `Businesses/` | People, companies, tools |
-| `wiki/concepts/` | `Ideas/` + `Learning/` | Ideas, frameworks, methodologies |
-| `wiki/projects/` | `Projects/` | Active and archived projects |
-| `wiki/daily/` | `Daily/` | Daily notes |
-| `wiki/logs/` | `Dev Logs/` | Work session logs |
-| `wiki/reviews/` | `Reviews/` | Weekly/monthly reviews |
-| `wiki/tasks/` | `Tasks/` | Standalone task notes |
-| `wiki/decisions/` | (in project notes) | ADRs |
-| `boards/` | `Boards/` | Kanban boards |
-
----
-
-## Frontmatter Schemas
-
-### Daily Note
+### Project note
 ```yaml
 ---
-date: 2026-03-24
-tags:
-  - daily
-mood: 4          # 1-5 scale
-energy: 3        # 1-5 scale
+type: project
+date: 2026-05-20
+tags: [project, <pillar>]
+status: active        # active | planning | completed | on-hold
+next_action: "<the single next actionable step>"   # MANDATORY on active projects
+people: ["[[Madi]]"]  # wikilink everyone referenced
 ---
 ```
+`next_action` is non-negotiable on active projects — it's the core of the amnesia test and the missing-next-step duty.
 
-### Project Note
+### Reference note (`ref_*`)
 ```yaml
 ---
-date: 2026-03-24
-tags:
-  - project
-status: active   # active | planning | completed | archived | on-hold
-job: "[[Acme Corp]]"   # or Personal, [[Company Name]]
-timeline:                # bi-temporal facts — status changes over time
-  - fact: "status: planning"
-    from: 2026-03-01
-    until: 2026-03-15
-    learned: 2026-03-01
-  - fact: "status: active"
-    from: 2026-03-15
-    until: present
-    learned: 2026-03-15
+type: reference
+date: 2026-05-20
+tags: [reference, <pillar>]
+source: "https://..."          # verbatim if from the web
 ---
 ```
 
-### Task Note
+### Person note (social/)
 ```yaml
 ---
-date: 2026-03-24
-tags:
-  - task
-status: in-progress   # in-progress | done | waiting | cancelled
-project: "[[Project Name]]"
-job: "[[Company]]"    # or Personal
-requested_by: "[[Person Name]]"
-due: 2026-03-28
+type: person
+date: 2026-05-20
+tags: [person]
+relationship: "<wife | daughter | friend | mentee | ...>"
+last_interaction: 2026-05-20
+contact: ""
 ---
 ```
 
-### Entity Note (Person / Company / Tool)
+### Decision note / log entry
 ```yaml
 ---
-date: 2026-03-24
-tags:
-  - entity
-  - person       # or: company, tool
-role: "Senior Engineer"        # current role
-company: "[[Acme Corp]]"       # current company
-last_interaction: 2026-03-24
-timeline:                       # bi-temporal facts — never delete, only append
-  - fact: "CTO at Acme Corp"
-    from: 2024-01-01            # event time: when the fact was true
-    until: 2026-04-07
-    learned: 2026-02-23         # transaction time: when the vault learned it
-  - fact: "Architect at Acme Corp"
-    from: 2026-04-07
-    until: present
-    learned: 2026-04-07
-    source: "[[2026-04-07]]"    # where the vault learned it from
+type: decision
+date: 2026-05-20
+tags: [decision, <pillar>]
+project: "[[<project>]]"
 ---
 ```
 
-**Bi-temporal facts rule:** never overwrite a role, company, status, or location. Add a new entry to `timeline:` with:
-- `from` / `until` — **event time**: when the fact was true in reality
-- `learned` — **transaction time**: when the vault first recorded this fact
-- `source` (optional) — where the vault learned it from (daily note, ingested source, etc.)
+### Daily notes (Journals plugin — do not hand-create; the plugin owns these)
+- Tasks journal: `daily_notes/tasks/tasks_YYYY-MM-DD.md`
+- Health journal: `daily_notes/health/daily/daily_note_health_YYYY-MM-DD.md`
+- The agent's morning report appends to the tasks journal inside a bounded `## Vault Agent` section.
 
-The `role:` and `company:` top-level fields always reflect the CURRENT state. The `timeline:` preserves full history.
+## Naming conventions (summary; full detail in `_CLAUDE.md` + the vault's `admin/obsidian_optimize/RENAMING_PLAN.md`)
+- Folders: lowercase snake_case, no redundant pillar prefix, singular unless inherently plural.
+- Files: lowercase snake_case; type prefixes `project_*`, `ref_*`, `todo_list_*`, `log_YYYY-MM-DD_*`; plain noun when unsure. No spaces. Dates `YYYY-MM-DD`.
+- Exception: creative drafts in `create/writing/writing_scraps/` keep natural poetic titles — never normalize those.
+- Link format = default "shortest path" → `[[wikilinks]]` resolve by **basename**. Moving files is link-safe; renaming a file risks breaking `[[oldname]]` links — grep inbound links before renaming.
 
-This enables:
-- Historical queries ("who was CTO in January?")
-- Reflective thinking ("you believed X on Tuesday, but after ingesting Y on Wednesday, your understanding shifted to Z")
-- Smart reconciliation (different roles at different times = not a contradiction)
-- Audit trail (when did the vault learn each fact, and from what source?)
+## Task management — Tasks plugin, NOT Kanban
+P uses the **Tasks plugin** (`- [ ] description 🆔 <id>`) + **task-archiver**. There are no kanban boards. "Dashboards" are Dataview/Tasks queries, scoped per pillar/project.
 
-### Source Note (raw/)
-```yaml
----
-date: 2026-03-24
-tags:
-  - source
-source_type: article   # article | transcript | pdf | video
-source_url: "https://..."
-content_hash: ""       # for drift detection
----
+```tasks
+not done
+path includes <pillar>
+sort by due
 ```
 
-### Concept Note
-```yaml
----
-date: 2026-03-24
-tags:
-  - concept
-status: active   # active | graduated | archived
-related_projects: []
----
-```
+## Dataview query patterns (pillar-aware)
 
-### Dev Log
-```yaml
----
-date: 2026-03-24
-tags:
-  - devlog
-project: "[[Project Name]]"
-job: "[[Company]]"
----
-```
-
-### Decision Record (ADR)
-```yaml
----
-date: 2026-03-24
-tags:
-  - decision-record
-status: accepted   # accepted | superseded | deprecated
----
-```
-
-### Kanban Board
-```yaml
----
-kanban-plugin: board
----
-```
-
-### Goal
-```yaml
----
-date: 2026-01-01
-tags:
-  - goal
-category: "career"   # career | health | financial | personal | relationship
-status: active       # active | completed | paused | abandoned
-progress: 35         # 0-100 integer
-target_date: 2026-12-31
----
-```
-
----
-
-## Naming Conventions
-
-| Type | Pattern | Example |
-|---|---|---|
-| Daily note | `YYYY-MM-DD.md` | `2026-03-24.md` |
-| Dev log | `YYYY-MM-DD — Description.md` | `2026-03-24 — API Gateway Debug.md` |
-| Entity | Full name (flat) | `Jane Smith.md`, `Acme Corp.md` |
-| Concept | Descriptive title | `LLM-Wiki Pattern.md` |
-| Project | Proper name | `My Project Name.md` |
-| Source | `YYYY-MM-DD — Source Title.md` | `2026-04-06 — Karpathy LLM Wiki.md` |
-| Decision | `ADR-YYYY-MM-DD — Title.md` | `ADR-2026-04-06 — Wiki Style Default.md` |
-| Archive prefix | `_archived_` | `_archived_Old Project.md` |
-
----
-
-## Dataview Query Patterns
-
-### All active projects
+### Active projects in a pillar, with their next action
 ```dataview
-TABLE status, job FROM "wiki/projects"
-WHERE contains(tags, "project") AND status = "active"
-SORT file.name ASC
+TABLE status, next_action FROM "<pillar>"
+WHERE type = "project" AND status = "active"
+SORT file.mtime DESC
 ```
 
-### Recent daily notes
+### Projects missing a next action (the missing-next-step duty)
 ```dataview
-TABLE date, mood, energy FROM "wiki/daily"
-SORT date DESC
-LIMIT 7
+TABLE file.folder AS pillar FROM ""
+WHERE type = "project" AND status = "active" AND (!next_action OR next_action = "")
 ```
 
-### All entities (people, companies, tools)
+### Stale active projects (no edit in 14+ days)
 ```dataview
-TABLE role, company, last_interaction FROM "wiki/entities"
-WHERE contains(tags, "entity")
-SORT last_interaction DESC
+TABLE file.mtime AS "last touched" FROM ""
+WHERE type = "project" AND status = "active" AND file.mtime < date(today) - dur(14 days)
+SORT file.mtime ASC
 ```
 
-### Recent sources ingested
+### People not interacted with recently
 ```dataview
-TABLE source_type, source_url FROM "raw"
-SORT date DESC
-LIMIT 10
+TABLE last_interaction FROM "social"
+WHERE type = "person"
+SORT last_interaction ASC
 ```
+
+Exclude `trash/` always and rank `_archive/` results as historical.

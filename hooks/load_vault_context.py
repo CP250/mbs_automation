@@ -9,7 +9,7 @@ Setup:
     1. Set OBSIDIAN_VAULT_PATH in ~/.claude/settings.json env section
     2. Register as a SessionStart hook in ~/.claude/settings.json:
          { "type": "command",
-           "command": "python ~/.claude/skills/obsidian-second-brain/hooks/load_vault_context.py" }
+           "command": "python ~/.claude/skills/mbs_automation/hooks/load_vault_context.py" }
 
 Path normalization handles Windows ("C:\\..."), MSYS ("/c/..."), and POSIX
 ("/...") — match works regardless of which form the harness or env var uses.

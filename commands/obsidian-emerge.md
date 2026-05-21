@@ -4,7 +4,7 @@ category: thinking
 triggers_en: ["find patterns", "what is emerging", "surface themes", "unnamed patterns"]
 ---
 
-Use the obsidian-second-brain skill. Execute `/obsidian-emerge $ARGUMENTS`:
+Use the mbs_automation skill. Execute `/obsidian-emerge $ARGUMENTS`:
 
 The optional argument is a timeframe (e.g., "2 weeks", "this month"). Default: last 30 days.
 

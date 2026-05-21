@@ -4,7 +4,7 @@ category: thinking
 triggers_en: ["promote idea", "graduate this to project", "make a project from this", "elevate idea"]
 ---
 
-Use the obsidian-second-brain skill. Execute `/obsidian-graduate $ARGUMENTS`:
+Use the mbs_automation skill. Execute `/obsidian-graduate $ARGUMENTS`:
 
 The optional argument is the idea title, tag, or keyword. If not provided, scan recent notes for ideas tagged `#idea` or in the `Ideas/` folder and present them for selection.
 

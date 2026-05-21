@@ -4,7 +4,7 @@ category: vault
 triggers_en: ["recap today", "recap the week", "summarize the week", "month recap"]
 ---
 
-Use the obsidian-second-brain skill. Execute `/obsidian-recap $ARGUMENTS`:
+Use the mbs_automation skill. Execute `/obsidian-recap $ARGUMENTS`:
 
 The argument is the period: `today`, `week`, or `month`. Default to `week` if not specified.
 

@@ -4,7 +4,7 @@ category: vault
 triggers_en: ["new project", "create project note", "project setup", "start a project"]
 ---
 
-Use the obsidian-second-brain skill. Execute `/obsidian-project $ARGUMENTS`:
+Use the mbs_automation skill. Execute `/obsidian-project $ARGUMENTS`:
 
 The argument is a project name. Handle typos and partial matches.
 

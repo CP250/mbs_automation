@@ -4,7 +4,7 @@ category: thinking
 triggers_en: ["synthesize", "auto-synthesis", "make synthesis notes", "find unnamed patterns"]
 ---
 
-Use the obsidian-second-brain skill. Execute `/obsidian-synthesize`:
+Use the mbs_automation skill. Execute `/obsidian-synthesize`:
 
 This command can run manually or as a scheduled agent. It thinks for you.
 

@@ -4,7 +4,7 @@ category: thinking
 triggers_en: ["weekly review", "monthly review", "review my week", "review my month"]
 ---
 
-Use the obsidian-second-brain skill. Execute `/obsidian-review $ARGUMENTS`:
+Use the mbs_automation skill. Execute `/obsidian-review $ARGUMENTS`:
 
 The optional argument specifies `weekly` or `monthly`. Ask if not clear from context.
 

@@ -4,7 +4,7 @@ category: vault
 triggers_en: ["show board", "kanban", "what is on my board", "update board"]
 ---
 
-Use the obsidian-second-brain skill. Execute `/obsidian-board $ARGUMENTS`:
+Use the mbs_automation skill. Execute `/obsidian-board $ARGUMENTS`:
 
 The optional argument is a board name. Handle typos and partial matches.
 

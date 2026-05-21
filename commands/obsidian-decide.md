@@ -4,7 +4,7 @@ category: thinking
 triggers_en: ["extract decisions", "log decisions", "what did we decide"]
 ---
 
-Use the obsidian-second-brain skill. Execute `/obsidian-decide $ARGUMENTS`:
+Use the mbs_automation skill. Execute `/obsidian-decide $ARGUMENTS`:
 
 The optional argument narrows focus to a specific topic.
 

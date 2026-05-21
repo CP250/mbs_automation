@@ -4,7 +4,7 @@ category: thinking
 triggers_en: ["log this decision", "ADR", "record decision", "decision record"]
 ---
 
-Use the obsidian-second-brain skill. Execute `/obsidian-adr $ARGUMENTS`:
+Use the mbs_automation skill. Execute `/obsidian-adr $ARGUMENTS`:
 
 The optional argument is the decision topic. If not provided, infer from recent conversation context.
 

@@ -4,7 +4,7 @@ category: vault
 triggers_en: ["log this work", "log this session", "log this dev session", "obsidian log"]
 ---
 
-Use the obsidian-second-brain skill. Execute `/obsidian-log`:
+Use the mbs_automation skill. Execute `/obsidian-log`:
 
 1. Read `_CLAUDE.md` first if it exists in the vault root
 2. Infer the project from conversation context — search the vault if needed to find the right project note

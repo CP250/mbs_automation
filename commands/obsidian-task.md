@@ -4,7 +4,7 @@ category: vault
 triggers_en: ["add task", "new todo", "track this", "remind me"]
 ---
 
-Use the obsidian-second-brain skill. Execute `/obsidian-task $ARGUMENTS`:
+Use the mbs_automation skill. Execute `/obsidian-task $ARGUMENTS`:
 
 1. Read `_CLAUDE.md` first if it exists in the vault root
 2. Parse the task from the argument, or pull from recent conversation context if no argument given

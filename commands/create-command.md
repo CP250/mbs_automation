@@ -4,7 +4,7 @@ category: meta
 triggers_en: ["create command", "new command", "add a command", "scaffold a command"]
 ---
 
-Use the obsidian-second-brain skill. Execute `/create-command $ARGUMENTS`:
+Use the mbs_automation skill. Execute `/create-command $ARGUMENTS`:
 
 This command runs a short interview, then writes a new `commands/<name>.md` file that the build pipeline picks up automatically. The user never touches frontmatter, never edits a template, and never copies an existing command file.
 
@@ -112,7 +112,7 @@ category: <vault | thinking | research | meta>
 triggers_en: ["<trigger 1>", "<trigger 2>", "<trigger 3>"]
 ---
 
-Use the obsidian-second-brain skill. Execute `/<name> $ARGUMENTS`:
+Use the mbs_automation skill. Execute `/<name> $ARGUMENTS`:
 
 <one-sentence framing tying the user's intent (Phase 1) to the action>
 

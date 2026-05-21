@@ -4,7 +4,7 @@ category: meta
 triggers_en: ["visualize vault", "vault map", "canvas of vault", "show me the vault shape"]
 ---
 
-Use the obsidian-second-brain skill. Execute `/obsidian-visualize $ARGUMENTS`:
+Use the mbs_automation skill. Execute `/obsidian-visualize $ARGUMENTS`:
 
 The optional argument is a scope: a project name, entity name, topic, or "full" for the entire vault. Default: full vault.
 

@@ -1,193 +1,98 @@
 # Write Rules
 
-How Claude writes, links, formats, and updates notes in an Obsidian vault.
+How the agent writes, links, formats, and updates notes in P's vault.
 
-> **Read `references/ai-first-rules.md` first.** Every note Claude writes must follow the AI-first rule (preamble, rich frontmatter, recency markers, mandatory wikilinks, sources verbatim, confidence levels). The rules below are operational details on top of that foundation.
+> **Read `references/ai-first-rules.md` (the amnesia-test spec) first.** New notes the agent writes must pass the amnesia test: self-contained, frontmatter, `next_action` on projects, recency markers, verbatim sources, mandatory wikilinks. Existing human notes are left alone. The rules below are operational details on top of that.
 
----
+## The propagation rule
 
-## The Propagation Rule
-
-**Never create a note in isolation.** Every write has ripple effects.
-
-When you create or update something, trace forward: what other notes need to know about this?
+**Never create a note in isolation.** Trace forward — what else needs to know?
 
 ```
 New project created
-  → Add card to kanban board (Backlog column)
-  → Link from today's daily note
-  → If it has a person involved, link from their note
+  → add a task to the relevant pillar's todo (Tasks plugin) if there's a next action
+  → link from today's daily note (daily_notes/tasks/)
+  → if a person is involved, link from their note in social/
 
 Task completed
-  → Move card in kanban (to ✅ Done, with strikethrough)
-  → Update project note (Recent Activity or Delivered section)
-  → Log in today's daily note
+  → mark done in the Tasks-plugin line (task-archiver handles archiving)
+  → update the project note (Recent Activity / next_action)
+  → note it in today's daily note
 
-Person note updated
-  → If interaction happened today, log in daily note
-  → If they made a mention/shoutout, add to Mentions Log
+Person interaction
+  → log in today's daily note
+  → update their note in social/ (last_interaction)
 
-Dev log created
-  → Link from project note (Recent Activity section)
-  → Link from today's daily note (Work / Work Log section)
+Work/dev session
+  → log to the relevant pillar (e.g. money/<employer>/ or the project folder)
+  → link from today's daily note
 
 Decision made
-  → Log in project note (Key Decisions section)
-  → Log in today's daily note
-
-Deal moved forward
-  → Update deal file (status, probability, notes)
-  → Update Side Biz kanban board
-  → Reflect in daily note
+  → append to the project note's Key Decisions section
+  → note in today's daily note
 ```
 
----
+Always append to `log.md` (timestamped) when a structural change happens, and update `index.md` when a note is created or deleted.
 
-## Internal Linking
+## Internal linking
+Use `[[Note Name]]` — Obsidian resolves by basename (default "shortest path" setting). Always link people, projects, places, recurring concepts. Never hardcode full paths in links. If the target doesn't exist, create a stub (below).
 
-Use `[[Note Name]]` syntax. Always link:
-- People mentioned in a note → `[[Jane Smith]]`
-- Projects referenced → `[[My Project Name]]`
-- Jobs/companies → `[[Acme Corp]]`
-- Related tasks → `[[Task Name]]`
+**Rename safety:** moving a file is link-safe (basename unchanged). Renaming a file can break `[[oldname]]` links — grep for inbound links before renaming, and fix them.
 
-**Never hardcode paths** unless necessary. Obsidian resolves `[[Name]]` by filename.
-
-If the linked note doesn't exist yet, create it (stub is fine — frontmatter + title + one line of context).
-
----
-
-## Date Formatting
-
+## Date formatting
 | Context | Format | Example |
 |---|---|---|
-| Frontmatter `date` field | `YYYY-MM-DD` | `2026-03-24` |
-| Frontmatter `due` field | `YYYY-MM-DD` | `2026-03-28` |
-| Kanban due date tag | `@{YYYY-MM-DD}` | `@{2026-03-28}` |
-| Body text references | Human format | `March 24` or `Mar 24` |
-| File names (dated) | `YYYY-MM-DD` | `2026-03-24.md` |
+| Frontmatter `date` / `due` | `YYYY-MM-DD` | `2026-05-20` |
+| Tasks-plugin due date | `📅 YYYY-MM-DD` | `📅 2026-05-28` |
+| Body text | human | `May 20` |
+| Dated filenames | `YYYY-MM-DD` prefix | `log_2026-05-20_*.md` |
 
----
+## Tasks — Tasks plugin, NOT kanban
+P uses the **Tasks plugin** + **task-archiver**. There are no kanban boards.
 
-## Kanban Board Format
-
-Boards use the `kanban-plugin: board` YAML frontmatter.
-Columns are H2 headings. Items are task checkboxes with optional indented description.
-
-**Active item:**
+Task line format:
 ```markdown
-- [ ] 🔴 **Task Title** · @{2026-03-28}
-	One-line description. [[Related Project]] [[Person]]
+- [ ] Description #<pillar> 🔼 📅 2026-05-28
 ```
+- Status: `[ ]` todo, `[/]` in progress, `[x]` done (P's configured statuses).
+- Priority (optional): Tasks-plugin emoji (`🔺` highest … `🔽` lowest) — use sparingly.
+- Due: `📅 YYYY-MM-DD`. Completed tasks get `✅ YYYY-MM-DD` (the plugin adds this).
+- "Dashboards" are `tasks` or `dataview` query blocks scoped per pillar/project — not boards.
 
-**Waiting item:**
-```markdown
-- [ ] 🟡 **Task Title** · @{2026-04-07}
-	Context for why it's blocked. [[Person responsible]]
-```
+Never delete completed tasks — `task-archiver` moves them to the pillar's archive on P's cadence.
 
-**Completed item** (move to `## ✅ Done` column):
-```markdown
-- [x] ~~🔴 **Task Title**~~ ✅ Mar 24
-	Brief note on outcome.
-```
+## Status values
+- **Projects:** `active` | `planning` | `completed` | `on-hold`
+- **Tasks:** todo `[ ]` | in-progress `[/]` | done `[x]`
+- **Notes (drafts):** `stub` | `draft` | `done` (optional `status:` for incomplete-note detection)
 
-**Priority emoji convention:**
-- 🔴 Critical / blocking
-- 🟡 Important / this week
-- 🟢 Nice to have / low urgency
+## Writing-style calibration
+Before writing in a folder you haven't written in: read 1–2 existing notes there and match heading structure, frontmatter fields, tone, list style. **Extend what's there; don't introduce new patterns.** Special case: `create/writing/writing_scraps/` uses natural poetic titles — never normalize those.
 
-**Never delete done items** — move them to the Done column with strikethrough. Done items are the changelog.
+## Archiving — `_archive/`, suggest-only
+- Archive = **move the note into that folder's `_archive/` subfolder** (not a filename prefix). Create `_archive/` on demand if absent.
+- **The agent NEVER archives autonomously.** It may flag "this looks complete — archive it?" and waits for P. P decides when something is done.
+- Never delete. `trash/` is opaque and never touched by the agent.
 
----
+## Template usage
+When creating from a Templater template, strip all `<% ... %>` syntax and fill real values. Never leave template placeholders in a saved note.
 
-## Status Values
-
-Use these consistently across all note types:
-
-**Projects:**
-`active` | `planning` | `completed` | `archived` | `on-hold`
-
-**Tasks:**
-`in-progress` | `done` | `waiting` | `cancelled`
-
-**Deals:**
-`prospect` | `negotiating` | `confirmed` | `completed` | `lost`
-
-**Goals:**
-`active` | `completed` | `paused` | `abandoned`
-
-**Content:**
-`draft` | `scheduled` | `published`
-
----
-
-## Writing Style Calibration
-
-Before writing a new note in a folder you haven't written in before:
-1. Read 1–2 existing notes in that folder
-2. Match: heading structure, frontmatter fields present, tone (formal vs casual), emoji usage, list style (bullet vs numbered), section names
-
-Don't introduce new patterns — extend what's there.
-
----
-
-## Archiving
-
-**Soft archive** (preferred): Add `_archived_` prefix to filename.
-`Old Project.md` → `_archived_Old Project.md`
-
-**Update frontmatter**: set `status: archived`
-
-Never delete vault notes — archive them. The vault is a permanent record.
-
----
-
-## Template Usage
-
-When creating notes from templates, strip all Templater syntax (`<% ... %>`) and replace with actual values. Never leave template placeholders in saved notes.
-
----
-
-## Stub Notes
-
-When a link target doesn't exist yet, create a minimal stub:
+## Stub notes
+When a `[[link]]` target doesn't exist, create a minimal stub:
 ```yaml
 ---
-date: 2026-03-24
-tags:
-  - person    # or project, task, etc.
+type: <person | project | reference>
+date: YYYY-MM-DD
+tags: [<type>, <pillar>]
 ---
 
-# Person Name
+# <Name>
 
-<!-- Note created as stub. Expand when more info is available. -->
+<!-- stub — expand when more info is available -->
 ```
 
----
+## Section injection (updating existing notes)
+1. Read the full file. 2. Find the target heading. 3. Append below the last item in that section (before the next `##`). 4. Write back. For the daily note, the agent's content goes inside a bounded `## Vault Agent` section in `daily_notes/tasks/tasks_YYYY-MM-DD.md`.
 
-## Section Injection
-
-When updating an existing note (vs creating new), use targeted section injection:
-
-1. Read the full file
-2. Find the target section heading
-3. Append content below the last item in that section (before the next `---` or next `##`)
-4. Write back the full file with `write_file`
-
-For kanban boards: find the correct column heading, insert the new item above the last item in that column (or at top if empty).
-
----
-
-## Search Before Write
-
-Before creating any note:
-```
-search(query="keyword from title")
-```
-
-If a match is found:
-- Same concept → update the existing note, don't create new
-- Different concept, similar name → proceed with creation but choose a distinct name
-
-Duplicate detection is especially important for: people (same person, different name formats), projects (same project, different working title), deals (same client, multiple files).
+## Search before write
+Before creating any note, search for an existing one (filename + content). If the same concept exists → update it, don't duplicate. If similar name, different concept → proceed but pick a distinct name. Duplicate prevention matters most for people (name variants) and projects (working-title variants). Exclude `trash/`; treat `_archive/` hits as historical.

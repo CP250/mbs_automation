@@ -4,7 +4,7 @@ category: vault
 triggers_en: ["capture this idea", "save this idea", "quick note", "drop a thought"]
 ---
 
-Use the obsidian-second-brain skill. Execute `/obsidian-capture $ARGUMENTS`:
+Use the mbs_automation skill. Execute `/obsidian-capture $ARGUMENTS`:
 
 The optional argument is the idea text. If not provided, pull the most recent idea or thought from the conversation.
 

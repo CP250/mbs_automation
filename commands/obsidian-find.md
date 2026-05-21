@@ -4,7 +4,7 @@ category: vault
 triggers_en: ["find in vault", "search my notes", "where is", "what did I write about"]
 ---
 
-Use the obsidian-second-brain skill. Execute `/obsidian-find $ARGUMENTS`:
+Use the mbs_automation skill. Execute `/obsidian-find $ARGUMENTS`:
 
 The argument is the search query.
 

@@ -1,40 +1,60 @@
 #!/usr/bin/env python3
 """
-vault_health.py — Obsidian Second Brain Health Check
+vault_health.py — mbs_automation vault health check (pillar-aware, hybrid vault)
 
-Audits an Obsidian vault for structural issues:
-- Duplicate notes (same concept, multiple files)
-- Orphaned notes (no incoming links)
-- Stale tasks (overdue, no recent activity)
-- Notes missing frontmatter
+Audits P's Obsidian vault for ACTIONABLE structural issues, tuned to the hybrid model:
+existing human notes are left alone; the agent only flags things worth fixing.
+
+Checks:
+- Missing next-step    : active project notes (type: project, status: active) with no next_action  [headline duty]
+- Duplicates           : same concept, multiple files
+- Broken links         : [[wikilinks]] that don't resolve (basename) to any note
+- Orphans (agent notes): notes WITH frontmatter (agent-written) that have no incoming links
+- Stale active projects: type: project + status: active not edited in 14+ days
+- Naming/convention    : non-_archive archive folders (vaults_*, old/, archive/), files at vault root
 - Empty folders
-- Broken internal links
-- Templates left in notes (unfilled Templater syntax)
+- Template leftovers    : unfilled <% %> Templater syntax outside template dirs
+
+Deliberately NOT checked (hybrid vault):
+- Missing frontmatter on human notes — that's the norm, not a problem.
+- Orphans among non-frontmatter human notes — most aren't linked, by design.
+
+Excluded from scanning: trash/, _to_clean/, .obsidian, .git, attachments.
+_archive/ notes are indexed (so links resolve) but never themselves flagged.
 
 Usage:
-    python vault_health.py --path ~/my-vault
-    python vault_health.py --path ~/my-vault --json     # JSON output (for Claude)
+    python vault_health.py --path /Users/cpreston/Vaults/storage_mbs
+    python vault_health.py --path /Users/cpreston/Vaults/storage_mbs --json
 """
 
 import argparse
 import json
 import re
 from collections import defaultdict
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 TODAY = date.today()
-EXCLUDE_DIRS = {".obsidian", ".trash", "_trash", ".git", "Templates"}
+STALE_DAYS = 14
+
+EXCLUDE_DIRS = {".obsidian", ".git", "trash", ".trash", "_trash", "_to_clean", "attachments"}
+TEMPLATE_HINTS = ("templater", "templates", "/template")  # paths where <% %> is legitimate
+
 FRONTMATTER_RE = re.compile(r"^---\s*\n(.*?)\n---", re.DOTALL)
 LINK_RE = re.compile(r"\[\[([^\]|#]+)(?:[|#][^\]]*)?\]\]")
-DATE_RE = re.compile(r"due:\s*(\d{4}-\d{2}-\d{2})")
 TEMPLATE_RE = re.compile(r"<%.*?%>")
+TYPE_RE = re.compile(r"^type:\s*(.+)$", re.MULTILINE)
+STATUS_RE = re.compile(r"^status:\s*(.+)$", re.MULTILINE)
+NEXTACTION_RE = re.compile(r"^next_action:\s*(.*)$", re.MULTILINE)
 ALIAS_RE = re.compile(r"^aliases:\s*\n((?:\s+-\s+.+\n?)+)", re.MULTILINE)
 ALIAS_ITEM_RE = re.compile(r"^\s+-\s+(.+)$", re.MULTILINE)
 
 
+def _clean(v: str) -> str:
+    return v.strip().strip('"').strip("'")
+
+
 def parse_aliases(frontmatter: str) -> list:
-    """Extract aliases list from frontmatter text."""
     block = ALIAS_RE.search(frontmatter)
     if not block:
         return []
@@ -51,8 +71,13 @@ def load_vault(vault: Path) -> dict:
         content = md.read_text(encoding="utf-8", errors="replace")
         fm_match = FRONTMATTER_RE.match(content)
         frontmatter = fm_match.group(1) if fm_match else ""
-        links = [l.strip().rstrip("\\") for l in LINK_RE.findall(content)]
-        due_match = DATE_RE.search(frontmatter)
+        type_m = TYPE_RE.search(frontmatter)
+        status_m = STATUS_RE.search(frontmatter)
+        na_m = NEXTACTION_RE.search(frontmatter)
+        try:
+            mtime = datetime.fromtimestamp(md.stat().st_mtime).date()
+        except OSError:
+            mtime = TODAY
         notes[rel] = {
             "path": md,
             "rel": rel,
@@ -60,260 +85,251 @@ def load_vault(vault: Path) -> dict:
             "content": content,
             "frontmatter": frontmatter,
             "has_frontmatter": bool(fm_match),
-            "links": links,
+            "links": [l.strip().rstrip("\\") for l in LINK_RE.findall(content)],
             "aliases": parse_aliases(frontmatter),
-            "due": due_match.group(1) if due_match else None,
+            "type": _clean(type_m.group(1)) if type_m else None,
+            "status": _clean(status_m.group(1)).lower() if status_m else None,
+            "next_action": _clean(na_m.group(1)) if na_m else "",
+            "in_archive": "_archive" in parts,
+            "top": parts[0] if len(parts) > 1 else "",
+            "mtime": mtime,
             "size": len(content),
         }
     return notes
 
 
-def check_duplicates(notes: dict) -> list:
+def check_missing_next_step(notes: dict) -> list:
+    """Headline duty: active project notes with no next_action."""
     issues = []
-    stems = defaultdict(list)
-    for rel, note in notes.items():
-        norm = re.sub(r"\d{4}-\d{2}-\d{2}", "", note["stem"]).lower()
+    for rel, n in notes.items():
+        if n["in_archive"]:
+            continue
+        if n["type"] == "project" and n["status"] == "active" and not n["next_action"]:
+            issues.append({
+                "type": "missing_next_step", "severity": "critical",
+                "message": f"Active project with no next_action: {rel}", "files": [rel],
+            })
+    return issues
+
+
+STRUCTURAL_STEMS = {
+    "index", "readme", "_readme", "untitled", "tasks", "archive", "_archive",
+    "daily note health", "goals", "notes", "todo", "", "1", "2", "3",
+}
+
+
+def check_duplicates(notes: dict) -> list:
+    issues, stems = [], defaultdict(list)
+    for rel, n in notes.items():
+        if n["in_archive"] or n["top"] == "daily_notes":
+            continue
+        norm = re.sub(r"\d{4}-\d{2}-\d{2}", "", n["stem"]).lower()
         norm = re.sub(r"[^a-z0-9 ]", " ", norm).strip()
         norm = re.sub(r"\s+", " ", norm)
-        stems[norm].append(rel)
+        if norm and norm not in STRUCTURAL_STEMS and len(norm) > 3:
+            stems[norm].append(rel)
     for norm, files in stems.items():
-        if len(files) > 1 and norm.strip():
+        if len(files) > 1:
             issues.append({
-                "type": "duplicate",
-                "severity": "warning",
-                "message": f"Possible duplicates: {norm!r}",
-                "files": files,
+                "type": "duplicate", "severity": "warning",
+                "message": f"Possible duplicates: {norm!r}", "files": files,
             })
     return issues
 
 
 def check_orphans(notes: dict) -> list:
+    """Only flag AGENT-written notes (with frontmatter). Human notes are exempt by design."""
     all_links = set()
-    for note in notes.values():
-        for link in note["links"]:
+    for n in notes.values():
+        for link in n["links"]:
             all_links.add(link.lower())
             all_links.add(link.lower().replace(" ", "-"))
-
-    # also treat aliases as resolvable targets
-    alias_set = set()
-    for note in notes.values():
-        for alias in note["aliases"]:
-            alias_set.add(alias.lower())
-
+    skip_top = {"daily_notes", "captured"}
     issues = []
-    skip_folders = {"Daily", "Dev Logs", "Boards", "Templates", "Life Chapters",
-                    "Faith", "Reviews", "Partner", "Family"}
-
-    for rel, note in notes.items():
-        top_folder = rel.split("/")[0] if "/" in rel else ""
-        if top_folder in skip_folders:
+    for rel, n in notes.items():
+        if n["in_archive"] or n["top"] in skip_top or not n["has_frontmatter"]:
             continue
-        if rel in ("Home.md", "_CLAUDE.md"):
+        # folder-readmes and saved reference assets aren't meant to be linked
+        if n["stem"].lower() in ("_readme", "readme") or "/assets/" in rel or "_chat_imports/" in rel:
             continue
-        stem_lower = note["stem"].lower()
+        stem_lower = n["stem"].lower()
         stem_norm = stem_lower.replace("-", " ").replace("_", " ")
-        linked = (
-            stem_lower in all_links
-            or stem_norm in all_links
-            or any(stem_lower in lk for lk in all_links)
-            or any(alias in all_links for alias in note["aliases"])
-        )
+        linked = (stem_lower in all_links or stem_norm in all_links
+                  or any(stem_lower in lk for lk in all_links)
+                  or any(a in all_links for a in n["aliases"]))
         if not linked:
             issues.append({
-                "type": "orphan",
-                "severity": "info",
-                "message": f"No incoming links: {rel}",
-                "files": [rel],
+                "type": "orphan", "severity": "info",
+                "message": f"Agent note with no incoming links: {rel}", "files": [rel],
             })
     return issues
 
 
-def check_stale_tasks(notes: dict) -> list:
+def check_stale_projects(notes: dict) -> list:
     issues = []
-    for rel, note in notes.items():
-        if "task" not in note["frontmatter"].lower() and "kanban" not in note["content"][:200].lower():
+    for rel, n in notes.items():
+        if n["in_archive"]:
             continue
-        if note["due"]:
-            try:
-                due_date = date.fromisoformat(note["due"])
-                if due_date < TODAY:
-                    days_overdue = (TODAY - due_date).days
-                    issues.append({
-                        "type": "stale_task",
-                        "severity": "warning" if days_overdue > 7 else "info",
-                        "message": f"Overdue by {days_overdue}d: {rel}",
-                        "files": [rel],
-                        "due": note["due"],
-                    })
-            except ValueError:
-                pass
+        if n["type"] == "project" and n["status"] == "active":
+            age = (TODAY - n["mtime"]).days
+            if age >= STALE_DAYS:
+                issues.append({
+                    "type": "stale_project", "severity": "warning",
+                    "message": f"Active project untouched {age}d: {rel}", "files": [rel],
+                })
     return issues
 
 
-def check_missing_frontmatter(notes: dict) -> list:
+def check_conventions(notes: dict, vault: Path) -> list:
+    """Non-_archive archive folders, and stray files at the vault root."""
     issues = []
-    skip = {"Templates", "_trash", ".obsidian"}
-    for rel, note in notes.items():
-        if any(s in rel for s in skip):
-            continue
-        if rel in ("Home.md", "_CLAUDE.md"):
-            continue
-        if not note["has_frontmatter"] and note["size"] > 50:
+    bad_archive = re.compile(r"(^|/)(vaults?_[^/]+|old|archive)/", re.IGNORECASE)
+    seen = set()
+    for rel, n in notes.items():
+        m = bad_archive.search("/" + rel)
+        if m:
+            folder = rel[:rel.rfind("/")] if "/" in rel else rel
+            if folder not in seen:
+                seen.add(folder)
+                issues.append({
+                    "type": "naming_drift", "severity": "warning",
+                    "message": f"Non-standard archive folder (should be _archive/): {folder}/",
+                    "files": [folder],
+                })
+    allowed_root = {"_CLAUDE.md", "SOUL.md", "CRITICAL_FACTS.md", "index.md", "log.md", "PINNED.md"}
+    for rel, n in notes.items():
+        if "/" not in rel and rel not in allowed_root:
             issues.append({
-                "type": "no_frontmatter",
-                "severity": "warning",
-                "message": f"Missing frontmatter: {rel}",
-                "files": [rel],
+                "type": "root_stray", "severity": "info",
+                "message": f"Loose file at vault root: {rel}", "files": [rel],
             })
     return issues
 
 
 def check_empty_folders(vault: Path) -> list:
     issues = []
-    for folder in vault.rglob("*/"):
-        if any(p in EXCLUDE_DIRS for p in folder.parts):
+    for folder in vault.rglob("*"):
+        if not folder.is_dir():
             continue
-        if not list(folder.iterdir()):
-            rel = str(folder.relative_to(vault))
+        parts = folder.relative_to(vault).parts
+        if any(p in EXCLUDE_DIRS for p in parts):
+            continue
+        if not any(folder.iterdir()):
             issues.append({
-                "type": "empty_folder",
-                "severity": "info",
-                "message": f"Empty folder: {rel}/",
-                "files": [],
+                "type": "empty_folder", "severity": "info",
+                "message": f"Empty folder: {folder.relative_to(vault)}/", "files": [],
             })
     return issues
 
 
-def check_broken_links(notes: dict, vault: Path) -> list:
-    all_stems = {note["stem"].lower(): rel for rel, note in notes.items()}
-    # build alias → rel lookup so [[Full Name]] resolves if the note has that alias
-    all_aliases: dict[str, str] = {}
-    for rel, note in notes.items():
-        for alias in note["aliases"]:
-            all_aliases[alias.lower()] = rel
+# Foundation/meta docs contain illustrative [[link]] syntax and folder navigation;
+# don't flag their links as broken.
+SKIP_LINK_DOCS = {"_CLAUDE.md", "SOUL.md", "CRITICAL_FACTS.md"}
+# Embedded attachments ([[image.png]] etc.) point to files, not notes — don't flag.
+ATTACHMENT_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp", ".pdf", ".canvas",
+                   ".excalidraw", ".mp4", ".mov", ".mp3", ".m4a", ".heic", ".tif", ".tiff", ".html"}
 
+
+def check_broken_links(notes: dict, vault: Path) -> list:
+    all_stems = {n["stem"].lower(): rel for rel, n in notes.items()}
+    all_aliases = {a.lower(): rel for rel, n in notes.items() for a in n["aliases"]}
+    date_link = re.compile(r"^\d{4}-\d{2}-\d{2}")
     issues = []
-    for rel, note in notes.items():
-        for link in note["links"]:
-            link_stem = Path(link).stem.lower() if "/" in link else link.lower()
+    for rel, n in notes.items():
+        if n["in_archive"] or rel in SKIP_LINK_DOCS or rel.startswith("admin/obsidian_optimize/"):
+            continue
+        if n["top"] == "daily_notes" or "_chat_imports/" in rel:   # transient/pasted-conversation links
+            continue
+        for link in n["links"]:
+            t = link.strip()
+            if t.endswith("/") or date_link.match(t) or "{{" in t:   # folder, date ref, or template placeholder
+                continue
+            if Path(t).suffix.lower() in ATTACHMENT_EXTS:   # embedded attachment, not a note
+                continue
+            if t.lower().endswith(".md"):
+                t = t[:-3]
+            link_stem = Path(t).stem.lower() if "/" in t else t.lower()
             link_norm = link_stem.replace("-", " ").replace("_", " ")
-            resolved = (
-                link_stem in all_stems
-                or link_norm in all_stems
-                or link_stem in all_aliases
-                or link_norm in all_aliases
-            )
-            if not resolved:
-                potential_folder = vault / link
-                if not potential_folder.is_dir():
-                    issues.append({
-                        "type": "broken_link",
-                        "severity": "warning",
-                        "message": f"Broken link [[{link}]] in {rel}",
-                        "files": [rel],
-                    })
+            resolved = (link_stem in all_stems or link_norm in all_stems
+                        or link_stem in all_aliases or link_norm in all_aliases)
+            if not resolved and not (vault / link).is_dir():
+                issues.append({
+                    "type": "broken_link", "severity": "critical",
+                    "message": f"Broken link [[{link}]] in {rel}", "files": [rel],
+                })
     return issues
 
 
 def check_template_leftovers(notes: dict) -> list:
     issues = []
-    for rel, note in notes.items():
-        if "Templates/" in rel:
+    for rel, n in notes.items():
+        if any(h in rel.lower() for h in TEMPLATE_HINTS) or n["in_archive"]:
             continue
-        if TEMPLATE_RE.search(note["content"]):
+        if TEMPLATE_RE.search(n["content"]):
             issues.append({
-                "type": "template_leftover",
-                "severity": "error",
-                "message": f"Unfilled template syntax in: {rel}",
-                "files": [rel],
+                "type": "template_leftover", "severity": "critical",
+                "message": f"Unfilled template syntax in: {rel}", "files": [rel],
             })
     return issues
 
 
 def run_health_check(vault: Path) -> dict:
-    print(f"🔍 Scanning vault: {vault}\n")
     notes = load_vault(vault)
-    print(f"   Found {len(notes)} notes\n")
-
     checks = [
-        ("Duplicates", check_duplicates(notes)),
-        ("Orphans", check_orphans(notes)),
-        ("Stale tasks", check_stale_tasks(notes)),
-        ("Missing frontmatter", check_missing_frontmatter(notes)),
-        ("Empty folders", check_empty_folders(vault)),
+        ("Missing next-step", check_missing_next_step(notes)),
         ("Broken links", check_broken_links(notes, vault)),
         ("Template leftovers", check_template_leftovers(notes)),
+        ("Duplicates", check_duplicates(notes)),
+        ("Stale active projects", check_stale_projects(notes)),
+        ("Naming/convention", check_conventions(notes, vault)),
+        ("Orphans (agent notes)", check_orphans(notes)),
+        ("Empty folders", check_empty_folders(vault)),
     ]
-
-    all_issues = []
-    counts = {}
+    all_issues, counts = [], {}
     for label, issues in checks:
         counts[label] = len(issues)
         all_issues.extend(issues)
-
     return {
-        "vault": str(vault),
-        "scanned": TODAY.isoformat(),
-        "total_notes": len(notes),
-        "total_issues": len(all_issues),
-        "counts": counts,
-        "issues": all_issues,
+        "vault": str(vault), "scanned": TODAY.isoformat(),
+        "total_notes": len(notes), "total_issues": len(all_issues),
+        "counts": counts, "issues": all_issues,
     }
 
 
 def print_report(result: dict):
     print("=" * 60)
-    print(f"  VAULT HEALTH REPORT — {result['scanned']}")
+    print(f"  VAULT HEALTH — {result['scanned']}  ({result['total_notes']} notes)")
     print("=" * 60)
-    print(f"  Notes scanned: {result['total_notes']}")
-    print(f"  Issues found:  {result['total_issues']}")
-    print()
-
     if result["total_issues"] == 0:
-        print("✅ Vault is clean. No issues found.")
+        print("✅ No actionable issues found.")
         return
-
-    severity_icon = {"error": "🔴", "warning": "🟡", "info": "⚪"}
-
+    icon = {"critical": "🔴", "warning": "🟡", "info": "⚪"}
     for label, count in result["counts"].items():
-        if count > 0:
+        if count:
             print(f"  {label}: {count}")
-
-    print()
     by_type = defaultdict(list)
-    for issue in result["issues"]:
-        by_type[issue["type"]].append(issue)
-
-    for issue_type, issues in by_type.items():
-        icon = severity_icon.get(issues[0]["severity"], "⚪")
-        print(f"\n{icon} {issue_type.replace('_', ' ').title()} ({len(issues)})")
-        print("-" * 50)
-        for issue in issues[:10]:
-            print(f"  {issue['message']}")
+    for i in result["issues"]:
+        by_type[i["type"]].append(i)
+    for t, issues in by_type.items():
+        print(f"\n{icon.get(issues[0]['severity'], '⚪')} {t.replace('_',' ').title()} ({len(issues)})")
+        for i in issues[:10]:
+            print(f"  {i['message']}")
         if len(issues) > 10:
-            print(f"  ... and {len(issues) - 10} more")
-
-    print()
-    print("=" * 60)
-    print("Tip: run with --json for machine-readable output to pipe into Claude.")
+            print(f"  ... and {len(issues)-10} more")
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Obsidian vault health checker")
-    parser.add_argument("--path", required=True, help="Path to the vault")
-    parser.add_argument("--json", action="store_true", help="Output as JSON (for Claude)")
+    parser = argparse.ArgumentParser(description="mbs_automation vault health check")
+    parser.add_argument("--path", required=True)
+    parser.add_argument("--json", action="store_true")
     args = parser.parse_args()
-
     vault = Path(args.path).expanduser().resolve()
     if not vault.exists():
         print(f"❌ Vault not found: {vault}")
         return 1
-
     result = run_health_check(vault)
-
-    if args.json:
-        print(json.dumps(result, indent=2, default=str))
-    else:
+    print(json.dumps(result, indent=2, default=str) if args.json else "", end="")
+    if not args.json:
         print_report(result)
 
 

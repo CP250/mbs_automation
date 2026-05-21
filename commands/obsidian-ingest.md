@@ -4,7 +4,7 @@ category: research
 triggers_en: ["ingest this source", "add this article", "import this", "absorb this"]
 ---
 
-Use the obsidian-second-brain skill. Execute `/obsidian-ingest $ARGUMENTS`:
+Use the mbs_automation skill. Execute `/obsidian-ingest $ARGUMENTS`:
 
 The argument is a URL, file path, or pasted text. If no argument, ask what to ingest.
 

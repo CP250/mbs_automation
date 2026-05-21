@@ -1,32 +1,29 @@
 ---
-description: Run a vault health check — grouped by severity, detects contradictions, concept gaps, stale claims, and structural issues
+description: Run a vault health audit — duplicates, orphans, broken links, missing next-steps, naming/_archive drift. Report-only.
 category: meta
 triggers_en: ["vault health", "check vault", "audit vault", "vault diagnostics"]
 ---
 
-Use the obsidian-second-brain skill. Execute `/obsidian-health`:
+Use the mbs_automation skill. Execute `/obsidian-health`:
 
-1. Read `_CLAUDE.md` first to find the vault path
-2. Run: `python ~/.claude/skills/obsidian-second-brain/scripts/vault_health.py --path ~/path/to/vault --json`
-   (replace vault path with the one from `_CLAUDE.md`)
-3. Parse the JSON output and split findings into categories
-4. Spawn parallel subagents to handle each category simultaneously:
-   - **Links agent**: verify broken links, attempt to resolve them
-   - **Duplicates agent**: confirm duplicates are truly the same concept, not just similar names
-   - **Frontmatter agent**: identify notes missing required fields by type
-   - **Staleness agent**: check overdue tasks and unfilled template syntax
-   - **Orphans agent**: check orphaned notes and empty folders
-   - **Contradictions agent**: scan Key Decisions sections and Knowledge/ notes for claims that conflict with each other or have been superseded by newer sources
-   - **Concept gaps agent**: find terms mentioned 3+ times across different notes that lack a dedicated page — these are missing concepts the vault should have
-   - **Stale claims agent**: compare Knowledge/ notes against their source dates — flag any note older than 6 months that references fast-moving topics (tools, APIs, pricing, team structure)
-5. Merge results and group by severity:
-   - 🔴 Critical: broken links, unfilled template syntax, contradictions between notes
-   - 🟡 Warning: duplicates, stale tasks, missing frontmatter, stale claims, concept gaps
-   - ⚪ Info: orphaned notes, empty folders
-6. For safe fixes (missing frontmatter, obvious duplicates, creating pages for concept gaps), offer to fix automatically
-7. For destructive fixes (archiving, merging, resolving contradictions), list them and ask for explicit confirmation first
-8. Append to `log.md`: `## [YYYY-MM-DD] health | X critical, Y warnings, Z info`
+1. Read `_CLAUDE.md`, `SOUL.md`, `CRITICAL_FACTS.md` at the vault root.
+2. Run: `python ~/.claude/skills/mbs_automation/scripts/vault_health.py --path /Users/cpreston/Vaults/storage_mbs --json`
+3. Parse the JSON and split into categories. Spawn parallel subagents to verify each:
+   - **Links agent**: confirm broken `[[wikilinks]]`; since links resolve by basename, a "broken" link usually means a renamed/missing target. Propose the fix (re-point or create stub).
+   - **Duplicates agent**: confirm near-duplicate notes are truly the same thing (name variants for people/projects are the common case), not just similar titles.
+   - **Missing-next-step agent** (the headline duty): find active project notes (`status: active`) with no `next_action` (or an empty one). This is the failure state the whole system exists to catch.
+   - **Stale-project agent**: active projects with no edit in 14+ days — flag as possibly stalled.
+   - **Frontmatter agent**: notes **the agent wrote** (amnesia-test notes) missing required fields. **Do NOT flag the ~4,500 existing human notes** for missing frontmatter — they're exempt by design (hybrid vault).
+   - **Convention agent**: naming-convention violations and any non-`_archive` archive folders (stray `vaults_*`, `old/`, `archive/`); files stranded at the vault root.
+   - **Orphans agent**: notes with no inbound links and not in `_archive/`. (Note: a note linked only from a daily note is functionally orphaned.)
+4. **Exclusions:** never scan `trash/` (opaque). Treat `_archive/` hits as historical/low-priority. `_to_clean/` is P's manual backlog — report its size but don't propose work there unless asked.
+5. Group by severity:
+   - 🔴 Critical: broken links, active projects missing a next action.
+   - 🟡 Warning: duplicates, stale active projects, naming/convention drift, agent-note frontmatter gaps.
+   - ⚪ Info: orphans, empty folders, root strays, `_to_clean/` size.
+6. **Fixes:** for safe ones (re-point a broken link, fix a naming violation, propose a `next_action`), offer to apply. For anything destructive — merging notes, **archiving** — list it and require explicit approval. **Never auto-archive; never move files without approval** (hard boundary from `_CLAUDE.md`).
+7. Append to the operation log: `**HH:MM** — health | X critical, Y warning, Z info`.
 
 ---
 
-**AI-first rule:** Every note created or updated by this command MUST follow `references/ai-first-rules.md` — `## For future Claude` preamble, rich frontmatter (`type`, `date`, `tags`, `ai-first: true`, plus type-specific fields), recency markers per external claim, mandatory `[[wikilinks]]` for every person/project/concept referenced, sources preserved verbatim with URLs inline, and confidence levels where applicable. The vault is for future-Claude retrieval — not human reading.
+**Note rule:** Notes this command writes follow `references/ai-first-rules.md` (amnesia test): frontmatter, `next_action` on active projects, recency markers + verbatim sources, mandatory `[[wikilinks]]`. No `## For future Claude` preamble, no `ai-first:` flag. Existing human notes are left as-is.

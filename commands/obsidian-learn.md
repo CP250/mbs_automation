@@ -4,7 +4,7 @@ category: thinking
 triggers_en: ["review learnings", "what have I learned", "show lessons", "prune learnings"]
 ---
 
-Use the obsidian-second-brain skill. Execute `/obsidian-learn $ARGUMENTS`:
+Use the mbs_automation skill. Execute `/obsidian-learn $ARGUMENTS`:
 
 The optional argument is a scope: `recent` (last 30 days, default), `all` (entire vault), or a topic name.
 

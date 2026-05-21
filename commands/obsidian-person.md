@@ -4,7 +4,7 @@ category: vault
 triggers_en: ["save this person", "add person", "new contact note", "create person note"]
 ---
 
-Use the obsidian-second-brain skill. Execute `/obsidian-person $ARGUMENTS`:
+Use the mbs_automation skill. Execute `/obsidian-person $ARGUMENTS`:
 
 The argument is a person's name — handle typos and partial matches.
 

@@ -1,39 +1,33 @@
 ---
-description: Create or update today's daily note — pulls calendar events, overdue tasks, and conversation context
+description: The morning report — append a bounded Vault Agent section to today's tasks note (next steps, overdue, calendar, triage)
 category: vault
-triggers_en: ["todays note", "create todays daily", "open daily", "today daily note"]
+triggers_en: ["morning report", "daily report", "what's on today", "vault agent report"]
 ---
 
-Use the obsidian-second-brain skill. Execute `/obsidian-daily`:
+Use the mbs_automation skill. Execute `/obsidian-daily`:
 
-1. Read `_CLAUDE.md` first if it exists in the vault root
-2. Read `CRITICAL_FACTS.md` for timezone
+This is P's daily safety net — the defense against stress/distraction making him lose the next step. The **Journals plugin already creates** today's daily note; this command **appends a bounded `## Vault Agent` section**, it does not create the note.
 
-3. Check if `wiki/daily/YYYY-MM-DD.md` exists for today
-   - If not: read `templates/Daily Note.md`, fill in date fields, create the file
-   - If yes: update existing note (inject, don't overwrite)
+1. Read `_CLAUDE.md`, `SOUL.md`, `CRITICAL_FACTS.md`.
+2. Target file: `daily_notes/tasks/tasks_YYYY-MM-DD.md` (today, US Eastern). If the Journals plugin hasn't created it yet, create it minimally, then append.
+3. Build the report. Append (or refresh) a single `## Vault Agent` section containing, in order, kept to a short and checkable list:
+   - **Overdue + due-today tasks** — a Tasks-plugin/Dataview query across pillars (`not done`, due ≤ today). Most urgent first.
+   - **Projects missing a next step** — active project notes with no `next_action`. For each, propose one concrete next step. (The headline duty.)
+   - **Calendar reconciliation** — pull today/this-week from Google Calendar / Morgen; flag anything implied by the vault that isn't on the calendar. **Flag only — never add calendar events.**
+   - **Inbox triage** — new items in `captured/` since last run, each with a proposed destination pillar.
+   - **Normalization** — up to ~5 convention/`_archive` violations worth fixing.
+4. Each suggestion gets inline reply fields so P can respond in the note:
+   ```
+   - [ ] <suggestion> — proposed: <action>
+       status:        (done | skip | defer)
+       reply:
+   ```
+5. On the next run, read yesterday's `## Vault Agent` section: learn what P did / skipped / deferred, and don't re-suggest things marked `skip`. Persist recurring skips to `_CLAUDE.md`'s notes or a `vault_agent/decisions.md` if one exists.
+6. **Hard boundaries:** never auto-archive, never move files without approval, never delete. Propose; P disposes.
+7. Append to the operation log: `**HH:MM** — daily | report appended (N overdue, M missing-next-step)`.
 
-4. Pull calendar events (if Google Calendar MCP tools are available):
-   - Fetch today's events using `google_calendar_list_events`
-   - Add a ## Calendar section to the daily note with:
-     - Time, title, attendees for each event
-     - For meetings with known entities: link to their `[[Person Name]]` pages
-   - If calendar tools aren't available, skip silently (don't error)
-
-5. Pull overdue and due-today tasks from kanban boards:
-   - Scan `boards/` for items with `@{date}` that match today or are past due
-   - Add to the daily note's Focus section with priority markers
-
-6. Scan the current conversation for anything relevant to today:
-   - Tasks in progress, people mentioned, decisions made, what's being worked on
-   - Pre-fill or update the note's sections with that context
-
-7. Check `log.md` for last night's sleeptime consolidation:
-   - If the nightly agent ran, summarize what it did (reconciled, synthesized, healed)
-   - Add a brief "Overnight changes" note so the user knows what happened while they slept
-
-8. Return the path of the daily note when done.
+This command IS the logic the scheduled `mbs-daily` agent runs each morning. Run it manually anytime to test or refresh.
 
 ---
 
-**AI-first rule:** Every note created or updated by this command MUST follow `references/ai-first-rules.md` — `## For future Claude` preamble, rich frontmatter (`type`, `date`, `tags`, `ai-first: true`, plus type-specific fields), recency markers per external claim, mandatory `[[wikilinks]]` for every person/project/concept referenced, sources preserved verbatim with URLs inline, and confidence levels where applicable. The vault is for future-Claude retrieval — not human reading.
+**Note rule:** Follows `references/ai-first-rules.md` (amnesia test). No `## For future Claude` preamble, no `ai-first:` flag — hybrid vault. The `## Vault Agent` section is bounded and clearly the agent's; never touch P's own sections of the daily note.

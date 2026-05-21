@@ -4,7 +4,7 @@ category: thinking
 triggers_en: ["challenge this", "grill me on this", "red team my idea", "stress test this"]
 ---
 
-Use the obsidian-second-brain skill. Execute `/obsidian-challenge $ARGUMENTS`:
+Use the mbs_automation skill. Execute `/obsidian-challenge $ARGUMENTS`:
 
 The optional argument is the idea, belief, or plan to challenge. If not provided, infer the user's current position from conversation context.
 

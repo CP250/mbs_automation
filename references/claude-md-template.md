@@ -1,222 +1,61 @@
 # `_CLAUDE.md` Template
 
-`_CLAUDE.md` is a file that lives at the root of your vault.
-It is the first thing Claude reads when working in your vault.
-It gives every Claude surface (Desktop, Code, VS Code, terminal) the same operating context — no memory required.
+`_CLAUDE.md` lives at the vault root and is the first thing every Claude surface reads. **P's vault already has a hand-authored `_CLAUDE.md`** (written with full project context). So `/obsidian-init`'s job here is to **refine, not regenerate**.
 
----
+## How `/obsidian-init` should behave
 
-## How to Generate It
+1. Check for an existing `_CLAUDE.md` at the vault root. **It exists.** Read it.
+2. Map the live vault (`list_files_in_vault` or filesystem) and compare against what `_CLAUDE.md` describes.
+3. Propose a **diff** — folders/conventions that drifted, new pillars/subfolders, stale facts — and **ask before overwriting.** Never clobber the hand-authored file.
+4. Only fill gaps and correct drift. Preserve P's wording, the amnesia-test framing, and the rules below.
 
-When a user asks Claude to create their `_CLAUDE.md`, Claude should:
-1. Call `list_files_in_vault()` to map the vault structure
-2. Call `get_file_contents("Home.md")` (or equivalent dashboard) if it exists
-3. Call `get_file_contents(path)` on 2–3 templates from the `Templates/` folder
-4. Call `get_file_contents(path)` on the current kanban boards
-5. Fill in the template below with discovered values
-6. Call `append_content("_CLAUDE.md", content)` to write the file to the vault root
+If you ever did need to regenerate from scratch, match this shape (it mirrors the existing file):
 
----
-
-## The Template
-
-Copy this, fill in the bracketed values, and save as `_CLAUDE.md` in the vault root.
+## The shape (reference)
 
 ```markdown
-# Claude Operating Manual — [Your Name]'s Vault
+# _CLAUDE.md
+Operating manual for any Claude session in this vault. Read first, every session. Overrides default skill behavior.
 
-> Read this file before doing anything in this vault.
-> This is the single source of truth for how Claude operates here.
+## What this vault is
+The amnesia-test framing: hold P's life, recall it on demand, defend against stress/distraction losing the next step. Vault at /Users/cpreston/Vaults/storage_mbs/.
 
----
+## Structure — life pillars
+[8-pillar table: admin, create, culture, daily_notes, health, money, skills, social, sports]
+[Pillar boundary rules: sports=play, culture=arts, social=watching-with-people]
+[Top-level: captured/ (inbox), _archive/ (per folder), trash/ (opaque), _to_clean/ (P's manual backlog), attachments/]
 
-## Section 0 — AI-First Vault Rule (read first, applies to every note)
+## Folder & file conventions
+[lowercase snake_case, no redundant pillar prefix, type prefixes project_/ref_/todo_list_/log_, dates YYYY-MM-DD, writing_scraps exception]
 
-This vault is designed for **future-Claude** to read and reason over, not for human review. The owner rarely reads notes directly — they call Claude to retrieve, synthesize, and connect dots across years of accumulated knowledge.
+## The _archive convention
+[standard name everywhere; on-demand; agent SUGGESTS, never auto-archives — P decides completion]
 
-**Every note Claude writes to this vault must follow these rules:**
+## Search tiers
+[trash never searched; _archive historical/low-priority; everything else active]
 
-1. **Self-contained context** — Each note must explain itself. Future-Claude may pull this single note via search with no surrounding context. Don't rely on backlinks alone for meaning.
-2. **"For future Claude" preamble** — Every note begins with a 2-3 sentence summary in plain English so Claude can decide relevance in 10 seconds before parsing the structured data.
-3. **Rich, consistent frontmatter** — Filterable metadata (`type`, `date`, `topic`, `tags`, `related-people`, `related-projects`, `sources`, `confidence`). Different note types may have different schemas, but every note has machine-readable frontmatter.
-4. **Recency markers per claim** — When stating external facts, attach the date: "Mem0 raised $24M (as of 2026-04)" so future-Claude knows what to verify before trusting.
-5. **Sources preserved verbatim** — Every external claim has its source URL inline so it can be re-verified or refreshed.
-6. **Cross-links are mandatory** — Every person, project, idea, decision, or concept referenced uses `[[wikilinks]]` so the graph is traversable.
-7. **Confidence levels** — Where applicable, mark claims as `stated | high | medium | speculation` so future-Claude knows what to trust vs verify.
+## Note style — hybrid
+[new agent notes = amnesia-test compliant; existing ~4,500 notes left as-is]
 
-This rule applies to all `/obsidian-*` and `/research*` commands, all scheduled agents, and any direct vault writes.
+## Tasks & daily notes
+[Tasks plugin not Kanban; Journals plugin two journals: health + tasks; morning report appends to daily_notes/tasks/ in a ## Vault Agent section]
 
----
+## The agent's job (the four duties)
+[1 missing-next-step, 2 calendar reconciliation, 3 note normalization, 4 project-decomposition partnership; plus recall, decisions, people, creative, weekly reflection, cross-domain, pattern surfacing]
+[Out of scope: research toolkit, bi-temporal facts]
 
-## Vault Identity
+## Cowork integration
+[name=folder convention; agent is librarian/dispatcher not domain expert; reads other sessions' transcripts; suggests renames, can't rename sessions]
 
-- **Owner:** [Full Name]
-- **Primary purpose:** [e.g. "Life OS — work, personal, side business, finances"]
-- **Last updated:** [YYYY-MM-DD]
+## Key files (read order)
+[_CLAUDE.md, SOUL.md, CRITICAL_FACTS.md, index.md, log.md]
 
----
-
-## Folder Map
-
-| Folder | Purpose |
-|---|---|
-| `Daily/` | One note per day. Named `YYYY-MM-DD.md` |
-| `Projects/` | Active and archived projects |
-| `Tasks/` | Standalone task notes (linked from boards) |
-| `Boards/` | Kanban boards: [list your board names] |
-| `People/` | One note per person |
-| `Dev Logs/` | Technical work logs — dated, project-tagged |
-| `Side Biz/` | [Remove if not applicable] Deals, dashboard, tasks |
-| `Side Biz/Deals/` | Deal notes — one per client opportunity |
-| `Knowledge/` | Reference material and permanent notes |
-| `Learning/` | Books, courses, content consumed |
-| `Content/` | Content calendar and post drafts |
-| `Finances/` | Monthly finance notes and subscriptions |
-| `Goals/` | Annual and life goals |
-| `Mentions/` | Times I've been recognized or mentioned |
-| `Jobs/` | Employment and contract roles |
-| `Businesses/` | Companies I own (founder stake) |
-| `Templates/` | Note templates (Templater) |
-
----
-
-## Key Files
-
-- **Dashboard:** `[[Home]]` — main navigation and dataview queries
-- **Work Board:** `[[Boards/[Work Board Name]]]`
-- **Personal Board:** `[[Boards/Personal]]`
-- **Mentions Log:** `[[Mentions/Mentions Log]]`
-- **People Index:** `People/` folder
-
----
-
-## Active Context
-
-> Update this section at the start of each major project or focus period.
-
-**Current top priority:** [Your current top priority here]
-**Current job:** [Company] — [Your Role]
-**Manager:** [Name]
-**Key colleagues:** [Name (role), Name (role), ...]
-
----
-
-## Auto-Save Rules
-
-Claude should auto-save the following **without asking**:
-- Decisions made in conversation → relevant project note + daily note
-- New people mentioned → People/ (create stub if needed)
-- Tasks assigned or committed to → kanban board + Tasks/ note
-- Dev work done → Dev Logs/ + project note + daily note
-- Mentions/recognition from colleagues → Mentions Log + person's note
-- Completed tasks → move on kanban to ✅ Done
-
-Claude should **ask before saving**:
-- Anything touching Finances/ or personal financial data
-- Faith/ or Partner/ (private notes)
-- Anything that involves deleting or archiving an existing note
-
----
-
-## Naming Conventions
-
-- Daily notes: `YYYY-MM-DD.md`
-- Dev logs: `YYYY-MM-DD — Description.md`
-- Deals: `Client Name - Description Month Year.md`
-- Tasks: Descriptive title, no date prefix
-- People: Full name (e.g. `Jane Smith.md`, not `Jane.md`)
-- Archive prefix: `_archived_`
-
----
-
-## Frontmatter Requirements
-
-Every note must have at minimum:
-```yaml
----
-date: YYYY-MM-DD
-tags:
-  - [note-type]
----
+## Installed plugins worth knowing
+[Tasks+archiver, Journals, Templater, Dataview, Git, Terminal, google-calendar+Morgen, Glasp+Read It Later, custom obsidian-ch8-tab, BRAT; basename link resolution]
 ```
 
-Note types: `daily` | `project` | `task` | `person` | `devlog` | `deal` | `goal` | `mention` | `content`
+## Keeping it fresh
+Update `_CLAUDE.md` when a convention changes, a pillar is added, or a structural fact drifts. Trigger: "update my _CLAUDE.md." Always diff-and-ask; never silently overwrite the hand-authored file.
 
----
-
-## Kanban Convention
-
-Columns in boards: `📥 Backlog` · `📋 This Week` · `🔨 In Progress` · `⏳ Waiting On` · `✅ Done`
-
-Priority: 🔴 critical · 🟡 important · 🟢 low
-
-Item format:
-```
-- [ ] 🔴 **Title** · @{YYYY-MM-DD}
-	Description. [[Related Project]] [[Person]]
-```
-
-Completed:
-```
-- [x] ~~🔴 **Title**~~ ✅ Date
-```
-
----
-
-## Propagation Rules
-
-| Event | Also update |
-|---|---|
-| New project | Board (Backlog) + today's daily note |
-| Task done | Board (Done, strikethrough) + project note + daily note |
-| Dev session | Dev Logs/ + project note (Recent Activity) + daily note |
-| Person interaction | Daily note + their People/ note |
-| Decision made | Project note (Key Decisions) + daily note |
-| Mention/recognition | Mentions Log + person's note + daily note |
-| Deal update | Deal file + Side Biz board + daily note |
-
----
-
-## People to Know
-
-> Add the people most relevant to your work here so Claude doesn't have to discover them.
-
-| Person | Role | Notes |
-|---|---|---|
-| [Name] | [Role] | [One-line context] |
-| [Name] | [Role] | [One-line context] |
-
----
-
-## Projects Currently Active
-
-> Keep this list current. Claude uses it to route context correctly.
-
-- `[[Projects/Project Name]]` — [one-line status]
-- `[[Projects/Project Name]]` — [one-line status]
-
----
-
-## Do Not Touch
-
-- `Templates/` — Never modify templates during normal vault operations
-- `Faith/` — Private. Read only if directly asked.
-- `[Other private folders]` — [Reason]
-
----
-
-*This file was generated by the obsidian-second-brain skill.*
-*Regenerate with: "Claude, update my _CLAUDE.md"*
-```
-
----
-
-## Keeping `_CLAUDE.md` Fresh
-
-`_CLAUDE.md` should be regenerated or updated when:
-- A new major project starts
-- A team change happens (new manager, new colleagues)
-- A folder is restructured
-- Active priorities shift significantly
-
-The user can trigger this with: *"Update my `_CLAUDE.md`"* or *"Regenerate my vault manifest."*
+## Assistant-mode template
+For operating a vault on behalf of someone else, see `references/claude-md-assistant-template.md`. Not applicable to P's own vault.

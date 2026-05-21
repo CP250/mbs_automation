@@ -4,7 +4,7 @@ category: meta
 triggers_en: ["export vault", "snapshot vault", "dump vault", "vault export"]
 ---
 
-Use the obsidian-second-brain skill. Execute `/obsidian-export $ARGUMENTS`:
+Use the mbs_automation skill. Execute `/obsidian-export $ARGUMENTS`:
 
 The optional argument is the format: `json` (default) or `markdown`. 
 

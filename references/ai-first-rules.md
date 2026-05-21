@@ -1,287 +1,99 @@
-# AI-First Note Rules
+# Note Rules — the Amnesia Test
 
-The vault is designed for **future-Claude** to read and reason over, not for human review. The owner rarely opens notes directly — they call Claude to retrieve, synthesize, and connect dots across years of accumulated knowledge. **Every command that writes to the vault must produce notes that follow these rules.**
+(This file was formerly "AI-First Note Rules." Filename kept so command references stay valid; the content is reframed to P's amnesia-test / hybrid model. The canonical write spec for `mbs_automation`.)
 
-This document is the canonical specification. It lives at `references/ai-first-rules.md` in the obsidian-second-brain repo and is referenced from `_CLAUDE.md` Section 0, every slash command, and `references/write-rules.md`.
+## The premise — hybrid, not AI-first
 
----
+This vault is **hybrid**, not LLM-first. P reads his own vault. There are ~4,500 existing human-readable notes. So:
 
-## The 7 Rules
+- **New notes the agent writes must pass the amnesia test** (below).
+- **Existing notes are left as they are.** No bulk rewrite, no retrofitting `## For future Claude` headers onto human notes. Upgrade a note only when P asks or when actively editing it. Migration is voluntary, never automatic.
 
-### 1. Self-contained context
-Each note must explain itself. Future-Claude may pull this single note via `/obsidian-find` or vault scan with no surrounding context. Don't rely on backlinks alone for meaning. State the *what*, the *why*, and the *when* inside the note itself.
+There is **no `ai-first: true` flag** and **no mandatory machine-preamble**. Notes should read naturally to P *and* be self-sufficient for a future reader (P-with-amnesia, or Claude) who arrives with zero context. Those two goals are the same goal, framed two ways.
 
-### 2. "For future Claude" preamble
-Every note begins with a 2–3 sentence summary in plain English under a `## For future Claude` header (immediately after the frontmatter). Future-Claude reads this to decide relevance in 10 seconds before parsing the rest. State what's in the note, why it was saved, and any temporal/staleness caveat.
+## The amnesia test
 
-```markdown
-## For future Claude
-This note is a [type] about [topic] saved on [date]. It [main purpose].
-[Optional caveat about staleness, confidence, or scope.]
-```
+> If P woke up remembering nothing, this note should tell him what the thing is, where it is, and what to do next.
 
-### 3. Rich, consistent frontmatter
-Filterable metadata. Different note types have different schemas (see below) but every note has machine-readable frontmatter.
+Concretely, a note the agent writes should:
 
-**Universal fields (every note):**
+1. **Explain itself.** State the *what*, *why*, and *when* inside the note. Don't rely on backlinks alone for meaning — a note may be retrieved in isolation. For a substantial note, lead with a sentence or two of plain context; for a short note, the title + first line should already make it self-evident. No mandatory header ceremony — just don't write something only-today-you understands.
+2. **Carry frontmatter.** Machine-readable metadata so notes are filterable. Minimum: `type`, `date` (`YYYY-MM-DD`), `tags`. Type-specific fields below.
+3. **State the next action, on projects.** Active project notes carry `next_action:` — the single next actionable step. This is the structural core of the whole system; an active project with no next action is the failure state the agent exists to catch.
+4. **Mark recency on external claims.** `Polestar opened a Montreal office (as of 2026-04, polestar.com/...)` so a future reader knows what to re-verify.
+5. **Preserve sources verbatim.** Keep the actual URL inline, not a paraphrased citation.
+6. **Wikilink everything referenced.** Every person, project, place, and recurring concept → `[[wikilink]]`, so the graph is traversable. If the target doesn't exist, a stub is fine (see write-rules § Stub Notes). Links resolve by basename (default Obsidian setting).
+7. **Locate physical things.** "Where they are" is part of the amnesia test — account IDs, file paths, contact info, physical locations are structural facts in the note, not vague references.
+
+**Not required** (dropped from Ghelbur's stricter spec): the `## For future Claude` preamble on every note, the `ai-first: true` flag, mandatory confidence levels on every claim, and bi-temporal `timeline:` arrays. Use a confidence note inline only when it genuinely matters; use a plain `date` for time, not event/transaction pairs.
+
+## Type schemas
+
+Minimum frontmatter by type. Paths/pillars per `vault-schema.md`. Add fields as useful; keep `type`/`date`/`tags`.
+
+### project
 ```yaml
----
-date: YYYY-MM-DD              # creation or update date
-type: <note-type>             # see Type Schemas below
-tags: [...]                   # always include the type as a tag
-ai-first: true                # explicit flag
----
-```
-
-### 4. Recency markers per claim
-When stating external facts, attach the date inline:
-
-```markdown
-- Mem0 raised $24M Series A (as of 2026-04, mem0.ai/blog/series-a)
-- Anthropic released native memory tool (as of 2026-02, anthropic.com/news/memory)
-```
-
-So future-Claude knows what to verify before trusting individual facts.
-
-### 5. Sources preserved verbatim
-Every external claim has its source URL inline. Don't paraphrase a citation — keep the actual URL so the claim can be re-verified or refreshed years later.
-
-### 6. Cross-links are mandatory
-Every person, project, idea, decision, or concept referenced uses `[[wikilinks]]` so the graph is traversable by future-Claude:
-
-```markdown
-Sarah at [[People/Sarah Chen]] decided to ship the [[Projects/Dashboard Refactor]] by Friday.
-```
-
-If a linked note doesn't exist, create a stub (per `references/write-rules.md` § Stub Notes).
-
-### 7. Confidence levels
-Where applicable, mark claims with confidence:
-- `stated` — directly quoted or claimed by a source
-- `high` — multiple sources agree
-- `medium` — single source, plausible
-- `speculation` — your inference
-
-Use this in frontmatter (`confidence: high`) or inline (`(confidence: speculation)`).
-
----
-
-## Type Schemas
-
-Frontmatter schemas by note type. **Add fields specific to your type — never remove the universal fields.**
-
-### `type: daily`
-```yaml
-date: YYYY-MM-DD
-type: daily
-tags: [daily]
-mood: ""        # optional
-energy: ""      # optional
-ai-first: true
-```
-
-### `type: project`
-```yaml
-date: YYYY-MM-DD              # creation
-updated: YYYY-MM-DD           # last meaningful update
 type: project
-status: active                # active | planning | completed | archived | on-hold
-tags: [project, ...]
-related-people: ["[[People/...]]", ...]
-related-projects: ["[[Projects/...]]", ...]
-ai-first: true
+date: YYYY-MM-DD
+tags: [project, <pillar>]
+status: active            # active | planning | completed | on-hold
+next_action: "<single next step>"   # MANDATORY when status is active
+people: ["[[Name]]"]
 ```
 
-### `type: person`
+### reference (`ref_*`)
 ```yaml
-date: YYYY-MM-DD              # first interaction logged
-updated: YYYY-MM-DD
+type: reference
+date: YYYY-MM-DD
+tags: [reference, <pillar>]
+source: "https://..."     # verbatim, if applicable
+```
+
+### person (social/)
+```yaml
 type: person
-tags: [person, ...]
-role: ""
-company: "[[Companies/...]]"
-relationship: weak | medium | strong
-last-interaction: YYYY-MM-DD
-related-projects: ["[[Projects/...]]", ...]
-ai-first: true
+date: YYYY-MM-DD
+tags: [person]
+relationship: "<wife | daughter | friend | mentee | ...>"
+last_interaction: YYYY-MM-DD
+contact: ""
 ```
 
-### `type: idea`
+### decision
 ```yaml
-date: YYYY-MM-DD
-type: idea
-tags: [idea, ...]
-status: captured              # captured | exploring | graduated | shelved
-related-projects: ["[[Projects/...]]", ...]
-ai-first: true
-```
-
-### `type: task`
-```yaml
-date: YYYY-MM-DD
-type: task
-status: in-progress           # in-progress | done | waiting | cancelled
-priority: 🔴 | 🟡 | 🟢
-due: YYYY-MM-DD
-tags: [task, ...]
-related-projects: ["[[Projects/...]]", ...]
-related-people: ["[[People/...]]", ...]
-ai-first: true
-```
-
-### `type: decision`
-Decisions usually live INSIDE project notes' Key Decisions sections. When a standalone decision note is needed:
-```yaml
-date: YYYY-MM-DD
 type: decision
-tags: [decision, ...]
-related-projects: ["[[Projects/...]]", ...]
-confidence: stated | high | medium | speculation
-sources: [...]                # inline URLs/wikilinks supporting the decision
-ai-first: true
-```
-
-### `type: devlog` / `type: log`
-```yaml
 date: YYYY-MM-DD
-type: devlog
-tags: [devlog, ...]
-project: "[[Projects/...]]"
-related-people: ["[[People/...]]", ...]
-ai-first: true
+tags: [decision, <pillar>]
+project: "[[<project>]]"
 ```
 
-### `type: review`
+### log (dated event/session)
 ```yaml
-date: YYYY-MM-DD              # the date the review was generated
-period-start: YYYY-MM-DD
-period-end: YYYY-MM-DD
-type: review                  # weekly | monthly
-tags: [review, ...]
-ai-first: true
-```
-
-### `type: research` / `type: research-deep` / `type: x-read` / `type: x-pulse` / `type: youtube`
-See `commands/research*.md` and `commands/x-*.md` and `commands/youtube.md` for the full schemas. All set `ai-first: true` and follow the universal rules.
-
-### `type: adr`
-```yaml
+type: log
 date: YYYY-MM-DD
-type: adr
-tags: [adr, decision]
-decision: ""                  # one-line summary
-status: proposed | accepted | superseded
-related-projects: ["[[Projects/...]]", ...]
-supersedes: "[[Knowledge/ADR-...]]"   # optional
-ai-first: true
+tags: [log, <pillar>]
+project: "[[<project>]]"
 ```
 
-### `type: synthesis` / `type: emerge` / `type: connect` / `type: challenge`
-Outputs from thinking tools. Each saves to `Knowledge/` or `Ideas/` with:
+### review (weekly)
 ```yaml
+type: review
 date: YYYY-MM-DD
-type: <thinking-tool-type>
-tags: [research, thinking, ...]
-sources: [...]                # vault notes that informed this
-related-people: [...]
-related-projects: [...]
-ai-first: true
+period_start: YYYY-MM-DD
+period_end: YYYY-MM-DD
+tags: [review]
 ```
 
----
+Daily notes are owned by the Journals plugin — the agent appends to them, doesn't create them. See `vault-schema.md`.
 
-## Preamble Templates by Type
+## Anti-patterns
 
-### Daily note
-```markdown
-## For future Claude
-Daily note for YYYY-MM-DD. Captures what was worked on, who was met, decisions made, and energy/mood for the day. Skim the section headers; specific work logs link to dev logs and project notes.
-```
-
-### Project note
-```markdown
-## For future Claude
-[Project name] is a [type — work / personal / open-source] project with status [status] as of [date]. The Overview section explains what it is and why it exists. Recent Activity captures the last 30 days. Key Decisions documents major directional choices with rationale.
-```
-
-### Person note
-```markdown
-## For future Claude
-[Name] is [role] at [[Company]]. Relationship strength: [weak/medium/strong] as of [date]. Last interaction: [date]. The Recent Interactions section logs every conversation chronologically.
-```
-
-### Idea note
-```markdown
-## For future Claude
-Idea captured on [date] about [topic]. Status: [captured/exploring/graduated/shelved]. The body explains the idea, why it's interesting, and what would make it real. If shelved, the reason is documented at the bottom.
-```
-
-### Decision (standalone)
-```markdown
-## For future Claude
-Decision made on [date] about [topic]. Context section explains what prompted it. Options Considered lists the alternatives evaluated. Rationale captures why this option won. Consequences documents what changed in the vault as a result.
-```
-
-### Dev log
-```markdown
-## For future Claude
-Dev log for [date] about [project]. Captures work done, problems encountered, decisions made, and next steps. Specific file paths and commit hashes are preserved verbatim for re-verification.
-```
-
-### Review (weekly / monthly)
-```markdown
-## For future Claude
-[Weekly / Monthly] review covering [period-start] through [period-end]. The review summarizes shipped work, decisions made, people met, and patterns that emerged. Use this as a baseline when researching what was true at the end of the period.
-```
-
-### Research (any research type)
-```markdown
-## For future Claude
-[Research type] on "[topic]" performed on [datetime]. [Specific scope: what was searched, how many sources, what model.] [Caveat about recency or confidence.] Use the recency markers per claim to know what to verify before relying on individual facts.
-```
-
-### ADR
-```markdown
-## For future Claude
-Architectural decision record from [date]. Documents a structural decision in the vault (folder rename, schema change, etc.) so future-Claude can answer "why is the vault structured this way?" without re-deriving the reasoning.
-```
-
----
-
-## Common Anti-Patterns
-
-Don't do these. They produce notes that are useless to future-Claude.
-
-| Anti-pattern | Why it's bad |
+| Don't | Why |
 |---|---|
-| `date: today` | Use the actual `YYYY-MM-DD` — "today" is meaningless when read later |
-| Bare claims without dates | "Mem0 is the leader" — leader as of when? |
-| External URL omitted | "According to a study, X is true" — which study? |
-| Plain text names instead of `[[wikilinks]]` | Breaks the link graph — future-Claude can't traverse |
-| "See above" / "as mentioned" | Future-Claude may pull this note in isolation. Repeat the context. |
-| Trusting the model to infer | Be explicit. State the type, the rule applied, the source. |
-| Multi-paragraph human-readable narratives | Bullets and structure beat prose for retrieval. |
-| Forgetting `ai-first: true` | The flag lets future-Claude know which notes meet the standard. |
-
----
-
-## Audit Checklist
-
-When auditing an existing note (Phase 2 work or one-off cleanup), verify:
-
-- [ ] Has `## For future Claude` preamble below frontmatter
-- [ ] `ai-first: true` in frontmatter
-- [ ] `type:` field set correctly
-- [ ] `date:` in YYYY-MM-DD format
-- [ ] Tags include the type
-- [ ] All people/projects/concepts use `[[wikilinks]]`
-- [ ] External claims have recency markers AND source URLs
-- [ ] If multi-source, confidence levels marked
-- [ ] No "see above" or context-dependent references
-- [ ] Self-contained — readable with zero context
-
----
-
-## Migration Note
-
-This rule was established 2026-04-25 and shipped as part of obsidian-second-brain v0.5.0 (Research Toolkit). All 5 research commands (`/x-read`, `/x-pulse`, `/research`, `/research-deep`, `/youtube`) follow it from day one. The 26 existing `/obsidian-*` commands were updated in v0.6.0 (Phase 2) to explicitly reference this document. Notes written before that may not yet meet the standard — `/obsidian-health` flags them.
+| `date: today` | Use the real `YYYY-MM-DD`; "today" is meaningless when read later. |
+| Bare external claim, no date | "Polar is the best fit" — as of when, from where? |
+| Source URL omitted | Keep the verbatim link so it can be re-verified. |
+| Plain-text names instead of `[[wikilinks]]` | Breaks the graph. |
+| "See above" / "as mentioned" | The note may be read in isolation; restate the context. |
+| Active project with no `next_action` | The exact failure the agent exists to prevent. |
+| Bulk-rewriting existing human notes | Hybrid vault — leave them unless P asks. |

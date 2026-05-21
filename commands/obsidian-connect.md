@@ -4,7 +4,7 @@ category: thinking
 triggers_en: ["connect domains", "cross-pollinate", "bridge ideas", "find an unexpected link"]
 ---
 
-Use the obsidian-second-brain skill. Execute `/obsidian-connect $ARGUMENTS`:
+Use the mbs_automation skill. Execute `/obsidian-connect $ARGUMENTS`:
 
 Two arguments required: the two topics, domains, or note names to connect. If only one is given or none, ask the user for both.
 

@@ -4,7 +4,7 @@ category: thinking
 triggers_en: ["find contradictions", "reconcile vault", "fix conflicts", "vault contradictions"]
 ---
 
-Use the obsidian-second-brain skill. Execute `/obsidian-reconcile $ARGUMENTS`:
+Use the mbs_automation skill. Execute `/obsidian-reconcile $ARGUMENTS`:
 
 The optional argument is a topic or entity to focus on. If not provided, scan the whole vault.
 
