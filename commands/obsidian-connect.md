@@ -1,32 +1,28 @@
 ---
-description: Bridge two unrelated domains using your vault's link graph — forces creative friction to spark new ideas
+description: Bridge two domains using the vault's link graph — forces creative friction to spark concrete new ideas
 category: thinking
 triggers_en: ["connect domains", "cross-pollinate", "bridge ideas", "find an unexpected link"]
 ---
 
 Use the mbs_automation skill. Execute `/obsidian-connect $ARGUMENTS`:
 
-Two arguments required: the two topics, domains, or note names to connect. If only one is given or none, ask the user for both.
+Two topics/domains/notes to connect. If fewer than two are given, ask P for both.
 
-1. Read `_CLAUDE.md` first if it exists in the vault root
-2. Parse the two domains from arguments (e.g., `/obsidian-connect "distributed systems" "cooking"`)
-3. For each domain, search the vault:
-   - Find all notes related to that domain (by title, tags, content)
-   - Map their backlinks and outgoing links to build a local cluster
-4. Find the bridge:
-   - Look for shared links, shared tags, or shared people between the two clusters
-   - If a direct path exists in the link graph, trace it and explain each hop
-   - If no direct path exists, find the closest semantic overlap — concepts, metaphors, or structural similarities
-5. Generate creative connections:
-   - **Structural analogy**: how a pattern in domain A maps to domain B (e.g., "load balancing is like mise en place — both are about distributing work before the rush")
-   - **Transfer opportunities**: what works in A that could be applied to B
-   - **Collision ideas**: new concepts that only exist at the intersection of both
-6. Present 3-5 specific, actionable connections — not vague analogies but concrete ideas the user could act on
-7. Offer to save the best connections to `Ideas/` with links to both source domains
-8. Log the connection exercise in today's daily note
-
-The value is in unexpected links. If the connection is obvious, dig deeper. The best output makes the user say "I never thought of it that way."
+1. Read `_CLAUDE.md` at the vault root.
+2. Parse the two domains (e.g. `/obsidian-connect "rackets strategy" "portfolio construction"`).
+3. For each domain, search the vault (shell-grep; exclude `trash/`): find related notes by title/tags/content and map their wikilinks into a local cluster.
+4. **Find the bridge:**
+   - Shared links, tags, or people between the two clusters; if a path exists in the link graph, trace it hop by hop.
+   - If no direct path, find the closest real overlap — concepts, metaphors, structural similarities grounded in actual notes.
+5. Generate concrete connections (not vague analogies):
+   - **Structural analogy** — how a pattern in A maps to B.
+   - **Transfer opportunities** — what works in A that could apply to B.
+   - **Collision ideas** — concepts that only exist at the intersection.
+6. Present 3–5 specific, actionable connections. If a connection is obvious, dig deeper.
+7. Offer to save the best ones to `captured/` (linked to both source domains). Log the exercise in today's tasks daily note (`## Vault Agent` section).
 
 ---
 
-**AI-first rule:** Every note created or updated by this command MUST follow `references/ai-first-rules.md` — `## For future Claude` preamble, rich frontmatter (`type`, `date`, `tags`, `ai-first: true`, plus type-specific fields), recency markers per external claim, mandatory `[[wikilinks]]` for every person/project/concept referenced, sources preserved verbatim with URLs inline, and confidence levels where applicable. The vault is for future-Claude retrieval — not human reading.
+**Anti-fabrication (hard rule):** ground the clusters in notes that actually exist — don't invent vault content to force a bridge. The creative leap (the analogy/idea) is yours to make and should be labeled as a suggestion; the vault evidence underneath it must be real.
+
+**Note rule:** Follows `references/ai-first-rules.md` (amnesia test) and `references/write-rules.md`. No `## For future Claude` preamble, no `ai-first:` flag — hybrid vault. Never touch P's own sections of the daily note.
