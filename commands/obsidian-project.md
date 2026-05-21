@@ -1,23 +1,37 @@
 ---
-description: Create or update a project note — adds to board and daily note automatically
+description: Create or update a project note — pillar-routed, amnesia-test frontmatter, mandatory next_action, linked from today's note
 category: vault
 triggers_en: ["new project", "create project note", "project setup", "start a project"]
 ---
 
 Use the mbs_automation skill. Execute `/obsidian-project $ARGUMENTS`:
 
-The argument is a project name. Handle typos and partial matches.
+The argument is a project name (handle typos and partial matches). This command creates or updates a project note that passes the amnesia test — its single most important job is that every active project carries a `next_action`, because an active project with no next step is the exact failure this whole system exists to catch.
 
-1. Read `_CLAUDE.md` first if it exists in the vault root
-2. Search the vault for an existing project matching the name (fuzzy — handle typos)
-3. If found: show what was found, confirm with user, then update with new info from conversation
-4. If not found: create `Projects/Project Name.md` with full frontmatter schema (`date`, `tags: [project]`, `status: active`, `job`)
-5. Fill in everything inferable from the conversation: description, goals, key people, current status
-6. Add a card to the relevant kanban board in the `📥 Backlog` or `🔨 In Progress` column
-7. Link from today's daily note
-
-If the name has a typo or is approximate, search the vault, show what was found, and confirm before proceeding. Never silently create a note with a misspelled name.
+1. Read `_CLAUDE.md`, `SOUL.md`, `CRITICAL_FACTS.md` at the vault root.
+2. **Search before writing.** Search the vault (filename + content, fuzzy) for an existing project — including working-title variants, which are the common duplicate source. Exclude `trash/`; treat `_archive/` hits as historical. If a typo or approximate name, show what was found and confirm before proceeding. Never silently create a note with a misspelled or near-duplicate name.
+3. **If found:** show it, confirm, then update with new info from the conversation — refresh `next_action`, append to Recent Activity / Key Decisions, update `status` if it changed.
+4. **If not found:** determine the pillar (`admin`, `create`, `culture`, `health`, `money`, `skills`, `social`, `sports`) from context per `references/vault-schema.md`; if genuinely ambiguous, ask. Create the note as `<pillar>/project_<snake_case_name>.md`. If the project will accumulate sub-notes or attachments, use a folder: `<pillar>/project_<name>/project_<name>.md`. Match the pattern of existing projects in that pillar (read 1–2 first).
+5. **Frontmatter (mandatory schema)** per `references/ai-first-rules.md`:
+   ```yaml
+   ---
+   type: project
+   date: <YYYY-MM-DD>
+   tags: [project, <pillar>]
+   status: active                       # active | planning | completed | on-hold
+   next_action: "<the single next actionable step>"   # MANDATORY when status is active
+   people: ["[[Name]]"]                 # wikilink everyone referenced
+   ---
+   ```
+   If `status: active` and you cannot infer a real next step, do not invent one — ask P for it. Never leave `next_action` empty on an active project.
+   **Anti-fabrication (hard rule):** when asking P for the next step or any missing fact, ask neutrally. NEVER populate the question, its options, or the note with invented people, hand-offs, dates, signings, or status claims that are not present in the vault or this conversation. Inventing a name or a relationship (e.g. "X has the letter drafted") is a fabrication and is forbidden — it corrupts the amnesia-test vault. Mark unknowns as `TBD` and ask an open question instead.
+6. **Body — amnesia-test self-sufficient:** lead with a sentence or two of plain context (what this is, why it exists, when it started). Fill in everything inferable: description, goal, key people (as `[[wikilinks]]`), current status, relevant locations/account IDs/paths ("where things are"), and any external claims with recency markers and verbatim source URLs.
+7. **Propagate** (per `references/write-rules.md` — never create a note in isolation):
+   - If there's a concrete next action, add a Tasks-plugin line to the relevant pillar's todo: `- [ ] <next_action> #<pillar> 📅 <due if known>`.
+   - Link the project from today's tasks daily note (`daily_notes/tasks/tasks_YYYY-MM-DD.md`, inside the bounded `## Vault Agent` section or a one-line mention — never touch P's own sections).
+   - If a person is involved, link the project from their note in `social/` (create a stub if absent).
+   - Append a timestamped line to `log.md`; update `index.md` for the new note.
 
 ---
 
-**AI-first rule:** Every note created or updated by this command MUST follow `references/ai-first-rules.md` — `## For future Claude` preamble, rich frontmatter (`type`, `date`, `tags`, `ai-first: true`, plus type-specific fields), recency markers per external claim, mandatory `[[wikilinks]]` for every person/project/concept referenced, sources preserved verbatim with URLs inline, and confidence levels where applicable. The vault is for future-Claude retrieval — not human reading.
+**Note rule:** Follows `references/ai-first-rules.md` (amnesia test) and `references/write-rules.md`. No `## For future Claude` preamble, no `ai-first:` flag — hybrid vault, P reads his own notes. No kanban boards (P uses the Tasks plugin + task-archiver). Existing human notes are left as-is unless P asks to upgrade one.
