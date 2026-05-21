@@ -120,8 +120,8 @@ Vaults initialized with `/obsidian-init` (v0.9+) use a split log structure inste
 - **`Logs/YYYY-MM-DD.md`** — one file per day, append-only. Format: `**HH:MM** — action | description`
 - **`log.md` at vault root** — pointer file only. Never write entries here; it explains the per-day structure and ships the entry template.
 
-To migrate an existing monolithic `log.md`: run `python scripts/migrate_log.py --vault <path>`.
-To refresh the stats block in `index.md` after bulk writes: run `python scripts/vault_stats.py --vault <path>`.
+To migrate an existing monolithic `log.md`: run `python3 scripts/migrate_log.py --vault <path>`.
+To refresh the stats block in `index.md` after bulk writes: run `python3 scripts/vault_stats.py --vault <path>`.
 
 When writing operation log entries, check whether the vault uses the old (`log.md`) or new (`Logs/YYYY-MM-DD.md`) structure and write to the correct location.
 
@@ -253,7 +253,7 @@ Completed items move to the `## ✅ Done` column with a strikethrough: `- [x] ~~
 
 ### Run vault health check
 ```bash
-python scripts/vault_health.py --path ~/path/to/vault
+python3 scripts/vault_health.py --path ~/path/to/vault
 ```
 Reports: duplicate notes, orphaned files (no incoming links), stale tasks (overdue), empty folders, broken links, notes missing frontmatter.
 
@@ -455,7 +455,7 @@ Steps:
 **Runs a vault health check and summarizes findings.**
 
 Steps:
-1. Run: `python scripts/vault_health.py --path ~/path/to/vault --json`
+1. Run: `python3 scripts/vault_health.py --path ~/path/to/vault --json`
 2. Parse the JSON output and split findings into categories
 3. Spawn parallel subagents to handle each category simultaneously:
    - **Links agent**: verify broken links, attempt to resolve them
@@ -754,7 +754,7 @@ Prompt to schedule:
 ```
 Read _CLAUDE.md.
 1. Weekly review note (Get Clear / Get Current / Get Creative): what got done, decisions made, people interacted with, what's still open, what to carry forward. Save as a review note (type: review) dated this week; link from the last daily note.
-2. Run: python scripts/vault_health.py --path /Users/cpreston/Vaults/storage_mbs --json
+2. Run: python3 scripts/vault_health.py --path /Users/cpreston/Vaults/storage_mbs --json
    Summarize by severity (critical / warning / info): duplicates, orphans, broken links, missing frontmatter, stale active projects, naming/_archive drift. Report only — fix nothing autonomously.
 Do not ask questions. Save and stop.
 ```

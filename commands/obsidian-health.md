@@ -7,7 +7,7 @@ triggers_en: ["vault health", "check vault", "audit vault", "vault diagnostics"]
 Use the mbs_automation skill. Execute `/obsidian-health`:
 
 1. Read `_CLAUDE.md`, `SOUL.md`, `CRITICAL_FACTS.md` at the vault root.
-2. Run: `python ~/.claude/skills/mbs_automation/scripts/vault_health.py --path /Users/cpreston/Vaults/storage_mbs --json`
+2. Run: `python3 ~/.claude/skills/mbs_automation/scripts/vault_health.py --path /Users/cpreston/Vaults/storage_mbs --json` (use `python3`, not `python`)
 3. Parse the JSON and split into categories. Spawn parallel subagents to verify each:
    - **Links agent**: confirm broken `[[wikilinks]]`; since links resolve by basename, a "broken" link usually means a renamed/missing target. Propose the fix (re-point or create stub).
    - **Duplicates agent**: confirm near-duplicate notes are truly the same thing (name variants for people/projects are the common case), not just similar titles.
