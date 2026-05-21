@@ -23,6 +23,6 @@ This is vision duty #2: catch the gap between what the vault knows you need to d
 
 ---
 
-**Anti-fabrication (hard rule):** only flag commitments that actually appear in the vault or calendar. Do not invent a deadline, an appointment, or a "should be scheduled" item that isn't grounded in a note. If timing is unclear, say so rather than asserting a date.
+**Anti-fabrication (hard rule):** only flag commitments that actually appear in the vault or calendar. Do not invent a deadline, an appointment, or a "should be scheduled" item that isn't grounded in a note. If timing is unclear, say so rather than asserting a date. **Before claiming "no vault note exists" for a calendar event, search thoroughly** (shell-grep by event name, attendees, and address across all pillars and nested folders) — an absence claim is a factual assertion and a false negative is a known trap (e.g. a house-expansion review whose project note lives at `money/tadano/project_tadano_68bhr/...`). Say "no note found" only after a real search.
 
 **Note rule:** Read-only with respect to the calendar (flag, never write events). Any vault note it writes follows `references/ai-first-rules.md` (amnesia test) and `references/write-rules.md`: no `## For future Claude` preamble, no `ai-first:` flag, hybrid vault. Never touch P's own sections of the daily note.
