@@ -9,7 +9,10 @@ Use the mbs_automation skill. Execute `/obsidian-daily`:
 This is P's daily safety net — the defense against stress/distraction making him lose the next step. The **Journals plugin already creates** today's daily note; this command **appends a bounded `## Vault Agent` section**, it does not create the note.
 
 1. Read `_CLAUDE.md`, `SOUL.md`, `CRITICAL_FACTS.md`.
-2. Target file: `daily_notes/tasks/tasks_YYYY-MM-DD.md` (today, US Eastern). If the Journals plugin hasn't created it yet, create it minimally, then append.
+2. Target file: `daily_notes/tasks/tasks_YYYY-MM-DD.md` (today, US Eastern).
+   - **Read the file first.** It already exists (the Journals plugin creates it on open, usually just frontmatter). Claude Code's Edit/Write refuse to modify an existing file that has not been read in this session — so always `Read` the note before appending, or the write fails with a generic error that looks like a permission block but is not.
+   - If the Journals plugin genuinely has not created it yet (Read returns not-found), create it minimally with the `journal: tasks` / `journal-date:` frontmatter, then append.
+   - Append the `## Vault Agent` section with an Edit that inserts after the frontmatter / existing content. Do not overwrite P's own content.
 3. Build the report. Append (or refresh) a single `## Vault Agent` section containing, in order, kept to a short and checkable list:
    - **Overdue + due-today tasks** — a Tasks-plugin/Dataview query across pillars (`not done`, due ≤ today). Most urgent first.
    - **Projects missing a next step** — active project notes with no `next_action`. For each, propose one concrete next step. (The headline duty.)

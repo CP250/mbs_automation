@@ -13,17 +13,14 @@ echo "Installing mbs_automation..."
 mkdir -p "$COMMANDS_DIR"
 mkdir -p "$SKILLS_DIR"
 
-# Link or copy commands to ~/.claude/commands/
+# Symlink commands into ~/.claude/commands/ so repo edits are live with no reinstall.
+# (Copying + skip-if-exists left stale command files behind and silently dropped edits.)
 echo "Installing slash commands..."
 for file in "$SKILL_DIR/commands/"*.md; do
   name=$(basename "$file")
   dest="$COMMANDS_DIR/$name"
-  if [ -f "$dest" ]; then
-    echo "  skipping $name (already exists)"
-  else
-    cp "$file" "$dest"
-    echo "  installed $name"
-  fi
+  ln -sf "$file" "$dest"
+  echo "  linked $name"
 done
 
 # Link skill into ~/.claude/skills/
