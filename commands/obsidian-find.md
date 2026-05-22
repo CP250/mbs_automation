@@ -10,6 +10,7 @@ The argument is the search query. This is the recall capability — the "recall 
 
 1. Read `_CLAUDE.md` at the vault root.
 2. Search the vault by filename and content for the query. If results are sparse, try variations (synonyms, related terms, working-title variants for projects, name variants for people).
+   **Be exhaustive, not illustrative.** Recall's whole job is completeness, and the main failure mode is under-reporting. When a topic maps to a folder (a project, an `_archive/`), **directory-list it and report every matching file** — never a representative sample. If you write "archived files: …", that list must be complete; confirm it by listing the folder, not from memory. Do not claim a note is absent without an exhaustive search.
 3. **Apply the search tiers** (per `references/vault-schema.md`):
    - **Never** search or surface `trash/` — it is opaque.
    - `_archive/` results are included but ranked **historical / low-priority**, and never presented as an active next step. Label them as archived.

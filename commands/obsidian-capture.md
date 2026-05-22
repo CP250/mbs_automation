@@ -19,7 +19,7 @@ The optional argument is the thought/idea text. If not provided, pull the most r
    tags: [capture]
    ---
    ```
-5. Write the thought plus any supporting context from the conversation, with verbatim source URLs if any. Wikilink any obvious person/project, but don't force structure — a capture can be rough.
+5. Write the thought plus any supporting context from the conversation, with verbatim source URLs if any. A capture can be rough. **Wikilink only targets that already exist as notes** (verify before linking) — do NOT link pillar-folder names like `[[sports]]`/`[[health]]` (folders aren't link targets) or invent `[[notes]]` that don't exist. A zero-friction capture must not seed broken links; for anything without a real note, use plain text. The daily triage will add proper links when it files the capture.
 6. Add a one-line mention in today's tasks daily note (`daily_notes/tasks/tasks_YYYY-MM-DD.md`) inside the bounded `## Vault Agent` section, so it's visible and the next triage picks it up. Never touch P's own sections.
 
 Do not route the capture into a pillar yourself unless P says where it goes — that's the triage step's job. Keep this command light.

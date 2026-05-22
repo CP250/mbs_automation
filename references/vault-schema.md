@@ -45,6 +45,9 @@ This vault is **hybrid**, not wiki-style: ~4,500 existing human-readable notes o
 - `_archive/` → searched, but ranked historical/low-priority; never surfaced as an active next-step.
 - Everything else → active, in scope.
 
+### Search completeness (a non-negotiable for every command)
+When recalling, auditing, or reconciling, **enumerate exhaustively — do not sample.** List *every* matching file (directory-list a matched folder; grep the full set), not a representative few. **Never assert a note, person, or file is absent without an exhaustive search** — false-absence (under-reporting, or "no note exists" when one does) is the most common observed failure mode, more common than fabrication. Verify presence/absence by listing and grepping, not from memory. When in doubt, over-include and label uncertainty.
+
 ## Frontmatter schemas
 
 New notes the agent writes carry frontmatter. Use **simple timestamps — no bi-temporal `timeline:` arrays** (out of scope per VISION). The `_archive/` history + `log.md` provide the audit trail.
