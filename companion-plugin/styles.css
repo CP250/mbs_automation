@@ -1,0 +1,6 @@
+.mbs-status {
+  cursor: pointer;
+}
+.mbs-status.mbs-pending {
+  opacity: 0.65;
+}
