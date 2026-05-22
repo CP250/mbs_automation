@@ -1,21 +1,24 @@
 ---
-description: Summarize a time period from the vault — today, week, or month
+description: Summarize a time period from the vault — today, week, or month. Read-only narrative
 category: vault
 triggers_en: ["recap today", "recap the week", "summarize the week", "month recap"]
 ---
 
 Use the mbs_automation skill. Execute `/obsidian-recap $ARGUMENTS`:
 
-The argument is the period: `today`, `week`, or `month`. Default to `week` if not specified.
+The argument is the period: `today`, `week`, or `month` (default `week`). This is a lighter, read-only cousin of `/obsidian-review` — a quick narrative catch-up, no note written.
 
-1. Read `_CLAUDE.md` first if it exists in the vault root
-2. Determine the date range from the argument
-3. List all daily notes in the range with `list_files_in_dir("Daily/")`
-4. Spawn parallel subagents — one per daily note — to read and extract key points from each simultaneously
-5. Also spawn parallel agents to read dev logs and completed kanban tasks from the same period
-6. Synthesize all agent results: what was worked on, decisions made, people interacted with, tasks completed, ideas captured
-7. Present as a clean narrative summary — not a raw dump of note content
+1. Read `_CLAUDE.md` at the vault root.
+2. Determine the date range.
+3. **Read the period's vault activity exhaustively** (per the search-completeness rule in `references/vault-schema.md` — enumerate every daily note in the range, don't sample):
+   - Both daily journals: `daily_notes/tasks/` and `daily_notes/health/`.
+   - Project notes touched in the range (status changes, new `next_action`s, Key Decisions).
+   - Tasks completed (`✅ <date>` lines; task-archiver moves), captures added, logs written.
+4. Synthesize a clean narrative summary: what was worked on, decisions made, people seen, tasks completed, ideas captured. Prose, not a raw dump.
+5. Read-only by default — don't write a note unless P asks (if asked, save to `admin/reviews/` like `/obsidian-review`). A one-line mention in today's tasks daily note is fine if P wants it tracked.
 
 ---
 
-**AI-first rule:** Every note created or updated by this command MUST follow `references/ai-first-rules.md` — `## For future Claude` preamble, rich frontmatter (`type`, `date`, `tags`, `ai-first: true`, plus type-specific fields), recency markers per external claim, mandatory `[[wikilinks]]` for every person/project/concept referenced, sources preserved verbatim with URLs inline, and confidence levels where applicable. The vault is for future-Claude retrieval — not human reading.
+**Anti-fabrication (hard rule):** summarize only what the notes actually show; cite real notes; an honest "quiet week" is correct when that's the truth. Don't pad the recap with invented activity.
+
+**Note rule:** Read-only. Any note it writes follows `references/ai-first-rules.md` (amnesia test) and `references/write-rules.md`: no `## For future Claude` preamble, no `ai-first:` flag, no kanban — hybrid vault.

@@ -1,47 +1,25 @@
 ---
-description: Automatic synthesis — scans the vault for unnamed patterns and writes synthesis pages without being asked
+description: Scan the whole vault for unnamed cross-domain patterns and propose synthesis notes — suggest-only, never auto-files
 category: thinking
-triggers_en: ["synthesize", "auto-synthesis", "make synthesis notes", "find unnamed patterns"]
+triggers_en: ["synthesize", "find unnamed patterns", "make synthesis notes", "cross-vault patterns"]
 ---
 
 Use the mbs_automation skill. Execute `/obsidian-synthesize`:
 
-This command can run manually or as a scheduled agent. It thinks for you.
+The whole-vault cousin of `/obsidian-emerge` (which looks at a recent window). This scans broadly for patterns that span domains and time, and **proposes** synthesis — it does not autonomously write synthesis pages (the old "writes synthesis pages without being asked / on its own schedule" behavior is removed; it violates propose-don't-dispose).
 
-1. Read `_CLAUDE.md` first if it exists in the vault root
-2. Read `index.md` to understand all existing pages
-3. Read `log.md` (last 20 entries) to see recent vault activity
-
-4. Scan for synthesis opportunities — spawn parallel subagents:
-
-   - **Cross-source agent**: read all sources ingested in the last 7 days (`raw/`). Find concepts that appear in 2+ unrelated sources. If the same idea shows up in a podcast transcript AND an article AND a daily note — that's a synthesis candidate.
-   
-   - **Entity convergence agent**: scan `wiki/entities/` for people who appear together in multiple contexts but have no explicit connection page. If Person A and Person B keep showing up in the same projects/decisions — write a connection note.
-   
-   - **Concept evolution agent**: scan `wiki/concepts/` for ideas that have been updated 3+ times. Track how the concept evolved — write a "Concept Evolution" section showing the timeline of how the user's thinking changed.
-   
-   - **Orphan rescue agent**: find notes in `wiki/` with no incoming links that contain claims or ideas that SHOULD be linked to existing pages. Create the missing links and explain why.
-
-5. For each synthesis found:
-   - Create `wiki/concepts/Synthesis — Title.md` with:
-     ```yaml
-     ---
-     date: YYYY-MM-DD
-     tags:
-       - concept
-       - synthesis
-     auto_generated: true
-     ---
-     ```
-   - Document: what pattern was found, which sources/notes it came from (with links), what it means, and a suggested action
-   - Link the synthesis page FROM all the source notes it references
-
-6. Update `index.md` with new synthesis pages
-7. Append to `log.md`: `## [YYYY-MM-DD] synthesize | X synthesis pages created, Y orphans rescued, Z connections found`
-8. If a daily note exists for today, add a Synthesis section with a brief summary
-
-The vault should generate its own insights. Not just when asked — on its own schedule.
+1. Read `_CLAUDE.md`, `SOUL.md`, `index.md`, and the last ~20 lines of `log.md`.
+2. Scan for synthesis opportunities (shell-grep + reads; parallel read subagents for breadth). Exclude `trash/`; `_archive/` is historical context. Look for:
+   - **Cross-domain recurrence** — the same idea/tension appearing in unrelated pillars (e.g. a "breadth vs. conviction" theme in both sports and money).
+   - **Entity convergence** — people/projects that co-occur across contexts but aren't linked.
+   - **Concept evolution** — how P's thinking on something has shifted over time (cite the dated notes that show the shift).
+   - **Functional orphans** — substantive notes with no inbound links that clearly belong to an existing project/theme.
+3. Present a **Synthesis Report**: each pattern with its evidence (cited real notes/dates), the interpretation, and a proposed action or proposed link.
+4. **Suggest, don't file.** Only write a synthesis note (to `captured/` for triage, or a named project note) **when P approves**. Never auto-create `auto_generated` pages, never auto-link across human notes without approval.
+5. If P approves writing, the synthesis note follows the amnesia test and links back to its source notes. Append to `log.md`; mention in today's tasks daily note.
 
 ---
 
-**AI-first rule:** Every note created or updated by this command MUST follow `references/ai-first-rules.md` — `## For future Claude` preamble, rich frontmatter (`type`, `date`, `tags`, `ai-first: true`, plus type-specific fields), recency markers per external claim, mandatory `[[wikilinks]]` for every person/project/concept referenced, sources preserved verbatim with URLs inline, and confidence levels where applicable. The vault is for future-Claude retrieval — not human reading.
+**Anti-fabrication (hard rule):** every pattern must rest on specific, real, cited notes. Do not manufacture a theme, invent a quote, or inflate a couple of mentions into "a pattern." Per the search-completeness rule, scan broadly rather than sampling — but if the evidence is thin, say so instead of forcing a synthesis.
+
+**Note rule:** Follows `references/ai-first-rules.md` (amnesia test) and `references/write-rules.md`. No `## For future Claude` preamble, no `ai-first:`/`auto_generated:` flag, no `wiki/` structure, no autonomous writing — hybrid vault, suggest-don't-dispose. Never touch P's own sections of the daily note.

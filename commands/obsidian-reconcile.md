@@ -1,44 +1,28 @@
 ---
-description: Find and resolve contradictions in the vault — the vault maintains its own truth
+description: Find contradictions in the vault and propose fixes — flag-and-propose only, never auto-resolves or rewrites
 category: thinking
 triggers_en: ["find contradictions", "reconcile vault", "fix conflicts", "vault contradictions"]
 ---
 
 Use the mbs_automation skill. Execute `/obsidian-reconcile $ARGUMENTS`:
 
-The optional argument is a topic or entity to focus on. If not provided, scan the whole vault.
+The optional argument is a topic/entity to focus on; otherwise scan broadly. This finds notes that disagree with each other. **It never auto-resolves or rewrites** (the old "rewrite the outdated page" behavior is removed — it violates the propose-don't-dispose and never-auto-rewrite boundaries). It surfaces conflicts and proposes fixes; P decides.
 
-1. Read `_CLAUDE.md` first if it exists in the vault root
-2. Read `index.md` to understand the full vault landscape
-
-3. Spawn parallel subagents to find contradictions:
-   - **Claims agent**: scan `wiki/concepts/` and `wiki/projects/` for factual claims — find pairs that contradict each other
-   - **Entity agent**: scan `wiki/entities/` for outdated roles, companies, or descriptions that conflict with newer sources
-   - **Decisions agent**: scan `wiki/decisions/` and project Key Decisions for reversed or superseded decisions that were never updated
-   - **Source freshness agent**: compare `raw/` source dates against `wiki/` page dates — flag wiki pages that reference old sources when newer ones exist on the same topic
-
-4. For each contradiction found, evaluate:
-   - **Which source is newer?** (date comparison)
-   - **Which source is more authoritative?** (peer-reviewed > blog post > transcript > opinion)
-   - **Is this a genuine contradiction or an evolution?** (someone changing their mind is not a contradiction — it's growth)
-
-5. Resolve each contradiction:
-   - **Clear winner**: rewrite the outdated page with current info. Add a `## History` section noting what changed and why: "Previously stated X (source: raw/articles/old-article.md, 2025-11-01). Updated to Y based on newer evidence (source: raw/articles/new-article.md, 2026-03-15)."
-   - **Genuinely ambiguous**: create `wiki/decisions/Conflict — Topic.md` documenting both sides, the evidence for each, and mark as `status: open` for the user to decide
-   - **Evolution**: update the entity/concept page to reflect the current state and add the historical context
-
-6. After all resolutions:
-   - Rebuild affected sections of `index.md`
-   - Append to `log.md`: `## [YYYY-MM-DD] reconcile | X contradictions found, Y auto-resolved, Z flagged for user`
-   - Update today's daily note with a reconciliation summary
-
-7. Report back:
-   - **Auto-resolved** (list with old claim → new claim and why)
-   - **Flagged for user** (genuinely ambiguous — needs human judgment)
-   - **Stale pages updated** (pages rewritten with fresher sources)
-
-The vault should never contain two pages that disagree without knowing they disagree. Contradictions are either resolved or explicitly documented as open questions.
+1. Read `_CLAUDE.md`, `CRITICAL_FACTS.md` at the vault root.
+2. Find contradictions (shell-grep + reads; parallel read subagents for breadth). Exclude `trash/`. Look for:
+   - Conflicting factual claims across notes (dates, numbers, names, statuses).
+   - Outdated entity info (a role/company/relationship that a newer note contradicts).
+   - Reversed or superseded decisions never updated in the project note.
+   - Foundation drift: anything contradicting `CRITICAL_FACTS.md` / `SOUL.md` (these are the source of truth — flag the stale copy).
+3. For each, judge: which is newer? Is it a genuine contradiction or just an **evolution** (P changed his mind — that's growth, not a conflict)? Cite the specific notes and dates on each side.
+4. **Present a reconciliation report** — never act on it autonomously:
+   - **Clear stale fact** → propose the exact fix (e.g. "update `[[note_x]]` line N from A to B"), and apply it **only after P approves**.
+   - **Genuinely ambiguous** → list both sides with evidence; P decides.
+   - **Evolution** → note the current state vs. the historical one; propose recording the change, don't erase the history.
+5. On approval only: apply the agreed fixes, append to `log.md`, note in today's tasks daily note. Nothing is rewritten without a yes.
 
 ---
 
-**AI-first rule:** Every note created or updated by this command MUST follow `references/ai-first-rules.md` — `## For future Claude` preamble, rich frontmatter (`type`, `date`, `tags`, `ai-first: true`, plus type-specific fields), recency markers per external claim, mandatory `[[wikilinks]]` for every person/project/concept referenced, sources preserved verbatim with URLs inline, and confidence levels where applicable. The vault is for future-Claude retrieval — not human reading.
+**Anti-fabrication (hard rule):** only flag real contradictions backed by cited notes — do not invent a conflict or misread an evolution as a contradiction. Per search-completeness, scan thoroughly before declaring the vault consistent (or inconsistent). Distinguish what the notes actually say from your inference, and label which is which.
+
+**Note rule:** Follows `references/ai-first-rules.md` (amnesia test) and `references/write-rules.md`. No `## For future Claude` preamble, no `ai-first:` flag, no `wiki/`/bi-temporal structure, no autonomous rewrites — hybrid vault, suggest-don't-dispose. Never touch P's own sections of the daily note.

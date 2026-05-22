@@ -1,19 +1,29 @@
 ---
-description: Log this work or dev session to the vault — infers project from context
+description: Log this work or session to the vault — routed to the relevant pillar/project, linked from today's note
 category: vault
 triggers_en: ["log this work", "log this session", "log this dev session", "obsidian log"]
 ---
 
 Use the mbs_automation skill. Execute `/obsidian-log`:
 
-1. Read `_CLAUDE.md` first if it exists in the vault root
-2. Infer the project from conversation context — search the vault if needed to find the right project note
-3. Read `Templates/Dev Log.md` (or `Templates/Work Log.md` if it exists)
-4. Fill in: date, project, what was worked on, problems encountered, decisions made, next steps — all inferred from the conversation
-5. Save to `Dev Logs/YYYY-MM-DD — Project Name.md`
-6. Inject a link into the project note's Recent Activity section
-7. Inject a link into today's daily note Work section
+Capture what a work or thinking session produced so it isn't lost when the session closes.
+
+1. Read `_CLAUDE.md` at the vault root.
+2. Infer the project/pillar from the conversation (shell-grep to find the right project note). If genuinely ambiguous, ask.
+3. Build the log from the conversation: what was worked on, problems hit, decisions made, next steps. Capture only what actually happened — do not invent progress (see anti-fabrication).
+4. Save as a log note in the relevant location: a project folder (`<pillar>/project_<name>/log_YYYY-MM-DD_<slug>.md`) or the pillar (e.g. `money/<employer>/log_YYYY-MM-DD_<slug>.md`). Frontmatter:
+   ```yaml
+   ---
+   type: log
+   date: <YYYY-MM-DD>
+   tags: [log, <pillar>]
+   project: "[[<project>]]"
+   ---
+   ```
+5. **Propagate** (per `references/write-rules.md`): add a dated line to the project note's Recent Activity section; mention it in today's tasks daily note (`## Vault Agent` section); if the session produced a concrete next step, set/refresh the project's `next_action` and add a `- [ ] … #<pillar>` task. Append to `log.md`.
 
 ---
 
-**AI-first rule:** Every note created or updated by this command MUST follow `references/ai-first-rules.md` — `## For future Claude` preamble, rich frontmatter (`type`, `date`, `tags`, `ai-first: true`, plus type-specific fields), recency markers per external claim, mandatory `[[wikilinks]]` for every person/project/concept referenced, sources preserved verbatim with URLs inline, and confidence levels where applicable. The vault is for future-Claude retrieval — not human reading.
+**Anti-fabrication (hard rule):** log only what the session actually produced. Don't inflate outcomes, invent decisions, or attribute work that wasn't done.
+
+**Note rule:** Follows `references/ai-first-rules.md` (amnesia test) and `references/write-rules.md`. No `## For future Claude` preamble, no `ai-first:` flag, no kanban, no `Dev Logs/` folder — hybrid vault, Tasks plugin. Never touch P's own sections of the daily note.
