@@ -19,6 +19,6 @@ The argument is the period: `today`, `week`, or `month` (default `week`). This i
 
 ---
 
-**Anti-fabrication (hard rule):** summarize only what the notes actually show; cite real notes; an honest "quiet week" is correct when that's the truth. Don't pad the recap with invented activity.
+**Anti-fabrication (hard rule):** summarize only what the notes actually show; cite real notes; an honest "quiet week" is correct when that's the truth. Don't pad the recap with invented activity. **Preserve each item's real status** — report a proposed/open/flagged item as proposed/open/flagged, never as done, recovered, or resolved unless a note actually confirms it happened. "Proposed" is not "done."
 
 **Note rule:** Read-only. Any note it writes follows `references/ai-first-rules.md` (amnesia test) and `references/write-rules.md`: no `## For future Claude` preamble, no `ai-first:` flag, no kanban — hybrid vault.

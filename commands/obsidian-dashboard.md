@@ -34,7 +34,7 @@ The argument is a pillar name (`admin`, `create`, `culture`, `health`, `money`, 
      ```tasks
      not done
      path includes <pillar>
-     (due before tomorrow) OR (is overdue)
+     due before tomorrow
      sort by due
      ```
    - **Stale active projects** (no edit in 14+ days)
