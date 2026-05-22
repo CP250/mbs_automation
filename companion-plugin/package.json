@@ -1,0 +1,24 @@
+{
+  "name": "mbs-companion",
+  "version": "0.2.0",
+  "description": "Status and quick actions for the mbs_automation second-brain agents inside Obsidian.",
+  "main": "main.js",
+  "scripts": {
+    "dev": "node esbuild.config.mjs",
+    "build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production"
+  },
+  "keywords": [
+    "obsidian",
+    "plugin",
+    "mbs_automation"
+  ],
+  "author": "Chris Preston",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "builtin-modules": "^3.3.0",
+    "esbuild": "^0.20.0",
+    "obsidian": "^1.4.0",
+    "typescript": "^5.3.0"
+  }
+}

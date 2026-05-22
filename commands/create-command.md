@@ -10,6 +10,8 @@ This command runs a short interview, then writes a new `commands/<name>.md` file
 
 **Hard rule:** You MUST use the AskUserQuestion tool for every question in this flow. ONE question per call. Wait for the answer before the next question. Do not batch.
 
+Before scaffolding, read `references/ai-first-rules.md` (the amnesia-test note spec), `references/vault-schema.md` (the pillar map), and `references/write-rules.md` (suggest-don't-dispose, Tasks plugin not kanban) so the generated command lands consistent with the rest of the skill. Also read 1-2 existing commands (e.g. `commands/obsidian-project.md`, `commands/obsidian-log.md`) to match their shape.
+
 The optional argument is a free-text seed describing what the command should do (e.g., `summarize my notion pages and save to vault`). If given, use it to pre-fill suggestions in the interview. If empty, the first question opens with "what problem do you want to solve?".
 
 ---
@@ -46,7 +48,7 @@ After the user picks, validate:
 Ask via AskUserQuestion (single-select, 4 options):
 
 > "Which category does this command belong to?"
-> - `vault` — daily writing, capture, find (note creation, retrieval, kanban)
+> - `vault` — daily writing, capture, find (note creation, retrieval, tasks via the Tasks plugin)
 > - `thinking` — synthesis, decisions, learning, reviews
 > - `research` — bring external sources into the vault
 > - `meta` — vault setup, health, structure, tooling
@@ -74,15 +76,15 @@ Use the answer as the spine of the command body.
 
 ---
 
-## Phase 6 — Vault writes? (AI-first compliance gate)
+## Phase 6 — Vault writes? (amnesia-test compliance gate)
 
 Ask via AskUserQuestion (single-select):
 
-> "Does this command write notes to the user's Obsidian vault?"
-> - `yes` — output must apply the AI-first rule (frontmatter, preamble, wikilinks)
+> "Does this command write notes to P's Obsidian vault?"
+> - `yes` — output must pass the amnesia test (frontmatter, `next_action` on active projects, mandatory wikilinks, recency markers, verbatim sources) and route to the right pillar
 > - `no` — read-only, informational, or external-write only
 
-If `yes`: the generated command body MUST end with the AI-first rule footer (see Phase 8).
+If `yes`: the generated command body MUST include an **anti-fabrication** rule and end with the **Note rule** footer (see Phase 8). If the command writes to projects, the body must enforce `next_action` on active projects. If it could change existing notes, it must follow suggest-don't-dispose (propose edits, never auto-rewrite or auto-archive existing human notes).
 
 ---
 
@@ -114,9 +116,9 @@ triggers_en: ["<trigger 1>", "<trigger 2>", "<trigger 3>"]
 
 Use the mbs_automation skill. Execute `/<name> $ARGUMENTS`:
 
-<one-sentence framing tying the user's intent (Phase 1) to the action>
+<one-sentence framing tying P's intent (Phase 1) to the action>
 
-1. Read `_CLAUDE.md` first if it exists in the vault root
+1. Read `_CLAUDE.md` at the vault root (and `references/vault-schema.md` if it routes by pillar).
 2. <step from Phase 5, step 1>
 3. <step from Phase 5, step 2>
 4. <step from Phase 5, step 3>
@@ -127,8 +129,10 @@ Use the mbs_automation skill. Execute `/<name> $ARGUMENTS`:
 
 ---
 
-<AI-first footer ONLY if Phase 6 = yes>
-**AI-first rule:** Every note created or updated by this command MUST follow `references/ai-first-rules.md` — `## For future Claude` preamble, rich frontmatter (`type`, `date`, `tags`, `ai-first: true`, plus type-specific fields), recency markers per external claim, mandatory `[[wikilinks]]` for every person/project/concept referenced, sources preserved verbatim with URLs inline, and confidence levels where applicable. The vault is for future-Claude retrieval — not human reading.
+<anti-fabrication + Note rule footer ONLY if Phase 6 = yes>
+**Anti-fabrication (hard rule):** <one-line, tailored to this command — write/assert only what the conversation, source, or vault supports; never invent people, dates, hand-offs, or status claims; mark unknowns as `TBD`; per the search-completeness rule in `references/vault-schema.md`, never assert a note is absent without an exhaustive search>.
+
+**Note rule:** Follows `references/ai-first-rules.md` (amnesia test) and `references/write-rules.md`. No `## For future Claude` preamble, no `ai-first:` flag — hybrid vault, P reads his own notes. No kanban boards (Tasks plugin + task-archiver). Existing human notes are left as-is unless P asks; the agent suggests archiving but never moves anything to `_archive/` itself. Never touch P's own sections of the daily note.
 ```
 
 Write the file to `commands/<name>.md` using the Write tool.
@@ -143,12 +147,14 @@ Show the user the absolute path of the file you just wrote. Then surface the thr
 2. **Install** — for Claude Code users who symlink, the new command appears automatically on next session. For other platforms, copy `dist/<platform>/` into the vault.
 3. **Iterate** — open the file, refine steps, commit. Or rerun `/create-command` to add a sibling command.
 
-If the new command writes to the vault and the user has the validate-ai-first hook installed, remind them that the validator will warn on missing preamble/frontmatter — that's expected; just follow the AI-first rule in the command's own logic.
+If the new command writes to the vault, remind P that new notes must pass the amnesia test (frontmatter, `next_action` on active projects, mandatory wikilinks) and route to the correct pillar — the command's own logic carries that, per the Note rule footer.
 
 ---
 
-**Why this matters:** Most "no-code" frameworks fail because they make the user fill out a form. This command treats the conversation itself as the form. Six questions, one file, zero markdown editing. Lowers the contribution bar so anyone can extend the skill — and every command added through this flow lands AI-first-compliant by construction.
+**Why this matters:** Most "no-code" frameworks fail because they make the user fill out a form. This command treats the conversation itself as the form. A handful of questions, one file, zero markdown editing. Lowers the contribution bar so the skill can grow — and every command added through this flow lands amnesia-test-compliant and consistent with the pillar/Tasks/suggest-don't-dispose conventions by construction.
 
 ---
 
-**Note for future-Claude:** This is a command that creates commands. Do not run it recursively on itself. Do not rewrite this file when invoked — write a NEW `commands/<name>.md` based on the interview.
+**Anti-fabrication (hard rule):** scaffold only what the interview answers support. Do not invent steps, triggers, or behavior P did not describe; if an answer is vague, ask a follow-up rather than filling the gap with assumptions.
+
+**Note rule:** This is a command that creates commands. Do not run it recursively on itself. Do not rewrite this file when invoked — write a NEW `commands/<name>.md` based on the interview. The file it writes follows `references/ai-first-rules.md` (amnesia test) and `references/write-rules.md`; no `## For future Claude` preamble, no `ai-first:` flag, no kanban.

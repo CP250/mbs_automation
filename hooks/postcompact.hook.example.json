@@ -1,0 +1,40 @@
+// postcompact.hook.example.json — paste-in template for ~/.claude/settings.json
+//
+// OPT-IN / DISABLED BY DEFAULT. This hook is NOT wired by install.sh or setup.sh.
+// It does nothing until P does ALL of the following deliberately. See the trust
+// caveat at the top of hooks/obsidian-bg-agent.sh before enabling.
+//
+// 1. Make the script executable (one-time):
+//      chmod +x ~/.claude/skills/mbs_automation/hooks/obsidian-bg-agent.sh
+//
+// 2. Add BOTH env vars to the "env" section of ~/.claude/settings.json. The
+//    enable flag is a second, deliberate guard — without it the hook no-ops even
+//    if registered:
+//      "env": {
+//        "OBSIDIAN_VAULT_PATH": "/Users/cpreston/Vaults/storage_mbs",
+//        "OBSIDIAN_BG_AGENT_ENABLED": "1"
+//      }
+//
+// 3. Merge the "hooks" block below into ~/.claude/settings.json (real JSON — strip
+//    these comments). Use the absolute path to the installed script.
+//
+// To DISABLE again: set OBSIDIAN_BG_AGENT_ENABLED to "0" (or remove it), or delete
+// the PostCompact block. The hard gate in the script means clearing the flag is
+// enough to make it inert.
+{
+  "hooks": {
+    "PostCompact": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/cpreston/.claude/skills/mbs_automation/hooks/obsidian-bg-agent.sh",
+            "timeout": 10,
+            "async": true
+          }
+        ]
+      }
+    ]
+  }
+}

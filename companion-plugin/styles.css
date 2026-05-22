@@ -4,3 +4,37 @@
 .mbs-status.mbs-pending {
   opacity: 0.65;
 }
+
+/* Status panel modal (v0.2.0) */
+.mbs-status-panel .mbs-section {
+  margin-bottom: 1em;
+}
+.mbs-status-panel h3 {
+  margin-bottom: 0.3em;
+  font-size: var(--font-ui-small);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+.mbs-status-panel .mbs-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 1em;
+  padding: 2px 0;
+}
+.mbs-status-panel .mbs-label {
+  color: var(--text-muted);
+}
+.mbs-status-panel .mbs-value {
+  text-align: right;
+}
+.mbs-status-panel .mbs-subrow {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-faint);
+  padding-left: 1em;
+}
+.mbs-status-panel .mbs-link {
+  display: block;
+  padding: 2px 0;
+  cursor: pointer;
+}

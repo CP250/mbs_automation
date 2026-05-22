@@ -450,6 +450,12 @@ Steps:
 
 ---
 
+### `/obsidian-dashboard [pillar | all]`
+
+**Generates or refreshes a per-pillar dashboard note** at `<pillar>/dashboard_<pillar>.md`. The body is Dataview/Tasks query blocks only (no kanban, no hand-maintained lists), so it renders live and never goes stale: active projects + their `next_action`, active projects MISSING a next action (the core missing-next-step duty), due/overdue tasks, and stale active projects (no edit in 14+ days). The social dashboard also lists people not interacted with recently. Query patterns are defined in `references/vault-schema.md`. Additive only — refreshes the query blocks in place if the note exists; never archives or rewrites human notes.
+
+---
+
 ### `/obsidian-health`
 
 **Runs a vault health check and summarizes findings.**

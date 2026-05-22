@@ -16,7 +16,7 @@ The argument is a URL, file path, or pasted text. If none, ask what to ingest. T
    - **Transcript** — extract speakers, decisions, action items, quotes.
    (Heavy research tooling — yt-dlp, Whisper, API pulls — is out of scope for v1; if a source needs it, ask P to paste the text/transcript.)
 3. Extract: key claims, people, companies, tools, concepts, action items, notable quotes.
-4. **Create one reference note** in the right pillar (or `captured/` if the destination is unclear — let triage route it): `<pillar>/ref_<slug>.md`. Frontmatter:
+4. **Search before writing** (per `references/write-rules.md` § Search before write, exhaustively per the search-completeness rule): look for an existing reference note on this source (filename + content). If one exists, update it rather than creating a duplicate. Otherwise **create one reference note** in the right pillar (or `captured/` if the destination is unclear — let triage route it): `<pillar>/ref_<slug>.md`. Frontmatter:
    ```yaml
    ---
    type: reference

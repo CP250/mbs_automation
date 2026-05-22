@@ -1,44 +1,38 @@
 ---
-description: Generate a decision record when the vault structure changes — the vault knows why it knows what it does
+description: Record a decision about the vault's own structure or conventions — so the vault knows why it is shaped the way it is
 category: thinking
 triggers_en: ["log this decision", "ADR", "record decision", "decision record"]
 ---
 
 Use the mbs_automation skill. Execute `/obsidian-adr $ARGUMENTS`:
 
-The optional argument is the decision topic. If not provided, infer from recent conversation context.
+The optional argument is the decision topic; if absent, infer it from recent conversation. This records a **structural** decision — a choice about the vault itself (a new convention, a folder reorganization, a renaming rule, a pillar boundary, a schema change), not a decision inside a life project. For project-level decisions use `/obsidian-decide` instead.
 
-1. Read `_CLAUDE.md` first if it exists in the vault root
-2. Identify the structural decision:
-   - From the argument, or from recent conversation (e.g., a project was graduated, a folder was reorganized, a new convention was adopted, a concept was promoted to hub status)
-3. Create a decision record at `Knowledge/ADR-YYYY-MM-DD — Title.md`:
-
+1. Read `_CLAUDE.md` at the vault root (and `references/vault-schema.md` for the pillar map).
+2. Identify the structural decision — from the argument or from recent conversation (e.g. a convention was adopted, a folder was reorganized, a naming rule changed, a pillar boundary was clarified). Confirm in one sentence what you understood before writing.
+3. **Search before writing** (per `references/write-rules.md`, exhaustively per the search-completeness rule in `references/vault-schema.md`): check `admin/obsidian_optimize/` and the vault root for an existing record on this same decision so you update rather than duplicate.
+4. Write the decision record to `admin/obsidian_optimize/adr_YYYY-MM-DD_<snake_case_title>.md` (this is vault-meta, which lives under `admin/`). Frontmatter:
    ```yaml
    ---
-   date: YYYY-MM-DD
-   tags:
-     - decision-record
-   status: accepted
+   type: decision
+   date: <YYYY-MM-DD>
+   tags: [decision, admin]
+   scope: vault-structure
+   status: accepted        # accepted | superseded | proposed
    ---
    ```
-
-   Structure:
-   - **Decision**: one-line summary of what was decided
-   - **Context**: what prompted this decision — the problem or trigger
-   - **Options Considered**: 2-3 alternatives that were evaluated
-   - **Rationale**: why this option was chosen over the others
-   - **Consequences**: what changes as a result — what notes were created, moved, or restructured
-   - **Related**: links to affected project notes, people, or ideas
-
-4. Update the relevant project note's Key Decisions section with a link to the ADR
-5. Update `index.md` with the new ADR
-6. Append to `log.md`: `## [YYYY-MM-DD] adr | Title — decision recorded`
-7. Link from today's daily note
-
-Decision records prevent the vault from becoming a black box. When the user (or a future Claude session) asks "why is the vault structured this way?" — the ADR has the answer.
-
-This command can also be triggered automatically by other commands: when `/obsidian-graduate` promotes an idea, when `/obsidian-health` recommends a structural fix, or when the user reorganizes folders. In those cases, offer to create an ADR — don't force it.
+   Body — amnesia-test self-sufficient (a future reader with zero context should understand it):
+   - **Decision** — one line: what was decided.
+   - **Context** — the problem or trigger that prompted it.
+   - **Options considered** — the 2-3 alternatives weighed.
+   - **Rationale** — why this option over the others.
+   - **Consequences** — what changes as a result: which conventions, folders, or notes are affected. List affected notes as `[[wikilinks]]`.
+   - **Related** — links to affected notes, prior ADRs it supersedes, or `references/` specs.
+5. **Propagate** (per `references/write-rules.md`): if the decision changes a documented convention, flag the `references/` spec or `_CLAUDE.md` line that should be updated and propose the exact edit — do not silently rewrite the operating manual. Append a timestamped line to `log.md`; update `index.md` for the new note; note it in today's tasks daily note (`## Vault Agent` section).
+6. This command can also be offered by other commands when a structural change happens (a folder reorg, a convention adopted during `/obsidian-reconcile`, a schema change). In those cases offer to create an ADR — never force it.
 
 ---
 
-**AI-first rule:** Every note created or updated by this command MUST follow `references/ai-first-rules.md` — `## For future Claude` preamble, rich frontmatter (`type`, `date`, `tags`, `ai-first: true`, plus type-specific fields), recency markers per external claim, mandatory `[[wikilinks]]` for every person/project/concept referenced, sources preserved verbatim with URLs inline, and confidence levels where applicable. The vault is for future-Claude retrieval — not human reading.
+**Anti-fabrication (hard rule):** record only a decision that was genuinely made. Do not invent options that were never weighed, a rationale P did not give, or consequences that did not occur. If it is unclear whether something was actually decided (vs. discussed), ask before recording it. Per search-completeness, confirm no prior record exists before claiming this is a new decision.
+
+**Note rule:** Follows `references/ai-first-rules.md` (amnesia test) and `references/write-rules.md`. No `## For future Claude` preamble, no `ai-first:` flag — hybrid vault, P reads his own notes. No kanban boards, no `Knowledge/`/`wiki/` folders (vault-meta lives in `admin/`). Never silently rewrite `_CLAUDE.md` or a `references/` spec — propose the change. Never touch P's own sections of the daily note.

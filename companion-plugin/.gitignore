@@ -1,0 +1,9 @@
+# Build toolchain — installed locally with `npm install`, never committed.
+node_modules/
+
+# Editor / OS noise
+.DS_Store
+
+# Note: main.js IS committed. It is the build OUTPUT that Obsidian loads, and
+# BRAT pulls it straight from the repo (manifest.json + main.js + versions.json).
+# Regenerate it with `npm run build`; do not edit it by hand.
