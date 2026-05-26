@@ -1,0 +1,5 @@
+# Build toolchain — never committed.
+node_modules/
+.DS_Store
+
+# main.js IS committed (build output Obsidian + BRAT load). Regenerate with `npm run build`.

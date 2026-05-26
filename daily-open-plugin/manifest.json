@@ -1,0 +1,10 @@
+{
+  "id": "daily-auto-open",
+  "name": "Daily Auto-Open",
+  "version": "0.1.2",
+  "minAppVersion": "1.4.0",
+  "description": "Open today's daily notes (e.g. health + tasks) automatically when Obsidian launches, on desktop and mobile, with optional pinning and stale-tab rotation.",
+  "author": "Chris Preston",
+  "authorUrl": "https://github.com/CP250/obsidian-daily-auto-open",
+  "isDesktopOnly": false
+}
