@@ -22,7 +22,7 @@ Common acceptance criteria for every command (the "Note rule" contract):
 3. If a decision changed direction, the project's `next_action` frontmatter was refreshed.
 4. A standalone decision (not tied to one project) is written as a `type: decision` note with a `project:` wikilink.
 5. A multi-project decision is logged in each affected project.
-6. Propagation: a `## Vault Agent` mention in today's tasks daily note, a Tasks-plugin line if a next step is implied, and a `log.md` line.
+6. Propagation: a `## Vault Agent` mention in today's tasks daily note, a Tasks-plugin line if a next step is implied, and a `admin/mbs_system/design/log.md` line.
 7. **Search-completeness (changed in QA):** with the project note present, confirm it is found; the command should not silently create a new note because it failed to locate the existing one. Test the negative path by referencing a project whose note exists under a slightly different name and confirm it greps the candidate pillars before concluding "not found."
 
 ---
@@ -36,7 +36,7 @@ Common acceptance criteria for every command (the "Note rule" contract):
 2. **Search-completeness (changed in QA):** the command greps candidate pillars exhaustively before concluding no matching project note exists — it should not create an orphan log because it under-searched.
 3. The log note is saved to a project folder (`<pillar>/project_<name>/log_YYYY-MM-DD_<slug>.md`) or pillar location with `type: log` frontmatter and a `project:` wikilink.
 4. Body captures only what the session actually produced (anti-fabrication — no inflated outcomes).
-5. Propagation: dated line in the project's Recent Activity, `## Vault Agent` mention in today's daily note, refreshed `next_action` + a Tasks line if a concrete next step emerged, and a `log.md` line.
+5. Propagation: dated line in the project's Recent Activity, `## Vault Agent` mention in today's daily note, refreshed `next_action` + a Tasks line if a concrete next step emerged, and a `admin/mbs_system/design/log.md` line.
 
 ---
 
@@ -62,7 +62,7 @@ Common acceptance criteria for every command (the "Note rule" contract):
 2. One `ref_<slug>.md` reference note is created in the right pillar (or `captured/` when the destination is unclear) with `type: reference` frontmatter and the verbatim `source:` URL.
 3. Body is a self-contained summary with the source URL inline, recency markers on external claims, and `[[wikilinks]]` only to notes that actually exist (no manufactured links).
 4. **Propose, don't rewrite:** if the source contradicts/updates an existing note, the command lists proposed updates for P to approve and does NOT edit that note.
-5. Propagation: `## Vault Agent` mention in today's daily note, `log.md` line, `index.md` updated for the new note.
+5. Propagation: `## Vault Agent` mention in today's daily note, `admin/mbs_system/design/log.md` line, `index.md` updated for the new note.
 6. Heavy tooling (yt-dlp/Whisper/API pulls) is declined with a request to paste text, per the v1 scope note.
 
 ---
@@ -77,7 +77,7 @@ Common acceptance criteria for every command (the "Note rule" contract):
 3. `trash/` is excluded; `_archive/` is treated as historical context only.
 4. **Search-completeness:** the scan is broad (parallel read subagents), not a sample.
 5. Only on P's approval is a note written (to `captured/` or a named project note), following the amnesia test and linking source notes; nothing is auto-linked across human notes.
-6. On approval: `log.md` line and `## Vault Agent` daily-note mention.
+6. On approval: `admin/mbs_system/design/log.md` line and `## Vault Agent` daily-note mention.
 
 ---
 
@@ -90,7 +90,7 @@ Common acceptance criteria for every command (the "Note rule" contract):
 2. Each conflict cites the specific notes and dates on both sides; genuine contradictions are distinguished from evolutions (P changed his mind).
 3. Drift against `CRITICAL_FACTS.md` / `SOUL.md` is flagged with those files treated as the source of truth.
 4. **Search-completeness:** the scan is thorough before declaring the vault consistent OR inconsistent (anti-fabrication — no invented conflicts, no evolution misread as contradiction).
-5. Fixes are applied ONLY after P approves each; on approval, a `log.md` line and daily-note mention are added. Nothing is rewritten without a yes.
+5. Fixes are applied ONLY after P approves each; on approval, a `admin/mbs_system/design/log.md` line and daily-note mention are added. Nothing is rewritten without a yes.
 
 ---
 

@@ -16,7 +16,7 @@ P's vault already has a hand-authored `_CLAUDE.md`, `SOUL.md`, and `CRITICAL_FAC
 4. Compare live structure against what `_CLAUDE.md` describes. Produce a **diff**: new/renamed pillars or subfolders, stale facts, convention drift.
 5. **Show the diff and ask before changing `_CLAUDE.md`.** Apply only gap-fills and drift corrections; preserve P's wording and the amnesia-test framing. (Template/shape: `references/claude-md-template.md`.)
 6. (Re)generate `index.md` at the vault root — a catalog grouped **by pillar**, one line per note: `- [[Note Name]] — brief description` (from frontmatter or first line). Exclude `trash/`; mark `_archive/` entries as historical. Claude reads this first to navigate.
-7. Initialize/update the ops log: root `log.md` is a thin pointer; per-day entries go in `log/YYYY-MM-DD.md` (frontmatter `type: log`, `date`; append-only `**HH:MM** — action | description`). Write today's init entry.
+7. Initialize/update the ops log: the `admin/mbs_system/design/log.md` file is a thin pointer; per-day entries go in `admin/mbs_system/design/log/YYYY-MM-DD.md` (frontmatter `type: log`, `date`; append-only `**HH:MM** — action | description`). Write today's init entry.
 8. Confirm what changed and tell P to restart the Claude session so updates take effect.
 
 If `_CLAUDE.md` does NOT exist (shouldn't happen here): generate it from `references/claude-md-template.md` filled with real pillar values, then ask P to review.

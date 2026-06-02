@@ -1,17 +1,20 @@
 # Releasing MBS Companion
 
-This plugin currently lives inside the `mbs_automation` skill repo at
-`companion-plugin/`. BRAT and the Obsidian community-plugin ecosystem expect
-`manifest.json` + `main.js` + `versions.json` at the **root** of a dedicated
-repo, so before publishing it has to be split out to its own repo
-(`CP250/obsidian-mbs-companion`). This file is the runbook for that.
+**Status (2026-05-22): the split is done.** The plugin now lives in its own
+GitHub repo, `CP250/obsidian-mbs-companion`, and is installed and auto-updated
+via BRAT. Releases are automated by a GitHub Actions workflow. This file is the
+runbook for cutting future releases and, for reference, how the split was done.
 
-All `git` steps below are for **P to run by hand** — Claude does not run git in
-this project.
+The `mbs_automation/companion-plugin/` folder is a development mirror. The
+standalone repo `~/dev/obsidian-mbs-companion` is the source of truth — edit one
+copy only, to avoid drift.
+
+All `git` steps are for **P to run by hand** — Claude does not run git in this
+project.
 
 ## What ships in the standalone repo
 
-These files (the contents of `companion-plugin/`) become the root of the new repo:
+These files are at the root of the repo:
 
 - `manifest.json` — id `mbs-companion`, version `0.2.0`, `isDesktopOnly: true`
 - `main.js` — the build OUTPUT (Obsidian + BRAT load this directly)
@@ -19,87 +22,91 @@ These files (the contents of `companion-plugin/`) become the root of the new rep
 - `styles.css`
 - `src/main.ts` — the TypeScript source
 - `package.json`, `tsconfig.json`, `esbuild.config.mjs` — the build toolchain
+- `.github/workflows/release.yml` — the release automation (see below)
 - `.gitignore`, `README.md`, `RELEASING.md`
 
 `node_modules/` is gitignored and is never committed.
 
-## Option A — fresh repo (simplest, recommended for a clean start)
+## Cutting a release (the normal path — automated)
 
-1. Create an empty repo `CP250/obsidian-mbs-companion` on GitHub (no README, so
-   history is clean).
-2. From the skill checkout, copy the plugin folder out to a new location and
-   init it:
+Releases are published by `.github/workflows/release.yml`. On any **tag push**
+it checks out the repo, runs `npm install && npm run build`, verifies `main.js`,
+then creates the GitHub Release and attaches `main.js`, `manifest.json`, and
+`styles.css` automatically. You never touch the Releases UI.
+
+1. Make the change in `src/main.ts`, then build and verify locally:
 
    ```bash
-   cp -R ~/dev/mbs_automation/companion-plugin ~/dev/obsidian-mbs-companion
    cd ~/dev/obsidian-mbs-companion
-   rm -rf node_modules        # belt-and-suspenders; .gitignore already excludes it
-   git init
-   git add .
-   git commit -m "Initial import: MBS Companion v0.2.0 (split from mbs_automation)"
-   git branch -M main
-   git remote add origin git@github.com:CP250/obsidian-mbs-companion.git
-   git push -u origin main
-   ```
-
-3. Confirm `main.js` is committed (BRAT needs it) and that a fresh
-   `npm install && npm run build` reproduces it.
-
-## Option B — git subtree split (preserves history)
-
-If you want the plugin's git history carried over from the skill repo:
-
-```bash
-cd ~/dev/mbs_automation
-# Produce a branch whose root is companion-plugin/ with full history:
-git subtree split --prefix=companion-plugin -b mbs-companion-split
-
-# Push that branch to the new (empty) GitHub repo as main:
-git push git@github.com:CP250/obsidian-mbs-companion.git mbs-companion-split:main
-
-# Optional: delete the temp branch
-git branch -D mbs-companion-split
-```
-
-Then clone the new repo somewhere fresh to work on it going forward. Note:
-subtree split carries whatever was committed historically — if `main.js` or
-`node_modules` were ever committed under `companion-plugin/`, scrub them in the
-new repo after splitting.
-
-## Cutting a release (in the standalone repo)
-
-1. Make sure `manifest.json` `version` and the matching key in `versions.json`
-   are both set (currently `0.2.0`).
-2. Build and verify:
-
-   ```bash
    npm install
    npm run build
    node --check main.js     # must pass
    ```
 
-3. Commit the rebuilt `main.js` if it changed.
-4. Tag the release. **The git tag must equal the manifest version with NO `v`
-   prefix** (Obsidian/BRAT convention):
+2. Bump the version in **both** `manifest.json` (`version`) and `versions.json`
+   (add a `"0.X.0": "1.4.0"` key). Commit the rebuilt `main.js` and the bumps:
 
    ```bash
-   git tag 0.2.0
-   git push origin 0.2.0
+   git add -A
+   git commit -m "Release 0.X.0"
+   git push
    ```
 
-5. Create a GitHub Release on that tag and attach `manifest.json`, `main.js`,
-   and `styles.css` as release binaries (BRAT can read either the tag or the
-   release assets; attaching them is the most robust).
+3. Tag and push. **The tag must equal the manifest version with NO `v` prefix**
+   (Obsidian/BRAT convention). Tag the commit that contains the version bump:
 
-## Installing via BRAT
+   ```bash
+   git tag 0.X.0
+   git push origin 0.X.0
+   ```
 
-In Obsidian: BRAT -> "Add beta plugin" -> enter `CP250/obsidian-mbs-companion`.
-BRAT pulls `manifest.json` + `main.js` + `versions.json` from the latest release
-(or the repo root) and installs it. Enable **MBS Companion** under Community
-plugins. To update later, BRAT -> "Check for updates".
+4. Watch the **Actions** tab. The "Release Obsidian plugin" run goes green in
+   ~1 min and the release appears under Releases with all three assets attached.
 
-## After the split
+   If you ever need to re-point a tag (e.g. it was created on the wrong commit):
 
-The copy under `mbs_automation/companion-plugin/` can stay as the development
-source, or be removed once the standalone repo is the source of truth. If you
-keep both, only edit one of them to avoid drift.
+   ```bash
+   git tag -d 0.X.0
+   git push origin :refs/tags/0.X.0
+   git tag 0.X.0
+   git push origin 0.X.0
+   ```
+
+That's it — BRAT picks up the new release on next Obsidian launch (or via
+"BRAT: Check for updates").
+
+## Installing / updating via BRAT (done; for reference)
+
+In Obsidian: command palette -> "BRAT: Add a beta plugin" -> enter
+`CP250/obsidian-mbs-companion`. BRAT pulls `manifest.json` + `main.js` +
+`versions.json` from the latest release and installs into
+`.obsidian/plugins/mbs-companion/`. Enable **MBS Companion** under Community
+plugins. To update later: "BRAT: Check for updates".
+
+Note: if a hand-copied install of the plugin already exists in the vault,
+disable it and `rm -rf` the `.obsidian/plugins/mbs-companion/` folder before the
+BRAT add, so BRAT does a clean install and owns the folder.
+
+## How the split was done (history, 2026-05-22)
+
+Fresh repo, copied the dev folder out and pushed over HTTPS (P's GitHub auth is
+HTTPS, not SSH):
+
+```bash
+cp -R ~/dev/mbs_automation/companion-plugin ~/dev/obsidian-mbs-companion
+cd ~/dev/obsidian-mbs-companion
+rm -rf node_modules
+git init
+git add .
+git commit -m "Initial import: MBS Companion v0.2.0 (split from mbs_automation)"
+git branch -M main
+git remote add origin https://github.com/CP250/obsidian-mbs-companion.git
+git push -u origin main
+```
+
+The release workflow was added in a follow-up commit; the first `0.2.0` tag had
+been created on the pre-workflow commit, so it was deleted and re-tagged on the
+workflow commit to make the Action fire (see the re-point snippet above).
+
+If you ever want the plugin's prior git history carried over instead of a fresh
+import, use `git subtree split --prefix=companion-plugin` from the skill repo.

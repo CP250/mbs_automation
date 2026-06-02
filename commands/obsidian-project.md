@@ -30,7 +30,7 @@ The argument is a project name (handle typos and partial matches). This command 
    - If there's a concrete next action, add a Tasks-plugin line to the relevant pillar's todo: `- [ ] <next_action> #<pillar> 📅 <due if known>`.
    - Link the project from today's tasks daily note (`daily_notes/tasks/tasks_YYYY-MM-DD.md`, inside the bounded `## Vault Agent` section or a one-line mention — never touch P's own sections).
    - If a person is involved, link the project from their note in `social/` (create a stub if absent).
-   - Append a timestamped line to `log.md`; update `index.md` for the new note.
+   - Append a timestamped line to `admin/mbs_system/design/log.md`; update `index.md` for the new note.
 
 ---
 

@@ -44,7 +44,7 @@ The argument is a pillar name (`admin`, `create`, `culture`, `health`, `money`, 
      SORT file.mtime ASC
      ```
    Lead the note with one plain sentence naming the pillar and what the dashboard shows (amnesia test — a future reader should understand it cold). Add a short heading above each block. Note that `_archive/` items rank as historical and `trash/` is excluded by these `FROM "<pillar>"` scopes.
-5. **Propagate** (per `references/write-rules.md`): append a timestamped line to `log.md`; add the new dashboard(s) to `index.md`; note it in today's tasks daily note (`## Vault Agent` section). Optionally link the pillar dashboards from `index.md` so they are one click away.
+5. **Propagate** (per `references/write-rules.md`): append a timestamped line to `admin/mbs_system/design/log.md`; add the new dashboard(s) to `index.md`; note it in today's tasks daily note (`## Vault Agent` section). Optionally link the pillar dashboards from `index.md` so they are one click away.
 
 ---
 

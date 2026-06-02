@@ -14,7 +14,7 @@ The argument is a pillar name (`admin`, `create`, `culture`, `health`, `money`, 
 4. **Infer safe fields from content.** `type: project` is certain (filename convention). `tags` can be inferred from the pillar path. `status` can be inferred from keywords, recency of edits, and content tone (e.g. "completed," "on hold," recent activity → `active`). `date` defaults to the file's creation date if not present. `people` can be inferred from `[[wikilinks]]` in the body.
 5. **Ask for what can't be safely inferred.** For `next_action` on notes inferred as `active`, and for `status` when the content is genuinely ambiguous, ask P one note at a time — show the note title, a brief content summary, and the proposed inference so far, then ask for the missing field(s). Never invent a `next_action`.
 6. **Present a per-note diff and wait for approval.** Show the proposed frontmatter additions (what will be added or changed) as a before/after diff. Wait for P's explicit approval before writing each note. If P says "skip," move to the next note without writing.
-7. **After all notes are processed,** report a summary: how many notes were updated, how many skipped, how many still need attention (e.g. active projects where P deferred `next_action`). Append a timestamped line to `log.md`.
+7. **After all notes are processed,** report a summary: how many notes were updated, how many skipped, how many still need attention (e.g. active projects where P deferred `next_action`). Append a timestamped line to `admin/mbs_system/design/log.md`.
 
 This matters because ~4,500 legacy notes can't be bulk-migrated safely — the only reliable path is note-by-note inference + human confirmation, and this command turns that into a repeatable, interruptible workflow.
 

@@ -28,7 +28,7 @@ The optional argument is the decision topic; if absent, infer it from recent con
    - **Rationale** — why this option over the others.
    - **Consequences** — what changes as a result: which conventions, folders, or notes are affected. List affected notes as `[[wikilinks]]`.
    - **Related** — links to affected notes, prior ADRs it supersedes, or `references/` specs.
-5. **Propagate** (per `references/write-rules.md`): if the decision changes a documented convention, flag the `references/` spec or `_CLAUDE.md` line that should be updated and propose the exact edit — do not silently rewrite the operating manual. Append a timestamped line to `log.md`; update `index.md` for the new note; note it in today's tasks daily note (`## Vault Agent` section).
+5. **Propagate** (per `references/write-rules.md`): if the decision changes a documented convention, flag the `references/` spec or `_CLAUDE.md` line that should be updated and propose the exact edit — do not silently rewrite the operating manual. Append a timestamped line to `admin/mbs_system/design/log.md`; update `index.md` for the new note; note it in today's tasks daily note (`## Vault Agent` section).
 6. This command can also be offered by other commands when a structural change happens (a folder reorg, a convention adopted during `/obsidian-reconcile`, a schema change). In those cases offer to create an ADR — never force it.
 
 ---

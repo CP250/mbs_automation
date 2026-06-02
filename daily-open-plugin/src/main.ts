@@ -1,14 +1,26 @@
 /*
- * Daily Auto-Open — v0.1.2
+ * Daily Auto-Open — v0.1.4
  * Opens today's daily notes (e.g. health + tasks) when Obsidian launches, on
  * desktop and mobile. Optional: pin them as persistent tabs, and rotate (close
  * previous days' daily-note tabs so only today's stay open).
  *
- * v0.1.2 adds event-driven retry: in addition to the startup-delay run, the
- * plugin listens for vault file-creation events and re-runs openDailies when
- * a today-matching path appears. This handles the race where Journals/Templater
- * finishes creating today's note after our startup delay has already elapsed,
- * and it also covers cases where a new day's note is created mid-session.
+ * v0.1.4 persists the parent-pane id for each spec into data.json after each
+ * successful open. The column-placement lookup is now three-tier:
+ *   1. A stale tab is present → use its parent (v0.1.3's logic; wins normally)
+ *   2. No stale tab, but a saved parent id matches an existing pane → use it
+ *   3. Neither → fall back to the active pane
+ * This means today's notes still land in the same column even if the previously
+ * pinned daily tabs got closed before launch (rare but possible). The saved id
+ * is refreshed every successful open, so dragging the daily notes to a different
+ * column auto-learns on the next run.
+ *
+ * v0.1.3 made column placement deterministic via stale-parent capture: when
+ * rotating, the plugin remembers which parent pane held each spec's previous-day
+ * leaf, opens today's note in that SAME parent, and only then detaches stale.
+ *
+ * v0.1.2 added event-driven retry: in addition to the startup-delay run, the
+ * plugin listens for vault file-creation events and re-runs openDailies when a
+ * today-matching path appears.
  *
  * Cross-platform: uses only the Obsidian workspace API (no Node), so unlike the
  * MBS Companion plugin it is NOT desktop-only and runs on iPhone too.
@@ -38,6 +50,7 @@ interface DAOSettings {
   rotateStale: boolean;
   startupDelayMs: number;
   notes: NoteSpec[];
+  preferredParentIds?: Record<string, string>; // v0.1.4: spec.name -> parent pane id
 }
 
 const DEFAULT_SETTINGS: DAOSettings = {
@@ -49,6 +62,7 @@ const DEFAULT_SETTINGS: DAOSettings = {
     { name: 'health', folder: 'daily_notes/health/daily', filename: 'daily_note_health_{{date}}', dateFormat: 'YYYY-MM-DD' },
     { name: 'tasks', folder: 'daily_notes/tasks', filename: 'tasks_{{date}}', dateFormat: 'YYYY-MM-DD' },
   ],
+  preferredParentIds: {},
 };
 
 function escapeRe(s: string): string {
@@ -144,17 +158,32 @@ export default class DailyAutoOpenPlugin extends Plugin {
       byPath.set(p, arr);
     });
 
-    // 1. Rotate: close daily-note tabs from previous days (match a pattern, not today).
-    if (this.settings.rotateStale) {
-      for (const [p, leaves] of byPath) {
-        if (todayByPath.has(p)) continue;
-        if (regexes.some((r) => r.test(p))) leaves.forEach((l) => l.detach());
+    // v0.1.3: collect stale leaves grouped by spec.todayPath() so we know which
+    // parent pane held each spec's previous-day note. This lets us open today's
+    // note in the SAME column rather than wherever happens to be active.
+    const staleBySpec = new Map<string, WorkspaceLeaf[]>();
+    for (const [p, leaves] of byPath) {
+      if (todayByPath.has(p)) continue; // not stale — already today's
+      for (const spec of specs) {
+        if (this.specPathRe(spec).test(p)) {
+          const tp = this.todayPath(spec);
+          const arr = staleBySpec.get(tp) || [];
+          arr.push(...leaves);
+          staleBySpec.set(tp, arr);
+        }
       }
     }
 
-    // 2. For each of today's notes: de-dupe (keep one, close extras), open if missing, pin.
+    // 1. For each of today's notes: de-dupe, open if missing in the right parent
+    //    pane, pin. Open BEFORE detaching stale so the parent pane doesn't
+    //    briefly become empty (which can collapse it).
+    //    Column placement priority (v0.1.4):
+    //      a) stale tab present for this spec -> use its parent
+    //      b) no stale tab, but saved parent id matches an existing pane -> use it
+    //      c) neither -> active pane fallback
     let missing = 0;
-    for (const path of todayByPath.keys()) {
+    let settingsDirty = false;
+    for (const [path, spec] of todayByPath.entries()) {
       const existing = byPath.get(path) || [];
       let keep: WorkspaceLeaf | null = existing[0] || null;
       existing.slice(1).forEach((l) => l.detach()); // close duplicate copies of today's note
@@ -164,13 +193,52 @@ export default class DailyAutoOpenPlugin extends Plugin {
           missing++;
           continue;
         }
+        // Tier (a): stale tab present -> activate so getLeaf('tab') uses its parent.
+        const staleLeaves = staleBySpec.get(path) || [];
+        if (staleLeaves.length > 0) {
+          this.app.workspace.setActiveLeaf(staleLeaves[0], { focus: false });
+        } else {
+          // Tier (b): no stale tab — try the persisted parent id from a prior run.
+          const savedId = this.settings.preferredParentIds?.[spec.name];
+          if (savedId) {
+            let target: WorkspaceLeaf | undefined;
+            this.app.workspace.iterateAllLeaves((leaf) => {
+              if (target) return;
+              const pid = (leaf as unknown as { parent?: { id?: string } }).parent?.id;
+              if (pid === savedId) target = leaf;
+            });
+            if (target) this.app.workspace.setActiveLeaf(target, { focus: false });
+          }
+        }
         keep = this.app.workspace.getLeaf('tab');
         await keep.openFile(af, { active: false });
+        // v0.1.4: persist where today's note actually landed, so future launches
+        // can find the same column even if pinned tabs have been closed.
+        const newParentId = (keep as unknown as { parent?: { id?: string } }).parent?.id;
+        if (newParentId) {
+          if (!this.settings.preferredParentIds) this.settings.preferredParentIds = {};
+          if (this.settings.preferredParentIds[spec.name] !== newParentId) {
+            this.settings.preferredParentIds[spec.name] = newParentId;
+            settingsDirty = true;
+          }
+        }
       }
       if (this.settings.pinTabs && keep) {
         (keep as unknown as { setPinned?: (p: boolean) => void }).setPinned?.(true);
       }
     }
+    if (settingsDirty) await this.saveSettings();
+
+    // 2. Rotate (detach) stale leaves AFTER today's notes are placed in the
+    //    correct panes. Detaching afterward avoids leaving a parent momentarily
+    //    empty, which can cause Obsidian to collapse the pane.
+    if (this.settings.rotateStale) {
+      for (const [p, leaves] of byPath) {
+        if (todayByPath.has(p)) continue;
+        if (regexes.some((r) => r.test(p))) leaves.forEach((l) => l.detach());
+      }
+    }
+
     if (missing > 0) {
       new Notice(`Daily Auto-Open: ${missing} of today's notes not found yet — they'll open once created.`);
     }

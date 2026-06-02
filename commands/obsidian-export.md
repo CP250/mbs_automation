@@ -43,7 +43,7 @@ The optional argument is the format: `json` (default) or `markdown`. This produc
      }
      ```
    - **Markdown** — a flat index with every note's metadata + summary grouped by pillar, saved to `admin/obsidian_optimize/export_vault_snapshot_YYYY-MM-DD.md`.
-5. Append a timestamped line to `log.md`: `## [YYYY-MM-DD] export | Vault snapshot exported (<format>, N notes)`. Note it in today's tasks daily note (`## Vault Agent` section). Do not modify any existing note.
+5. Append a timestamped line to `admin/mbs_system/design/log.md`: `## [YYYY-MM-DD] export | Vault snapshot exported (<format>, N notes)`. Note it in today's tasks daily note (`## Vault Agent` section). Do not modify any existing note.
 
 The snapshot is the bridge between P's vault and any other tool. They read this one file rather than the folder tree.
 

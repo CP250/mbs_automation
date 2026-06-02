@@ -1,11 +1,13 @@
 /*
- * MBS Companion — v0.2.0
+ * MBS Companion — v0.3.3
  * A small Obsidian plugin that surfaces the mbs_automation agents inside Obsidian:
  *   - status bar: did mbs-daily / mbs-weekly run yet? (reads the launchd run-stamps)
  *   - commands: open today's note / latest weekly review / latest session report,
  *               run the daily report or health audit headless via `claude`,
  *               cycle a Vault Agent item's status (done | skip | defer),
  *               and open a richer status panel.
+ *   - on Obsidian quit: commit and push the .obsidian settings repo (v0.3.0),
+ *               with a guard that refuses to auto-commit a new credential-looking file.
  *
  * Migrated to TypeScript + esbuild in v0.2.0. The build output is still main.js at
  * the plugin root (that's what Obsidian loads). Desktop-only: it uses Node's
@@ -27,7 +29,7 @@ import {
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { exec } from 'child_process';
+import { exec, spawn, execSync } from 'child_process';
 
 interface MbsSettings {
   vaultPath: string;
@@ -36,6 +38,8 @@ interface MbsSettings {
   stateDir: string;
   reviewsDir: string;
   sessionReportDir: string;
+  pushSettingsOnQuit: boolean;
+  gitBin: string;
 }
 
 const DEFAULT_SETTINGS: MbsSettings = {
@@ -45,7 +49,14 @@ const DEFAULT_SETTINGS: MbsSettings = {
   stateDir: path.join(os.homedir(), '.mbs_automation'),
   reviewsDir: 'admin/reviews',
   sessionReportDir: 'admin/obsidian_optimize/session_awareness',
+  pushSettingsOnQuit: true,
+  gitBin: 'git',
 };
+
+// Keys of MbsSettings whose value is a string (used by the text-field settings helper).
+type StringSettingKey = {
+  [K in keyof MbsSettings]: MbsSettings[K] extends string ? K : never;
+}[keyof MbsSettings];
 
 const STATUS_VALUES = ['done', 'skip', 'defer'] as const;
 type StatusValue = (typeof STATUS_VALUES)[number];
@@ -141,6 +152,13 @@ export default class MbsCompanionPlugin extends Plugin {
     });
 
     this.addSettingTab(new MbsSettingTab(this.app, this));
+
+    // On Obsidian quit, kick off a background push of the .obsidian settings
+    // repo. It runs detached and is NOT awaited, so it can never block or delay
+    // shutdown (see pushSettingsRepoOnQuit).
+    this.registerEvent(
+      this.app.workspace.on('quit', () => this.pushSettingsRepoOnQuit()),
+    );
 
     this.refreshStatus();
     // Re-check every 5 minutes (and registerInterval auto-clears on unload).
@@ -330,6 +348,92 @@ export default class MbsCompanionPlugin extends Plugin {
       this.refreshStatus();
     });
   }
+
+  // --- Push settings repo on quit (v0.3.3) ---------------------------------
+  // When Obsidian quits, COMMIT the .obsidian settings repo synchronously (a
+  // fast local op — can't hang shutdown the way a network push can), then PUSH
+  // in a detached background process that is never awaited. This guarantees the
+  // commit lands the moment the handler fires (visible in `git log`), even if
+  // the background push dies during app teardown. v0.3.0 awaited the whole push
+  // and wedged shutdown; v0.3.1 detached everything but produced no commit.
+  // Safety:
+  //   - no-op if the toggle is off or there is nothing to commit,
+  //   - refuses to commit when a NEW untracked file looks like a credential
+  //     (token/secret/key/pem),
+  //   - GIT_TERMINAL_PROMPT=0 so the push fails fast instead of hanging on auth,
+  //   - every run appends a line to <stateDir>/settings_push.log for debugging.
+  pushSettingsRepoOnQuit(): void {
+    const logFile = path.join(this.settings.stateDir, 'settings_push.log');
+    const log = (msg: string) => {
+      try {
+        fs.appendFileSync(logFile, `${new Date().toISOString()} ${msg}\n`);
+      } catch (e) {
+        /* best-effort */
+      }
+    };
+    try {
+      if (!this.settings.pushSettingsOnQuit) {
+        log('skip: toggle off');
+        return;
+      }
+      const dir = path.join(this.settings.vaultPath, this.app.vault.configDir);
+      const git = this.settings.gitBin || 'git';
+      const env = Object.assign({}, process.env, {
+        PATH: `/opt/homebrew/bin:/usr/local/bin:/usr/bin:${process.env.PATH || ''}`,
+        GIT_TERMINAL_PROMPT: '0',
+      });
+      const opts = { cwd: dir, env, timeout: 8000 } as const;
+      log(`fired; repo=${dir}`);
+
+      // Self-heal a stale index.lock left by an interrupted git op (force-quit,
+      // crash, killed command), which would otherwise silently block the commit.
+      // Only remove it if it's older than 60s — a fresh lock may belong to a real
+      // concurrent git process, so leave that alone.
+      const lockPath = path.join(dir, '.git', 'index.lock');
+      try {
+        const ageMs = Date.now() - fs.statSync(lockPath).mtimeMs;
+        if (ageMs > 60000) {
+          fs.unlinkSync(lockPath);
+          log(`removed stale index.lock (age ${Math.round(ageMs / 1000)}s)`);
+        } else {
+          log(`fresh index.lock present (age ${Math.round(ageMs / 1000)}s) - leaving it`);
+        }
+      } catch (e) {
+        /* no lock present (ENOENT) is the normal case */
+      }
+
+      const dirty = execSync(`${git} status --porcelain`, opts).toString().trim();
+      if (!dirty) {
+        log('no changes');
+        return;
+      }
+      const risky = execSync(`${git} ls-files --others --exclude-standard`, opts)
+        .toString()
+        .split('\n')
+        .filter((f) => /token|secret|credential|\.pem$|\.key$/i.test(f));
+      if (risky.length) {
+        log(`GUARD blocked: ${risky.join(', ')}`);
+        return;
+      }
+
+      const stamp = new Date().toISOString().slice(0, 16).replace('T', ' ');
+      execSync(`${git} add -A`, opts);
+      execSync(`${git} commit -m ${JSON.stringify('auto: settings on shutdown ' + stamp)}`, opts);
+      log('committed');
+
+      // Push in the background so the network op never blocks shutdown.
+      const child = spawn('/bin/sh', ['-c', `${git} push`], {
+        cwd: dir,
+        env,
+        detached: true,
+        stdio: 'ignore',
+      });
+      child.unref();
+      log('push spawned');
+    } catch (e) {
+      log(`ERROR: ${(e as Error).message}`);
+    }
+  }
 }
 
 // --- Status panel modal (v0.2.0) -------------------------------------------
@@ -441,7 +545,7 @@ class MbsSettingTab extends PluginSettingTab {
     const { containerEl } = this;
     containerEl.empty();
     containerEl.createEl('h2', { text: 'MBS Companion' });
-    const add = (name: string, desc: string, key: keyof MbsSettings) =>
+    const add = (name: string, desc: string, key: StringSettingKey) =>
       new Setting(containerEl)
         .setName(name)
         .setDesc(desc)
@@ -458,5 +562,18 @@ class MbsSettingTab extends PluginSettingTab {
     add('State dir', 'Where the launchd run-stamps live (default ~/.mbs_automation).', 'stateDir');
     add('Reviews dir', 'Vault-relative folder for weekly reviews.', 'reviewsDir');
     add('Session-report dir', 'Vault-relative folder for session-awareness reports.', 'sessionReportDir');
+    add('Git binary', 'Path or name of git, used to push settings on quit.', 'gitBin');
+    new Setting(containerEl)
+      .setName('Push settings on quit')
+      .setDesc(
+        'On Obsidian shutdown, commit and push the .obsidian settings repo. ' +
+          'Skips automatically if a new credential-looking file (token/secret/key/pem) is present.',
+      )
+      .addToggle((t) =>
+        t.setValue(this.plugin.settings.pushSettingsOnQuit).onChange(async (v) => {
+          this.plugin.settings.pushSettingsOnQuit = v;
+          await this.plugin.saveSettings();
+        }),
+      );
   }
 }

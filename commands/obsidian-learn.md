@@ -8,7 +8,7 @@ Use the mbs_automation skill. Execute `/obsidian-learn $ARGUMENTS`:
 
 The optional argument is a scope: `recent` (last ~90 days, default), `all` (whole vault), or a topic. This reviews the lessons P's vault has accumulated so they compound instead of expiring. It **proposes** — it never auto-prunes, auto-archives, or rewrites `_CLAUDE.md` on its own.
 
-1. Read `_CLAUDE.md`, `SOUL.md` at the vault root, and `index.md` + the last ~20 lines of `log.md` for context.
+1. Read `_CLAUDE.md`, `SOUL.md` at the vault root, and `index.md` + the last ~20 lines of `admin/mbs_system/design/log.md` for context.
 2. Gather learnings (shell-grep + reads; parallel read subagents for breadth; per the search-completeness rule in `references/vault-schema.md`, scan exhaustively rather than sampling). **Exclude `trash/`; treat `_archive/` hits as historical.** Look for:
    - **Lessons in daily notes** — both journals (`daily_notes/tasks/`, `daily_notes/health/`): "lesson learned", "what didn't work", "next time", review insights.
    - **Decisions** — structural ADRs in `admin/obsidian_optimize/` and project `## Key Decisions` sections (their rationale and how they turned out).
@@ -24,7 +24,7 @@ The optional argument is a scope: `recent` (last ~90 days, default), `all` (whol
    - **Superseded learnings** — old position → new position, both cited.
    - **Promotion candidates** — with proposed exact wording, framed as a suggestion for P to accept or reject.
    - **Top lessons of the period** — ranked by frequency × recency × consequence.
-5. **Suggest, don't dispose.** Only on P's explicit approval: write the report (to `admin/reviews/` like `/obsidian-review`, or a relevant project note), propose a `_CLAUDE.md` / `references/` edit (propose the exact diff — never silently rewrite the operating manual), or flag a stale note for archiving (P moves it; the agent never does). If P approves writing, the note follows the amnesia test and links its source notes. Append to `log.md`; note in today's tasks daily note.
+5. **Suggest, don't dispose.** Only on P's explicit approval: write the report (to `admin/reviews/` like `/obsidian-review`, or a relevant project note), propose a `_CLAUDE.md` / `references/` edit (propose the exact diff — never silently rewrite the operating manual), or flag a stale note for archiving (P moves it; the agent never does). If P approves writing, the note follows the amnesia test and links its source notes. Append to `admin/mbs_system/design/log.md`; note in today's tasks daily note.
 
 Lessons that aren't reviewed don't compound. This turns scattered notes into a living, but P-governed, rulebook.
 

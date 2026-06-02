@@ -30,7 +30,7 @@ The optional argument is a scope: a pillar name (`money`, `social`, …), a proj
    - **Orphan nodes** (no links) placed at the edge so they are easy to spot.
 4. Save to `admin/obsidian_optimize/atlas.canvas` for full scope, or `admin/obsidian_optimize/atlas_<scope>.canvas` when scoped. If a file of that name exists, confirm before overwriting (do not clobber a prior map silently).
 5. Also print a short text summary: total nodes/edges, top 5 hub notes, orphans found, and any bridge notes that connect two otherwise-separate pillars. **Surface orphaned active projects** as something to act on, not just a stat.
-6. Append a timestamped line to `log.md`: `## [YYYY-MM-DD] visualize | Canvas generated — N nodes, M edges, K orphans (scope)`. Note it in today's tasks daily note (`## Vault Agent` section). Do not modify any existing note.
+6. Append a timestamped line to `admin/mbs_system/design/log.md`: `## [YYYY-MM-DD] visualize | Canvas generated — N nodes, M edges, K orphans (scope)`. Note it in today's tasks daily note (`## Vault Agent` section). Do not modify any existing note.
 
 P opens the `.canvas` file in Obsidian to explore the graph visually.
 

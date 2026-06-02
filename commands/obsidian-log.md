@@ -20,7 +20,7 @@ Capture what a work or thinking session produced so it isn't lost when the sessi
    project: "[[<project>]]"
    ---
    ```
-5. **Propagate** (per `references/write-rules.md`): add a dated line to the project note's Recent Activity section; mention it in today's tasks daily note (`## Vault Agent` section); if the session produced a concrete next step, set/refresh the project's `next_action` and add a `- [ ] … #<pillar>` task. Append to `log.md`.
+5. **Propagate** (per `references/write-rules.md`): add a dated line to the project note's Recent Activity section; mention it in today's tasks daily note (`## Vault Agent` section); if the session produced a concrete next step, set/refresh the project's `next_action` and add a `- [ ] … #<pillar>` task. Append to `admin/mbs_system/design/log.md`.
 
 ---
 

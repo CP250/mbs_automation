@@ -45,6 +45,26 @@ echo "$(ts) — starting /obsidian-daily for $TODAY (claude: $CLAUDE_BIN)" >> "$
 
 cd "$VAULT" || { echo "$(ts) — ERROR: cannot cd to $VAULT" >> "$LOG"; exit 1; }
 
+# Pre-flight: guarantee today's tasks file exists on this Mac's local disk
+# BEFORE invoking Claude. Why: the Journals plugin's `tasks.autoCreate` is now
+# intentionally disabled (to prevent phone-Mac sync races — phone Journals would
+# otherwise create an empty competing version while Mac Obsidian is closed).
+# Mac is now solely responsible for tasks-file creation; pre-flight here means
+# the file exists even if the Claude call later fails (API overload, network,
+# whatever) and the user always has somewhere to write. See SETUP.md.
+TODAYS_TASKS="$VAULT/daily_notes/tasks/tasks_${TODAY}.md"
+if [ ! -f "$TODAYS_TASKS" ]; then
+  mkdir -p "$(dirname "$TODAYS_TASKS")"
+  cat > "$TODAYS_TASKS" <<EOF
+---
+journal: tasks
+journal-date: ${TODAY}
+---
+
+EOF
+  echo "$(ts) — pre-flight: created minimal $TODAYS_TASKS" >> "$LOG"
+fi
+
 # Headless run. NOTE: custom slash commands (/obsidian-daily) do NOT expand in
 # `claude -p` non-interactive mode — they only work in an interactive session. So
 # instead of invoking the slash command, we point Claude at the command file and

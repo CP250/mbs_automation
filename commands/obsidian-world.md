@@ -16,7 +16,7 @@ Use the mbs_automation skill. Execute `/obsidian-world`:
 
    **L1 — Navigation (~1-2K tokens)**
    - `index.md` — catalog of vault pages (what exists, without loading everything).
-   - `log.md` → today's `log/YYYY-MM-DD.md` and the prior day or two — recent vault activity.
+   - `admin/mbs_system/design/log.md` → today's `admin/mbs_system/design/log/YYYY-MM-DD.md` and the prior day or two — recent vault activity.
 
    **L2 — Current state (~2-5K tokens)**
    - Today's daily note: `daily_notes/tasks/tasks_YYYY-MM-DD.md` (and `daily_notes/health/daily/...` if relevant) — what's already in progress.

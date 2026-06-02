@@ -19,7 +19,7 @@ The optional argument is a topic/entity to focus on; otherwise scan broadly. Thi
    - **Clear stale fact** → propose the exact fix (e.g. "update `[[note_x]]` line N from A to B"), and apply it **only after P approves**.
    - **Genuinely ambiguous** → list both sides with evidence; P decides.
    - **Evolution** → note the current state vs. the historical one; propose recording the change, don't erase the history.
-5. On approval only: apply the agreed fixes, append to `log.md`, note in today's tasks daily note. Nothing is rewritten without a yes.
+5. On approval only: apply the agreed fixes, append to `admin/mbs_system/design/log.md`, note in today's tasks daily note. Nothing is rewritten without a yes.
 
 ---
 

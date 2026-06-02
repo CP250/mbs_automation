@@ -47,7 +47,9 @@ var DEFAULT_SETTINGS = {
   claudeBin: "/opt/homebrew/bin/claude",
   stateDir: path.join(os.homedir(), ".mbs_automation"),
   reviewsDir: "admin/reviews",
-  sessionReportDir: "admin/obsidian_optimize/session_awareness"
+  sessionReportDir: "admin/obsidian_optimize/session_awareness",
+  pushSettingsOnQuit: true,
+  gitBin: "git"
 };
 var STATUS_VALUES = ["done", "skip", "defer"];
 function todayStr() {
@@ -133,6 +135,9 @@ var MbsCompanionPlugin = class extends import_obsidian.Plugin {
       callback: () => new MbsStatusModal(this.app, this).open()
     });
     this.addSettingTab(new MbsSettingTab(this.app, this));
+    this.registerEvent(
+      this.app.workspace.on("quit", () => this.pushSettingsRepoOnQuit())
+    );
     this.refreshStatus();
     this.registerInterval(window.setInterval(() => this.refreshStatus(), 5 * 60 * 1e3));
   }
@@ -294,6 +299,78 @@ Click to open today's note`
       this.refreshStatus();
     });
   }
+  // --- Push settings repo on quit (v0.3.3) ---------------------------------
+  // When Obsidian quits, COMMIT the .obsidian settings repo synchronously (a
+  // fast local op — can't hang shutdown the way a network push can), then PUSH
+  // in a detached background process that is never awaited. This guarantees the
+  // commit lands the moment the handler fires (visible in `git log`), even if
+  // the background push dies during app teardown. v0.3.0 awaited the whole push
+  // and wedged shutdown; v0.3.1 detached everything but produced no commit.
+  // Safety:
+  //   - no-op if the toggle is off or there is nothing to commit,
+  //   - refuses to commit when a NEW untracked file looks like a credential
+  //     (token/secret/key/pem),
+  //   - GIT_TERMINAL_PROMPT=0 so the push fails fast instead of hanging on auth,
+  //   - every run appends a line to <stateDir>/settings_push.log for debugging.
+  pushSettingsRepoOnQuit() {
+    const logFile = path.join(this.settings.stateDir, "settings_push.log");
+    const log = (msg) => {
+      try {
+        fs.appendFileSync(logFile, `${(/* @__PURE__ */ new Date()).toISOString()} ${msg}
+`);
+      } catch (e) {
+      }
+    };
+    try {
+      if (!this.settings.pushSettingsOnQuit) {
+        log("skip: toggle off");
+        return;
+      }
+      const dir = path.join(this.settings.vaultPath, this.app.vault.configDir);
+      const git = this.settings.gitBin || "git";
+      const env = Object.assign({}, process.env, {
+        PATH: `/opt/homebrew/bin:/usr/local/bin:/usr/bin:${process.env.PATH || ""}`,
+        GIT_TERMINAL_PROMPT: "0"
+      });
+      const opts = { cwd: dir, env, timeout: 8e3 };
+      log(`fired; repo=${dir}`);
+      const lockPath = path.join(dir, ".git", "index.lock");
+      try {
+        const ageMs = Date.now() - fs.statSync(lockPath).mtimeMs;
+        if (ageMs > 6e4) {
+          fs.unlinkSync(lockPath);
+          log(`removed stale index.lock (age ${Math.round(ageMs / 1e3)}s)`);
+        } else {
+          log(`fresh index.lock present (age ${Math.round(ageMs / 1e3)}s) - leaving it`);
+        }
+      } catch (e) {
+      }
+      const dirty = (0, import_child_process.execSync)(`${git} status --porcelain`, opts).toString().trim();
+      if (!dirty) {
+        log("no changes");
+        return;
+      }
+      const risky = (0, import_child_process.execSync)(`${git} ls-files --others --exclude-standard`, opts).toString().split("\n").filter((f) => /token|secret|credential|\.pem$|\.key$/i.test(f));
+      if (risky.length) {
+        log(`GUARD blocked: ${risky.join(", ")}`);
+        return;
+      }
+      const stamp = (/* @__PURE__ */ new Date()).toISOString().slice(0, 16).replace("T", " ");
+      (0, import_child_process.execSync)(`${git} add -A`, opts);
+      (0, import_child_process.execSync)(`${git} commit -m ${JSON.stringify("auto: settings on shutdown " + stamp)}`, opts);
+      log("committed");
+      const child = (0, import_child_process.spawn)("/bin/sh", ["-c", `${git} push`], {
+        cwd: dir,
+        env,
+        detached: true,
+        stdio: "ignore"
+      });
+      child.unref();
+      log("push spawned");
+    } catch (e) {
+      log(`ERROR: ${e.message}`);
+    }
+  }
 };
 var MbsStatusModal = class extends import_obsidian.Modal {
   constructor(app, plugin) {
@@ -396,5 +473,14 @@ var MbsSettingTab = class extends import_obsidian.PluginSettingTab {
     add("State dir", "Where the launchd run-stamps live (default ~/.mbs_automation).", "stateDir");
     add("Reviews dir", "Vault-relative folder for weekly reviews.", "reviewsDir");
     add("Session-report dir", "Vault-relative folder for session-awareness reports.", "sessionReportDir");
+    add("Git binary", "Path or name of git, used to push settings on quit.", "gitBin");
+    new import_obsidian.Setting(containerEl).setName("Push settings on quit").setDesc(
+      "On Obsidian shutdown, commit and push the .obsidian settings repo. Skips automatically if a new credential-looking file (token/secret/key/pem) is present."
+    ).addToggle(
+      (t) => t.setValue(this.plugin.settings.pushSettingsOnQuit).onChange(async (v) => {
+        this.plugin.settings.pushSettingsOnQuit = v;
+        await this.plugin.saveSettings();
+      })
+    );
   }
 };

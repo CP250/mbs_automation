@@ -23,7 +23,7 @@ The argument is a person's name (handle typos and partial matches). People are t
    ---
    ```
 5. **Body (amnesia-self-sufficient):** who they are, how P knows them, role/company, where they are, and the context of recent interactions. Wikilink any projects or people referenced. Keep contact details (email/phone) as structural facts if known.
-6. **Propagate:** log the interaction in today's tasks daily note (bounded `## Vault Agent` section); if the person is tied to a project, link them from that project note. Append to `log.md`; update `index.md` for a new note.
+6. **Propagate:** log the interaction in today's tasks daily note (bounded `## Vault Agent` section); if the person is tied to a project, link them from that project note. Append to `admin/mbs_system/design/log.md`; update `index.md` for a new note.
 
 ---
 

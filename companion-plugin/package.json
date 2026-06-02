@@ -1,6 +1,6 @@
 {
   "name": "mbs-companion",
-  "version": "0.2.0",
+  "version": "0.3.3",
   "description": "Status and quick actions for the mbs_automation second-brain agents inside Obsidian.",
   "main": "main.js",
   "scripts": {

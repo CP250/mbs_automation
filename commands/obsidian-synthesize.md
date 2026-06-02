@@ -8,7 +8,7 @@ Use the mbs_automation skill. Execute `/obsidian-synthesize`:
 
 The whole-vault cousin of `/obsidian-emerge` (which looks at a recent window). This scans broadly for patterns that span domains and time, and **proposes** synthesis — it does not autonomously write synthesis pages (the old "writes synthesis pages without being asked / on its own schedule" behavior is removed; it violates propose-don't-dispose).
 
-1. Read `_CLAUDE.md`, `SOUL.md`, `index.md`, and the last ~20 lines of `log.md`.
+1. Read `_CLAUDE.md`, `SOUL.md`, `index.md`, and the last ~20 lines of `admin/mbs_system/design/log.md`.
 2. Scan for synthesis opportunities (shell-grep + reads; parallel read subagents for breadth). Exclude `trash/`; `_archive/` is historical context. Look for:
    - **Cross-domain recurrence** — the same idea/tension appearing in unrelated pillars (e.g. a "breadth vs. conviction" theme in both sports and money).
    - **Entity convergence** — people/projects that co-occur across contexts but aren't linked.
@@ -16,7 +16,7 @@ The whole-vault cousin of `/obsidian-emerge` (which looks at a recent window). T
    - **Functional orphans** — substantive notes with no inbound links that clearly belong to an existing project/theme.
 3. Present a **Synthesis Report**: each pattern with its evidence (cited real notes/dates), the interpretation, and a proposed action or proposed link.
 4. **Suggest, don't file.** Only write a synthesis note (to `captured/` for triage, or a named project note) **when P approves**. Never auto-create `auto_generated` pages, never auto-link across human notes without approval.
-5. If P approves writing, the synthesis note follows the amnesia test and links back to its source notes. Append to `log.md`; mention in today's tasks daily note.
+5. If P approves writing, the synthesis note follows the amnesia test and links back to its source notes. Append to `admin/mbs_system/design/log.md`; mention in today's tasks daily note.
 
 ---
 

@@ -36,7 +36,8 @@ var DEFAULT_SETTINGS = {
   notes: [
     { name: "health", folder: "daily_notes/health/daily", filename: "daily_note_health_{{date}}", dateFormat: "YYYY-MM-DD" },
     { name: "tasks", folder: "daily_notes/tasks", filename: "tasks_{{date}}", dateFormat: "YYYY-MM-DD" }
-  ]
+  ],
+  preferredParentIds: {}
 };
 function escapeRe(s) {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -102,7 +103,7 @@ var DailyAutoOpenPlugin = class extends import_obsidian.Plugin {
     return vf == null ? void 0 : vf.path;
   }
   async openDailies() {
-    var _a;
+    var _a, _b, _c;
     const specs = this.settings.notes;
     const todayByPath = /* @__PURE__ */ new Map();
     specs.forEach((s) => todayByPath.set(this.todayPath(s), s));
@@ -116,16 +117,22 @@ var DailyAutoOpenPlugin = class extends import_obsidian.Plugin {
       arr.push(leaf);
       byPath.set(p, arr);
     });
-    if (this.settings.rotateStale) {
-      for (const [p, leaves] of byPath) {
-        if (todayByPath.has(p))
-          continue;
-        if (regexes.some((r) => r.test(p)))
-          leaves.forEach((l) => l.detach());
+    const staleBySpec = /* @__PURE__ */ new Map();
+    for (const [p, leaves] of byPath) {
+      if (todayByPath.has(p))
+        continue;
+      for (const spec of specs) {
+        if (this.specPathRe(spec).test(p)) {
+          const tp = this.todayPath(spec);
+          const arr = staleBySpec.get(tp) || [];
+          arr.push(...leaves);
+          staleBySpec.set(tp, arr);
+        }
       }
     }
     let missing = 0;
-    for (const path of todayByPath.keys()) {
+    let settingsDirty = false;
+    for (const [path, spec] of todayByPath.entries()) {
       const existing = byPath.get(path) || [];
       let keep = existing[0] || null;
       existing.slice(1).forEach((l) => l.detach());
@@ -135,11 +142,49 @@ var DailyAutoOpenPlugin = class extends import_obsidian.Plugin {
           missing++;
           continue;
         }
+        const staleLeaves = staleBySpec.get(path) || [];
+        if (staleLeaves.length > 0) {
+          this.app.workspace.setActiveLeaf(staleLeaves[0], { focus: false });
+        } else {
+          const savedId = (_a = this.settings.preferredParentIds) == null ? void 0 : _a[spec.name];
+          if (savedId) {
+            let target;
+            this.app.workspace.iterateAllLeaves((leaf) => {
+              var _a2;
+              if (target)
+                return;
+              const pid = (_a2 = leaf.parent) == null ? void 0 : _a2.id;
+              if (pid === savedId)
+                target = leaf;
+            });
+            if (target)
+              this.app.workspace.setActiveLeaf(target, { focus: false });
+          }
+        }
         keep = this.app.workspace.getLeaf("tab");
         await keep.openFile(af, { active: false });
+        const newParentId = (_b = keep.parent) == null ? void 0 : _b.id;
+        if (newParentId) {
+          if (!this.settings.preferredParentIds)
+            this.settings.preferredParentIds = {};
+          if (this.settings.preferredParentIds[spec.name] !== newParentId) {
+            this.settings.preferredParentIds[spec.name] = newParentId;
+            settingsDirty = true;
+          }
+        }
       }
       if (this.settings.pinTabs && keep) {
-        (_a = keep.setPinned) == null ? void 0 : _a.call(keep, true);
+        (_c = keep.setPinned) == null ? void 0 : _c.call(keep, true);
+      }
+    }
+    if (settingsDirty)
+      await this.saveSettings();
+    if (this.settings.rotateStale) {
+      for (const [p, leaves] of byPath) {
+        if (todayByPath.has(p))
+          continue;
+        if (regexes.some((r) => r.test(p)))
+          leaves.forEach((l) => l.detach());
       }
     }
     if (missing > 0) {

@@ -26,7 +26,7 @@ Capture decisions so the reasoning doesn't evaporate when the session closes. Th
    ---
    ```
 6. If a decision affects multiple projects, log it in each.
-7. **Propagate:** note the decision in today's tasks daily note (bounded `## Vault Agent` section); if it implies a next step, add a `- [ ] … #<pillar>` task. Append to `log.md`.
+7. **Propagate:** note the decision in today's tasks daily note (bounded `## Vault Agent` section); if it implies a next step, add a `- [ ] … #<pillar>` task. Append to `admin/mbs_system/design/log.md`.
 
 ---
 

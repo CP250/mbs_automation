@@ -32,7 +32,7 @@ The optional argument is `weekly` or `monthly` (ask if unclear). This is the ref
    tags: [review]
    ---
    ```
-6. Save to `admin/reviews/review_<weekly|monthly>_<YYYY-MM-DD>.md` (create `admin/reviews/` on demand). Link it from the last daily note of the period. Append to `log.md`.
+6. Save to `admin/reviews/review_<weekly|monthly>_<YYYY-MM-DD>.md` (create `admin/reviews/` on demand). Link it from the last daily note of the period. Append to `admin/mbs_system/design/log.md`.
 
 ---
 

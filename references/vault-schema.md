@@ -58,12 +58,13 @@ New notes the agent writes carry frontmatter. Use **simple timestamps — no bi-
 type: project
 date: 2026-05-20
 tags: [project, <pillar>]
-status: active        # active | planning | completed | on-hold
-next_action: "<the single next actionable step>"   # MANDATORY on active projects
+status: active        # active | planning | on_hold | someday | completed
+trigger: "<event that reactivates an on_hold project>"   # on_hold projects only
+next_action: "<the single next actionable step>"   # MANDATORY on active; omit on on_hold/someday/planning
 people: ["[[Madi]]"]  # wikilink everyone referenced
 ---
 ```
-`next_action` is non-negotiable on active projects — it's the core of the amnesia test and the missing-next-step duty.
+`next_action` is non-negotiable on active projects — it's the core of the amnesia test and the missing-next-step duty. `on_hold`/`someday`/`planning` projects don't require one; an `on_hold` project instead carries a `trigger:` naming the (often unrelated) event that should wake it back up.
 
 ### Reference note (`ref_*`)
 ```yaml

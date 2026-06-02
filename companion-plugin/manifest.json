@@ -1,10 +1,10 @@
 {
   "id": "mbs-companion",
   "name": "MBS Companion",
-  "version": "0.2.0",
+  "version": "0.3.3",
   "minAppVersion": "1.4.0",
   "description": "Status and quick actions for the mbs_automation second-brain agents (mbs-daily / mbs-weekly): see when they last ran, open the daily note / weekly review / session-awareness report, and trigger runs.",
   "author": "Chris Preston",
-  "authorUrl": "https://github.com/CP250/mbs_automation",
+  "authorUrl": "https://github.com/CP250/obsidian-mbs-companion",
   "isDesktopOnly": true
 }

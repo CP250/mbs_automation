@@ -36,8 +36,9 @@ Minimum frontmatter by type. Paths/pillars per `vault-schema.md`. Add fields as 
 type: project
 date: YYYY-MM-DD
 tags: [project, <pillar>]
-status: active            # active | planning | completed | on-hold
-next_action: "<single next step>"   # MANDATORY when status is active
+status: active            # active | planning | on_hold | someday | completed
+trigger: "<event that reactivates on_hold>"   # on_hold only
+next_action: "<single next step>"   # MANDATORY when active; omit on on_hold/someday/planning
 people: ["[[Name]]"]
 ```
 
