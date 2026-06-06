@@ -8,10 +8,24 @@
 #   3. RunAtLoad at login — covers the case where the Mac was fully powered off
 #      at 06:00, so the report runs shortly after you log back in.
 #
-# A per-day stamp file makes every trigger idempotent: the report runs only if
-# today's run has not already succeeded. That stamp IS the "check whether it has
-# run yet, and if not run it now" logic. The stamp is written only on success, so
-# a failed run will retry on the next trigger rather than being skipped for the day.
+# Idempotence + retry (2026-06-06 hardening):
+# - A per-day stamp file ($STAMP) records the last successful day. Any trigger
+#   on a stamped day exits immediately. The stamp is written only on success.
+# - A directory lock ($LOCK_DIR) prevents two instances from running at once
+#   (e.g. a launchd wake-trigger firing while a previous instance is still in
+#   its retry-sleep). Stale locks (PID no longer alive) are cleaned up.
+# - On Claude failure (transient API outage, network blip), the script retries
+#   in-process with exponential backoff before giving up. Five attempts total,
+#   sleeps of 5/10/30/60 min between attempts. Total elapsed up to ~1.75 hr.
+#   macOS sleep pauses the sleep timer (CLOCK_MONOTONIC), so retries effectively
+#   wait for "Mac awake" time rather than wall-clock time. This is the right
+#   behavior — retrying while the network is asleep has no value.
+# - If all in-script retries fail, the script exits non-zero with no stamp, so
+#   the next launchd trigger (next wake event or tomorrow's 06:00) will retry.
+#
+# Why this matters: on 2026-06-05 a 06:00 FailedToOpenSocket killed that day's
+# report because the script exited after one attempt and launchd's wake-coalesce
+# never fired a retry trigger that day. The in-script retry loop fixes that.
 
 set -uo pipefail
 
@@ -30,6 +44,27 @@ if [ -f "$STAMP" ] && [ "$(cat "$STAMP" 2>/dev/null)" = "$TODAY" ]; then
   echo "$(ts) — already ran for $TODAY, skipping." >> "$LOG"
   exit 0
 fi
+
+# Single-instance lock. mkdir is atomic — only one launchd invocation can win
+# the create. If we lose, check whether the holder is still alive; if not,
+# the lock is stale (script killed without trap firing) and we claim it.
+LOCK_DIR="$STATE_DIR/mbs_daily.lock"
+if ! mkdir "$LOCK_DIR" 2>/dev/null; then
+  HOLDER_PID="$(cat "$LOCK_DIR/pid" 2>/dev/null)"
+  if [ -n "${HOLDER_PID:-}" ] && kill -0 "$HOLDER_PID" 2>/dev/null; then
+    echo "$(ts) — another instance is running (PID $HOLDER_PID), exiting cleanly" >> "$LOG"
+    exit 0
+  fi
+  echo "$(ts) — stale lock detected (holder PID was ${HOLDER_PID:-unknown}), claiming" >> "$LOG"
+  rm -rf "$LOCK_DIR"
+  if ! mkdir "$LOCK_DIR" 2>/dev/null; then
+    echo "$(ts) — ERROR: could not claim lock after cleanup, aborting" >> "$LOG"
+    exit 1
+  fi
+fi
+echo $$ > "$LOCK_DIR/pid"
+# Release the lock on any exit path (success, error, SIGTERM from `launchctl bootout`).
+trap 'rm -rf "$LOCK_DIR" 2>/dev/null' EXIT INT TERM
 
 # launchd starts jobs with a minimal PATH; prepend the common install locations
 # for the `claude` binary before resolving it.
@@ -76,11 +111,27 @@ fi
 # mode warning). The command is hardened to use the filesystem, not the Obsidian
 # MCP, so it does not require Obsidian to be running.
 PROMPT="Read the file $HOME/.claude/commands/obsidian-daily.md and carry out its instructions exactly, using the mbs_automation skill, against the vault at $VAULT. This is the unattended scheduled morning run: append or refresh the bounded ## Vault Agent section in today's tasks note via the filesystem, and do not touch P's own sections."
-if "$CLAUDE_BIN" -p "$PROMPT" --dangerously-skip-permissions >> "$LOG" 2>&1; then
-  echo "$TODAY" > "$STAMP"
-  echo "$(ts) — completed successfully; stamped $TODAY" >> "$LOG"
-else
+
+# Retry loop with backoff. Sleeps between attempts (in seconds): 5min, 10min,
+# 30min, 60min. So a transient outage of up to ~1.75 hr gets covered without
+# relying on launchd to coalesce a wake-trigger.
+MAX_ATTEMPTS=5
+RETRY_DELAYS=(300 600 1800 3600)
+
+rc=1
+for attempt in $(seq 1 "$MAX_ATTEMPTS"); do
+  echo "$(ts) — attempt $attempt/$MAX_ATTEMPTS" >> "$LOG"
+  if "$CLAUDE_BIN" -p "$PROMPT" --dangerously-skip-permissions >> "$LOG" 2>&1; then
+    echo "$TODAY" > "$STAMP"
+    echo "$(ts) — completed successfully on attempt $attempt; stamped $TODAY" >> "$LOG"
+    exit 0
+  fi
   rc=$?
-  echo "$(ts) — ERROR: /obsidian-daily exited $rc; will retry on next trigger" >> "$LOG"
-  exit "$rc"
-fi
+  if [ "$attempt" -lt "$MAX_ATTEMPTS" ]; then
+    delay="${RETRY_DELAYS[$((attempt - 1))]}"
+    echo "$(ts) — attempt $attempt failed (exit $rc); sleeping ${delay}s before retry $((attempt + 1))" >> "$LOG"
+    sleep "$delay"
+  fi
+done
+echo "$(ts) — all $MAX_ATTEMPTS attempts failed (final exit $rc); will retry on next launchd trigger" >> "$LOG"
+exit "$rc"
