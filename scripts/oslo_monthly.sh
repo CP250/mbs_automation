@@ -3,7 +3,7 @@
 #
 # Pairs with mbs_weekly.sh / mbs_daily.sh — same launchd idiom (state dir,
 # per-month stamp, PATH export, log to ~/.mbs_automation/). Body is bash: the
-# script counts configured journals in create/oslo/config/journals.yml and
+# script counts per-journal notes in create/oslo/reference/journals/ and
 # appends a reminder section to today's tasks note. The actual corpus refresh
 # (fetching new issues, parsing, attributing, saving poems) is intelligence
 # work done interactively in Claude Code — this script just makes sure the
@@ -23,7 +23,7 @@ OSLO="$VAULT/create/oslo"
 STATE_DIR="$HOME/.mbs_automation"
 STAMP="$STATE_DIR/last_oslo_monthly_run"
 LOG="$STATE_DIR/oslo_monthly.log"
-JOURNALS_CONFIG="$OSLO/config/journals.yml"
+JOURNALS_DIR="$OSLO/reference/journals"
 
 mkdir -p "$STATE_DIR"
 
@@ -57,11 +57,11 @@ EOF
   echo "$(ts) — created daily note: $DAILY_NOTE" >> "$LOG"
 fi
 
-# Count configured journals: anything between "journals:" and the next top-level
-# key, looking for "- slug:" entries (light YAML parse).
+# Count configured journals: every .md file in reference/journals/ except README.md
+# represents one configured journal (slug = basename without .md).
 JOURNAL_COUNT=0
-if [[ -f "$JOURNALS_CONFIG" ]]; then
-  JOURNAL_COUNT=$(awk '/^journals:/{flag=1; next} /^[a-zA-Z_]+:/{flag=0} flag && /^[[:space:]]*-[[:space:]]*slug:/' "$JOURNALS_CONFIG" | wc -l | tr -d ' ')
+if [[ -d "$JOURNALS_DIR" ]]; then
+  JOURNAL_COUNT=$(find "$JOURNALS_DIR" -maxdepth 1 -type f -name "*.md" -not -name "README.md" 2>/dev/null | wc -l | tr -d ' ')
 fi
 
 {
@@ -69,10 +69,10 @@ fi
   echo "$HEADING"
   echo ""
   if [[ "$JOURNAL_COUNT" -eq 0 ]]; then
-    echo "**$NOW** — oslo | monthly corpus refresh: no journals configured in \`create/oslo/config/journals.yml\` yet. Skipping."
+    echo "**$NOW** — oslo | monthly corpus refresh: no journals configured in \`create/oslo/reference/journals/\` yet. Skipping."
     echo ""
-    echo "- [ ] When you pick your top 3–5 target journals (see [[ref_north_american_poetry_journals]]), add them to \`config/journals.yml\` and the next monthly run will start refreshing."
-    echo "    proposed: pick targets and populate journals.yml"
+    echo "- [ ] When you pick your top 3–5 target journals (see [[ref_north_american_poetry_journals]]), create a note per journal at \`create/oslo/reference/journals/<slug>.md\` (frontmatter schema in that folder's README) and the next monthly run will start refreshing."
+    echo "    proposed: pick targets and create per-journal notes"
     echo "    status:    "
     echo "    reply:"
   else
