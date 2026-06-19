@@ -72,7 +72,7 @@ Before writing in a folder you haven't written in: read 1–2 existing notes the
 ## Archiving — `_archive/`, suggest-only
 - Archive = **move the note into that folder's `_archive/` subfolder** (not a filename prefix). Create `_archive/` on demand if absent.
 - **The agent NEVER archives autonomously.** It may flag "this looks complete — archive it?" and waits for P. P decides when something is done.
-- Never delete. `trash/` is opaque and never touched by the agent.
+- **Never permanently delete.** The agent's disposal path for junk / true duplicates / accidents is a **move to `trash/` at the vault root, no permission required** (per vault `_CLAUDE.md` Disposal section, 2026-06-14). `trash/` is opaque to reads and searches: the agent never reads from it, never surfaces its contents, and never permanently deletes from it. The agent's only interaction with `trash/` is to move files INTO it.
 
 ## Template usage
 When creating from a Templater template, strip all `<% ... %>` syntax and fill real values. Never leave template placeholders in a saved note.

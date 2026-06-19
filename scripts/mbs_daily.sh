@@ -39,6 +39,16 @@ mkdir -p "$STATE_DIR"
 TODAY="$(date +%Y-%m-%d)"
 ts() { date '+%Y-%m-%d %H:%M:%S'; }
 
+# Source the auth-failure detection helpers (lib_auth.sh).
+# shellcheck source=./lib_auth.sh
+source "$(dirname "$0")/lib_auth.sh"
+
+# Pre-flight: if the reauth sentinel is fresh, the API will 401 again. Skip
+# cleanly so launchd doesn't burn cycles, and re-fire the notification.
+if needs_reauth_skip "$LOG"; then
+  exit 0
+fi
+
 # Already ran successfully today? Stop.
 if [ -f "$STAMP" ] && [ "$(cat "$STAMP" 2>/dev/null)" = "$TODAY" ]; then
   echo "$(ts) — already ran for $TODAY, skipping." >> "$LOG"
@@ -121,12 +131,30 @@ RETRY_DELAYS=(300 600 1800 3600)
 rc=1
 for attempt in $(seq 1 "$MAX_ATTEMPTS"); do
   echo "$(ts) — attempt $attempt/$MAX_ATTEMPTS" >> "$LOG"
-  if "$CLAUDE_BIN" -p "$PROMPT" --dangerously-skip-permissions >> "$LOG" 2>&1; then
+  run_claude_p "$PROMPT" "$LOG"
+  rc=$?
+  if [ "$rc" -eq 0 ]; then
+    clear_reauth_sentinel
     echo "$TODAY" > "$STAMP"
     echo "$(ts) — completed successfully on attempt $attempt; stamped $TODAY" >> "$LOG"
     exit 0
   fi
-  rc=$?
+  if [ "$rc" -eq 2 ]; then
+    # Auth failure (401). Retrying is pointless. Mark sentinel, write a banner
+    # into today's tasks note so P sees why the report is missing, and exit.
+    mark_reauth_needed "$LOG"
+    if [ -f "$TODAYS_TASKS" ]; then
+      cat >> "$TODAYS_TASKS" <<'BANNER'
+
+## Vault Agent (skipped)
+
+Claude Code authentication expired (HTTP 401 from Anthropic API). Daily report not generated. Re-authenticate by running `claude` then `/login` in Terminal. Once auth is restored, the next launchd trigger (next wake event or tomorrow's 06:00) will produce the report normally.
+
+BANNER
+      echo "$(ts) — wrote auth-skipped banner to $TODAYS_TASKS" >> "$LOG"
+    fi
+    exit 2
+  fi
   if [ "$attempt" -lt "$MAX_ATTEMPTS" ]; then
     delay="${RETRY_DELAYS[$((attempt - 1))]}"
     echo "$(ts) — attempt $attempt failed (exit $rc); sleeping ${delay}s before retry $((attempt + 1))" >> "$LOG"

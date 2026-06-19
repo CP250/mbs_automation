@@ -16,9 +16,9 @@
 # Stamp is written only on success.
 #
 # What it does:
-#   - Scans create/oslo/poems/ and create/oslo/collections/ for poems whose
-#     frontmatter has both `publication: true` AND `status: draft`, and whose
-#     mtime is more than 30 days ago.
+#   - Scans create/oslo/works/misc/ and create/oslo/works/collections/ for poems
+#     whose frontmatter has both `publication: true` AND `status: draft`, and
+#     whose mtime is more than 30 days ago.
 #   - Appends findings to today's tasks_YYYY-MM-DD.md under an
 #     `## Oslo — Weekly Stale-Drafts` heading, in the Vault Agent reply-loop
 #     format (`status:` / `reply:` fields P edits in Obsidian).
@@ -66,7 +66,7 @@ EOF
   echo "$(ts) — created daily note: $DAILY_NOTE" >> "$LOG"
 fi
 
-# Scan poems and collections for publication-candidate stale drafts.
+# Scan works/misc and works/collections for publication-candidate stale drafts.
 # Frontmatter check inspects the first 30 lines only — frontmatter lives at top.
 STALE_FOUND=0
 TMP_REPORT="$(mktemp)"
@@ -88,7 +88,7 @@ while IFS= read -r poem; do
       STALE_FOUND=$((STALE_FOUND + 1))
     fi
   fi
-done < <(find "$OSLO/poems" "$OSLO/collections" -type f -name "*.md" 2>/dev/null)
+done < <(find "$OSLO/works/misc" "$OSLO/works/collections" -type f -name "*.md" 2>/dev/null)
 
 # Append section to today's daily note
 {

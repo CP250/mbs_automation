@@ -27,7 +27,7 @@ This vault is **hybrid**, not wiki-style: ~4,500 existing human-readable notes o
 ├── captured/              ← inbox from external tools (MarkDownload, Glasp, Read It Later)
 ├── _to_clean/             ← legacy backlog P drains manually (NOT the agent's job unless asked)
 ├── attachments/           ← Obsidian-managed
-└── trash/                 ← OPAQUE. Never read, search, or modify.
+└── trash/                 ← OPAQUE to reads/searches. Agent's only interaction: move files IN (disposal path). Never delete from. See _CLAUDE.md Disposal section.
 ```
 
 ### Pillar boundary rules (P's own definitions)
@@ -36,7 +36,7 @@ This vault is **hybrid**, not wiki-style: ~4,500 existing human-readable notes o
 
 ## Folder semantics
 - **`_archive/`** — every folder's archive for deprecated items, completed projects, conversation transcripts. Standard name everywhere (never `vaults_*`, never `old/`). Created on demand. **The agent suggests archiving but NEVER moves anything to `_archive/` autonomously — P decides when something is complete.**
-- **`trash/`** — never searched, never read, never touched. Fully opaque.
+- **`trash/`** — opaque to reads and searches. The agent never reads, surfaces, or permanently deletes from `trash/`. **The agent's one allowed interaction with `trash/` is to move files INTO it as the disposal path** (per vault `_CLAUDE.md` Disposal section, 2026-06-14). Trash moves do not require permission; the agent never asks "can I delete this?" - the answer is always "move to `trash/` and continue."
 - **`captured/`** — inbox; triage source. Don't treat its contents as filed.
 - **`_to_clean/`** — P's manual backlog. Leave alone unless asked.
 
@@ -76,17 +76,40 @@ source: "https://..."          # verbatim if from the web
 ---
 ```
 
-### Person note (social/)
+### Person note (social/people/, or pillar-specific subfolder)
 ```yaml
 ---
 type: person
 date: 2026-05-20
-tags: [person]
-relationship: "<wife | daughter | friend | mentee | ...>"
+aliases:
+  - Full Name
+  - Nickname
+tags: [person, <relationship-bucket>]
+relationship: "<see value set below>"
 last_interaction: 2026-05-20
 contact: ""
+growth_goal: "<optional; see goals_friends.md>"
+next_contact: "<optional; see goals_friends.md>"
 ---
 ```
+
+**Folder:** default is `social/people/<first_last>.md` (renamed 2026-06-12 from `social/friends/people/`). The folder name avoids "friends" because not everyone in it is already a friend; `relationship:` is the discriminator. People with a dedicated pillar area keep it (Avery in `social/acrp/`, Madi in `social/ftd/`, dogs in `social/dogs/`). Work colleagues live with their work context, not in `social/people/` (Polar interview contacts in `money/project_polar/`, Verition colleagues in `money/verition/`).
+
+**`relationship:` values** (expanded 2026-06-12):
+- Family roles: `wife`, `daughter`, `son`, `father`, `mother`, `sibling`
+- `friend` - person P enjoys spending time with for its own sake
+- `colleague` - direct workplace tie (current or recent)
+- `professional_contact` - industry/network tie outside the workplace; includes contacts P is actively cultivating that may evolve into friendship
+- `mentor` / `mentee` - explicit mentorship dynamic
+- `acquaintance` - light tie worth tracking but not actively cultivated
+
+Custom prose values are permitted when the enum doesn't capture a relationship cleanly (e.g. `ex-wife / co-parent` on [[laura_defranco]], or the prose values on Polar interview contacts). The field is for the dominant current mode; update the value when the dominant mode shifts. Do not move the file.
+
+**Meeting documentation pattern** (canonical 2026-06-12):
+- `## Interactions` section at the top: chronological one-line index. Every interaction (text exchange, brief encounter, full meeting) gets a one-liner here.
+- `## Meetings` section for substantive writeups: each meeting is a `### YYYY-MM-DD - <one-line title>` subsection covering Setting, the arc of the conversation in named beats, P's takeaways, offers/asks, and action items as Tasks-plugin checkboxes with `#<pillar> 🆔 <id> 📅 <date>` so they flow into Morgen.
+- Loose meeting notes at vault root get integrated into the relevant person note via this pattern, then archived. The person note is the single source of truth for the relationship.
+- Reference example: [[tom_van_riper#Meetings]].
 
 ### Decision note / log entry
 ```yaml
@@ -97,6 +120,23 @@ tags: [decision, <pillar>]
 project: "[[<project>]]"
 ---
 ```
+
+### Pillar goals note (`goals_<thread>.md`)
+Most goals notes use `type: reference` and live at `<pillar>/<thread>/goals_<thread>.md` (e.g. `create/ch8/goals_ch8.md`, `sports/golf/goals_golf.md`). They roll up to sections of `admin/betterment/goals_long_term.md` via `rolls_up_to:`. The optional weekly-block fields make a thread participate in the **Morgen drop-zone** workflow (see `_CLAUDE.md` → "Weekly time-blocks → Morgen drop zone" and SETUP.md → "com.mbs.weekly-blocks"):
+
+```yaml
+---
+type: reference                       # or "goals" for full goals-type notes (e.g. goals_oslo.md)
+date: 2026-06-06
+tags: [reference, <pillar>, <thread>, goals]
+rolls_up_to: "[[goals_long_term#<section>]]"
+last_reviewed: 2026-06-06
+weekly_minutes: 120                    # OPTIONAL — total minutes/week to time-block. omit or 0 = thread doesn't participate.
+default_block_length: 60               # OPTIONAL — largest single block size, default 60. Last block holds the remainder.
+---
+```
+
+The pair `(weekly_minutes, default_block_length)` is the **single source of truth** for weekly time-block generation. The script `~/dev/mbs_automation/scripts/weekly_blocks.py` reads only the frontmatter — no body parsing — so the goals file body remains free prose. To pause for a week: set `weekly_minutes: 0` or delete the line. To rebalance block lengths: tune `default_block_length`. No code change required for either; next Sunday's launchd run picks up the edit automatically.
 
 ### Daily notes (Journals plugin — do not hand-create; the plugin owns these)
 - Tasks journal: `daily_notes/tasks/tasks_YYYY-MM-DD.md`

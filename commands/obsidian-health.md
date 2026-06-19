@@ -21,7 +21,7 @@ Use the mbs_automation skill. Execute `/obsidian-health`:
    - 🔴 Critical: broken links, active projects missing a next action.
    - 🟡 Warning: duplicates, stale active projects, naming/convention drift, agent-note frontmatter gaps.
    - ⚪ Info: orphans, empty folders, root strays, `_to_clean/` size.
-6. **Fixes:** for safe ones (re-point a broken link, fix a naming violation, propose a `next_action`), offer to apply. For anything destructive — merging notes, **archiving** — list it and require explicit approval. **Never auto-archive; never move files without approval** (hard boundary from `_CLAUDE.md`).
+6. **Fixes:** for safe ones (re-point a broken link, fix a naming violation, propose a `next_action`), offer to apply. For **archiving** to `_archive/` - list it and require explicit P approval (archiving signals "completed work P wants to keep"; that judgment is P's). For **disposal of junk / true duplicates / accidents** - move to `trash/` at the vault root, no permission needed (per `_CLAUDE.md` Disposal section, 2026-06-14). **Never permanently delete; never auto-archive.** If about to ask "can I delete this?", the answer is: move to `trash/` and continue. Trash is reversible; the move IS the disposal.
 7. Append to the operation log: `**HH:MM** — health | X critical, Y warning, Z info`.
 
 ---
