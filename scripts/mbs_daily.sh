@@ -106,6 +106,8 @@ journal: tasks
 journal-date: ${TODAY}
 ---
 
+
+
 EOF
   echo "$(ts) — pre-flight: created minimal $TODAYS_TASKS" >> "$LOG"
 fi
@@ -121,6 +123,37 @@ fi
 # mode warning). The command is hardened to use the filesystem, not the Obsidian
 # MCP, so it does not require Obsidian to be running.
 PROMPT="Read the file $HOME/.claude/commands/obsidian-daily.md and carry out its instructions exactly, using the mbs_automation skill, against the vault at $VAULT. This is the unattended scheduled morning run: append or refresh the bounded ## Vault Agent section in today's tasks note via the filesystem, and do not touch P's own sections."
+
+# Pre-flight network gate (2026-07-06 hardening): the 06:00 fire (or a
+# wake-coalesced fire) can land before Wi-Fi/DNS has reconnected, so the first
+# attempt would burn on a ConnectionRefused / could-not-resolve failure that has
+# nothing to do with the API or with auth (this is what silently killed the
+# 2026-07-05 run). Poll the API host for up to ~2 min before starting; proceed
+# regardless once reachable or the budget is exhausted (the retry loop below
+# still covers a genuine outage). On a healthy morning the first probe returns
+# immediately, so this adds no meaningful delay.
+wait_for_network() {
+  local log="$1"
+  local url="https://api.anthropic.com/"
+  local max_tries=12 i rc
+  for i in $(seq 1 "$max_tries"); do
+    curl -sS --max-time 5 -o /dev/null "$url" 2>/dev/null
+    rc=$?
+    # curl exit 0 = connected (an HTTP 401/404 still counts as reachable).
+    # Exit 6 (DNS), 7 (connect refused), 28 (timeout), 35 (TLS) => not ready.
+    case "$rc" in
+      6|7|28|35)
+        echo "$(ts) — network not ready (curl exit $rc); waiting 10s ($i/$max_tries)" >> "$log"
+        sleep 10 ;;
+      *)
+        echo "$(ts) — network reachable (curl exit $rc after $i check(s))" >> "$log"
+        return 0 ;;
+    esac
+  done
+  echo "$(ts) — network still not ready after $max_tries checks; proceeding anyway" >> "$log"
+  return 1
+}
+wait_for_network "$LOG"
 
 # Retry loop with backoff. Sleeps between attempts (in seconds): 5min, 10min,
 # 30min, 60min. So a transient outage of up to ~1.75 hr gets covered without
@@ -162,4 +195,20 @@ BANNER
   fi
 done
 echo "$(ts) — all $MAX_ATTEMPTS attempts failed (final exit $rc); will retry on next launchd trigger" >> "$LOG"
+
+# Connectivity-failure banner (2026-07-06 hardening): unlike a 401, a pure
+# connection/DNS failure used to leave NO explanation in today's note (the
+# silent 2026-07-05 miss), so a missing report looked identical to "nothing
+# ran". Write a one-time banner so P sees why. Idempotent: skip if any Vault
+# Agent skip banner (this one or the 401 one) is already present in today's file.
+if [ -f "$TODAYS_TASKS" ] && ! grep -q "## Vault Agent (skipped" "$TODAYS_TASKS"; then
+  cat >> "$TODAYS_TASKS" <<BANNER
+
+## Vault Agent (skipped, no network)
+
+Daily report not generated: could not reach the Anthropic API after ${MAX_ATTEMPTS} attempts. This was a connection or DNS failure, not an auth problem, most often the Mac waking for the scheduled run before Wi-Fi/DNS reconnected. The next launchd trigger (next wake event or tomorrow's 06:00) retries automatically. No action needed unless it recurs for several days.
+
+BANNER
+  echo "$(ts) — wrote no-network skipped banner to $TODAYS_TASKS" >> "$LOG"
+fi
 exit "$rc"
