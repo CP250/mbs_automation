@@ -8,10 +8,10 @@ Use the mbs_automation skill. Execute `/obsidian-learn $ARGUMENTS`:
 
 The optional argument is a scope: `recent` (last ~90 days, default), `all` (whole vault), or a topic. This reviews the lessons P's vault has accumulated so they compound instead of expiring. It **proposes** — it never auto-prunes, auto-archives, or rewrites `_CLAUDE.md` on its own.
 
-1. Read `_CLAUDE.md`, `SOUL.md` at the vault root, and `index.md` + the last ~20 lines of `admin/mbs_system/design/log.md` for context.
+1. Read `admin/mbs_system/brain/_CLAUDE.md`, `SOUL.md`, and `admin/mbs_system/brain/index.md` + the last ~20 lines of `admin/mbs_system/design/log.md` for context.
 2. Gather learnings (shell-grep + reads; parallel read subagents for breadth; per the search-completeness rule in `references/vault-schema.md`, scan exhaustively rather than sampling). **Exclude `trash/`; treat `_archive/` hits as historical.** Look for:
    - **Lessons in daily notes** — both journals (`daily_notes/tasks/`, `daily_notes/health/`): "lesson learned", "what didn't work", "next time", review insights.
-   - **Decisions** — structural ADRs in `admin/obsidian_optimize/` and project `## Key Decisions` sections (their rationale and how they turned out).
+   - **Decisions** — structural ADRs in `admin/mbs_system/design/` and project `## Key Decisions` sections (their rationale and how they turned out).
    - **Mistakes and wins** — logs and daily notes showing what wasted time vs. what worked, across pillars.
 3. For each learning, classify and **cite the real source note(s) and dates** on both the original and any reinforcement:
    - **Active** — reinforced recently; still applies.

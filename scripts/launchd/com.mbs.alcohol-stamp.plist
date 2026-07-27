@@ -12,6 +12,10 @@
     </array>
 
     <!-- Monday 07:30 local. Staggered after mbs_weekly (07:00) and oslo-weekly (07:15). -->
+    <!-- Monday 07:45. Moved from 07:30 on 2026-07-26: com.mbs.cars-weekly already
+         held 07:30, breaking the one-job-per-slot stagger convention in SETUP.md.
+         Slot assignments: weekly 07:00, oslo-weekly 07:15, cars-weekly 07:30,
+         alcohol-stamp 07:45. -->
     <key>StartCalendarInterval</key>
     <dict>
         <key>Weekday</key>
@@ -19,7 +23,7 @@
         <key>Hour</key>
         <integer>7</integer>
         <key>Minute</key>
-        <integer>30</integer>
+        <integer>45</integer>
     </dict>
 
     <key>RunAtLoad</key>

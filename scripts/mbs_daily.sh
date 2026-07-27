@@ -90,6 +90,56 @@ echo "$(ts) — starting /obsidian-daily for $TODAY (claude: $CLAUDE_BIN)" >> "$
 
 cd "$VAULT" || { echo "$(ts) — ERROR: cannot cd to $VAULT" >> "$LOG"; exit 1; }
 
+# --- carry-forward: pull yesterday's above-Vault-Agent region into today ------
+# Moves the region above the first "## Vault Agent" heading from the most-recent
+# prior tasks note into today's note (verbatim, minus resolved - [x] / - [-]
+# lines) and blanks that region in the source. Runs after the skeleton pre-flight
+# below and before the claude -p call, so the morning report sees the carried
+# tasks. Deterministic and idempotent: blanking the source means a launchd retry
+# on the same day finds nothing to carry. Never touches the "## Vault Agent"
+# section, the sibling agent sections, or "# Archived" — only P's own region.
+carry_forward_prior_tasks() {
+  local today="$1" tasks_dir="$2" today_file="$3" log="$4"
+  local prior_date prior_file
+  prior_date="$(ls "$tasks_dir"/tasks_*.md 2>/dev/null \
+    | grep -oE 'tasks_[0-9]{4}-[0-9]{2}-[0-9]{2}\.md' \
+    | sed -E 's/tasks_(.*)\.md/\1/' \
+    | awk -v t="$today" '$0 < t' | sort | tail -1)"
+  [ -z "$prior_date" ] && { echo "$(ts) — carry-forward: no prior note, skip" >> "$log"; return 0; }
+  prior_file="$tasks_dir/tasks_${prior_date}.md"
+  [ -f "$today_file" ] || { echo "$(ts) — carry-forward: today file missing, skip" >> "$log"; return 0; }
+  # Temp dir inside the tasks folder so the final mv is same-filesystem (atomic).
+  local tmp; tmp="$(mktemp -d "${tasks_dir}/.carry.XXXXXX")"
+  # shellcheck disable=SC2064
+  trap "rm -rf '$tmp'" RETURN
+  # Split prior note: fm (frontmatter) / carry (region, resolved lines dropped) /
+  # tail (first boundary heading onward). Boundary = first "## Vault Agent"; a
+  # "# Archived" also stops carry as a fallback for notes with no agent section.
+  awk -v carryf="$tmp/carry" -v tailf="$tmp/tail" -v fmf="$tmp/fm" '
+    BEGIN{ inbody=0; intail=0; fmc=0 }
+    { if (NR==1 && $0!="---") inbody=1
+      if (!inbody){ print >> fmf; if($0=="---"){fmc++; if(fmc==2)inbody=1} next }
+      if (!intail && ($0 ~ /^## Vault Agent/ || $0 ~ /^# Archived/)) intail=1
+      if (intail){ print >> tailf; next }
+      if ($0 ~ /^[[:space:]]*- \[[xX-]\][[:space:]]/) next
+      if ($0 ~ /^[[:space:]]*- \[[xX-]\]$/) next
+      print >> carryf }' "$prior_file"
+  [ -f "$tmp/fm" ] || : > "$tmp/fm"; [ -f "$tmp/carry" ] || : > "$tmp/carry"; [ -f "$tmp/tail" ] || : > "$tmp/tail"
+  grep -q '[^[:space:]]' "$tmp/carry" || { echo "$(ts) — carry-forward: empty region, skip" >> "$log"; return 0; }
+  # Today = today frontmatter + carried region + today's existing body (prepend).
+  awk -v carryf="$tmp/carry" '
+    BEGIN{ fmc=0; inbody=0; pc=0 }
+    { if(!inbody){ print; if($0=="---"){fmc++; if(fmc==2)inbody=1} next }
+      if(!pc){ print ""; while((getline l < carryf)>0) print l; close(carryf); pc=1 }
+      print }
+    END{ if(!pc){ print ""; while((getline l < carryf)>0) print l; close(carryf) } }' \
+    "$today_file" > "$tmp/today"
+  # Source = its frontmatter + 3-line writing gap + tail (agent + archived kept).
+  { cat "$tmp/fm"; printf '\n\n\n'; cat "$tmp/tail"; } > "$tmp/prior"
+  mv "$tmp/today" "$today_file"; mv "$tmp/prior" "$prior_file"
+  echo "$(ts) — carry-forward: moved $prior_date region into $today, blanked source" >> "$log"
+}
+
 # Pre-flight: guarantee today's tasks file exists on this Mac's local disk
 # BEFORE invoking Claude. Why: the Journals plugin's `tasks.autoCreate` is now
 # intentionally disabled (to prevent phone-Mac sync races — phone Journals would
@@ -111,6 +161,10 @@ journal-date: ${TODAY}
 EOF
   echo "$(ts) — pre-flight: created minimal $TODAYS_TASKS" >> "$LOG"
 fi
+
+# Carry yesterday's above-Vault-Agent region forward into today (see function
+# definition above). Runs whether or not the pre-flight just created the file.
+carry_forward_prior_tasks "$TODAY" "$VAULT/daily_notes/tasks" "$TODAYS_TASKS" "$LOG"
 
 # Headless run. NOTE: custom slash commands (/obsidian-daily) do NOT expand in
 # `claude -p` non-interactive mode — they only work in an interactive session. So
@@ -176,7 +230,10 @@ for attempt in $(seq 1 "$MAX_ATTEMPTS"); do
     # Auth failure (401). Retrying is pointless. Mark sentinel, write a banner
     # into today's tasks note so P sees why the report is missing, and exit.
     mark_reauth_needed "$LOG"
-    if [ -f "$TODAYS_TASKS" ]; then
+    # Only write the banner if no ## Vault Agent section exists yet. A report may
+    # have landed from a hand-run or a concurrent attempt while this ladder slept;
+    # appending "not generated" under a real report is worse than saying nothing.
+    if [ -f "$TODAYS_TASKS" ] && ! grep -qE '^## Vault Agent' "$TODAYS_TASKS"; then
       cat >> "$TODAYS_TASKS" <<'BANNER'
 
 ## Vault Agent (skipped)
@@ -187,6 +244,14 @@ BANNER
       echo "$(ts) — wrote auth-skipped banner to $TODAYS_TASKS" >> "$LOG"
     fi
     exit 2
+  fi
+  if [ "$rc" -eq 3 ]; then
+    # Out of usage credits. run_claude_p already wrote a visible alert line into
+    # today's tasks note. Retrying is pointless until credits/model are fixed, so
+    # stop the loop (mirrors the 401 path) and exit non-zero with no stamp; the
+    # next launchd trigger retries once credits are restored.
+    echo "$(ts) — out of usage credits (model ${CLAUDE_MODEL:-opus}); alert written to today's note, not retrying" >> "$LOG"
+    exit 3
   fi
   if [ "$attempt" -lt "$MAX_ATTEMPTS" ]; then
     delay="${RETRY_DELAYS[$((attempt - 1))]}"
@@ -201,7 +266,7 @@ echo "$(ts) — all $MAX_ATTEMPTS attempts failed (final exit $rc); will retry o
 # silent 2026-07-05 miss), so a missing report looked identical to "nothing
 # ran". Write a one-time banner so P sees why. Idempotent: skip if any Vault
 # Agent skip banner (this one or the 401 one) is already present in today's file.
-if [ -f "$TODAYS_TASKS" ] && ! grep -q "## Vault Agent (skipped" "$TODAYS_TASKS"; then
+if [ -f "$TODAYS_TASKS" ] && ! grep -qE '^## Vault Agent' "$TODAYS_TASKS"; then
   cat >> "$TODAYS_TASKS" <<BANNER
 
 ## Vault Agent (skipped, no network)

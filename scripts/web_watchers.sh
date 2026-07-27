@@ -109,6 +109,46 @@ require_bin "claude" "see ~/.claude/ install docs"
 # shellcheck source=./lib_email.sh
 source "$LIB_DIR/lib_email.sh"
 
+# ----------------------------------------------------------------------------
+# Pre-flight network gate (2026-07-07 hardening, ported from mbs_daily.sh):
+# the 08:30 fire (or a wake-coalesced fire) can land in a dark-wake window
+# before Wi-Fi/DNS has reconnected, so every curl in the loop would burn on a
+# could-not-resolve failure that has nothing to do with the watched URLs. This
+# is what produced the analogue_3d_firmware 5-consecutive-failures false alarm
+# of 2026-07-03..07. Poll a known-good host for up to ~2 min before starting;
+# proceed regardless once reachable or the budget is exhausted (the per-fetch
+# retry loop below still covers a genuine outage). On a healthy morning the
+# first probe returns immediately, so this adds no meaningful delay.
+# ----------------------------------------------------------------------------
+
+NETWORK_PROBE_URL="https://api.anthropic.com/"
+
+# One-shot probe: is the network up right now? curl exit 0 or any HTTP-level
+# response = reachable; exit 6 (DNS), 7 (refused), 28 (timeout), 35 (TLS) = not.
+network_up() {
+  curl -sS --max-time 5 -o /dev/null "$NETWORK_PROBE_URL" 2>/dev/null
+  case "$?" in
+    6|7|28|35) return 1 ;;
+    *)         return 0 ;;
+  esac
+}
+
+wait_for_network() {
+  local max_tries=12 i
+  for i in $(seq 1 "$max_tries"); do
+    if network_up; then
+      echo "$(ts) — network reachable after $i check(s)" >> "$LOG"
+      return 0
+    fi
+    echo "$(ts) — network not ready; waiting 10s ($i/$max_tries)" >> "$LOG"
+    sleep 10
+  done
+  echo "$(ts) — network still not ready after $max_tries checks; proceeding anyway" >> "$LOG"
+  return 1
+}
+
+wait_for_network
+
 echo "$(ts) — starting web-watchers run for $TODAY" >> "$LOG"
 
 # ----------------------------------------------------------------------------
@@ -336,8 +376,20 @@ PROMPT_EOF
   # watchers and aborts cleanly.
   local temp
   temp="$(mktemp -t web_watchers_claude.XXXXXX)"
-  claude -p "$prompt" --dangerously-skip-permissions > "$temp" 2>>"$LOG"
-  if grep -q -iE "authentication_error|Invalid authentication credentials|API Error: 401" "$temp"; then
+  claude -p "$prompt" --model opus --dangerously-skip-permissions > "$temp" 2>>"$LOG"
+  if la_is_credit_failure "$temp"; then
+    alert_tasks_note "Automated run failed: web-watchers is out of Claude usage credits (model: opus). Some watchers did not run — top up (/usage-credits) or switch model (/model)."
+    touch "$STATE_DIR/.web_watchers_auth_failed"
+    rm -f "$temp"
+    echo "INSUFFICIENT_INFO"
+    return 2
+  fi
+  # Auth patterns come from $LA_AUTH_FAIL_RE in lib_auth.sh — single source of
+  # truth. Before 2026-07-26 this grep was inlined and too narrow, so an expired
+  # OAuth session was stored verbatim as a watcher answer, silently destroying
+  # both baselines and reporting "no change (byte-equal)".
+  if la_is_auth_failure "$temp"; then
+    mark_reauth_needed "$LOG"
     touch "$STATE_DIR/.web_watchers_auth_failed"
     rm -f "$temp"
     echo "INSUFFICIENT_INFO"
@@ -386,8 +438,16 @@ PROMPT_EOF
   )"
   local raw temp
   temp="$(mktemp -t web_watchers_semeq.XXXXXX)"
-  claude -p "$prompt" --dangerously-skip-permissions > "$temp" 2>>"$LOG"
-  if grep -q -iE "authentication_error|Invalid authentication credentials|API Error: 401" "$temp"; then
+  claude -p "$prompt" --model opus --dangerously-skip-permissions > "$temp" 2>>"$LOG"
+  if la_is_credit_failure "$temp"; then
+    alert_tasks_note "Automated run failed: web-watchers is out of Claude usage credits (model: opus). Some watchers did not run — top up (/usage-credits) or switch model (/model)."
+    touch "$STATE_DIR/.web_watchers_auth_failed"
+    rm -f "$temp"
+    echo "DIFFERENT"  # fail-open so loop continues, then aborts on flag check
+    return 2
+  fi
+  if la_is_auth_failure "$temp"; then
+    mark_reauth_needed "$LOG"
     touch "$STATE_DIR/.web_watchers_auth_failed"
     rm -f "$temp"
     echo "DIFFERENT"  # fail-open so loop continues, then aborts on flag check
@@ -446,9 +506,46 @@ for i in $(seq 0 $((WATCHER_COUNT - 1))); do
 
   echo "$(ts) — [$slug] fetching $url" >> "$LOG"
 
+  # Fetch with network-aware retry (2026-07-07 hardening). A failed curl is
+  # only a WATCHER error if the network itself is up — otherwise it's the
+  # Mac's morning dark-wake window and retrying later is the fix, not
+  # incrementing the slug's error counter. Same backoff schedule as
+  # mbs_daily.sh; `sleep` pauses while the Mac sleeps, so these effectively
+  # wait for "awake" time.
   page_file="$(mktemp -t web_watchers_page.XXXXXX)"
-  if ! curl -sSL --max-time 30 --user-agent "Mozilla/5.0 (web_watchers/1.0)" "$url" > "$page_file" 2>>"$LOG"; then
-    echo "$(ts) — [$slug] ERROR: curl failed" >> "$LOG"
+  FETCH_RETRY_DELAYS=(300 600 1800 3600)
+  fetch_ok=0
+  url_error=0
+  for attempt in 1 2 3 4 5; do
+    if curl -sSL --max-time 30 --user-agent "Mozilla/5.0 (web_watchers/1.0)" "$url" > "$page_file" 2>>"$LOG"; then
+      fetch_ok=1
+      break
+    fi
+    if network_up; then
+      # Network is fine; the watched URL itself is failing. Real error.
+      url_error=1
+      break
+    fi
+    if [ "$attempt" -lt 5 ]; then
+      delay="${FETCH_RETRY_DELAYS[$((attempt - 1))]}"
+      echo "$(ts) — [$slug] curl failed with network down; sleeping ${delay}s before fetch retry $((attempt + 1))/5" >> "$LOG"
+      sleep "$delay"
+    fi
+  done
+
+  if [ "$fetch_ok" -ne 1 ] && [ "$url_error" -ne 1 ]; then
+    # Network never came back across ~1.75 hr of awake-time. Abort the whole
+    # run WITHOUT the outer stamp so the next launchd trigger (login, wake
+    # coalesce, or tomorrow 08:30) retries from scratch. Watchers already
+    # processed this run keep their per-slug stamps and won't re-fire. No
+    # per-slug error counters are touched — this is not a watcher problem.
+    echo "$(ts) — [$slug] ERROR: network still down after all fetch retries; aborting run without outer stamp" >> "$LOG"
+    rm -f "$page_file"
+    exit 1
+  fi
+
+  if [ "$url_error" -eq 1 ]; then
+    echo "$(ts) — [$slug] ERROR: curl failed (network up — URL problem)" >> "$LOG"
     state_inc_errors "$slug"
     ERRORS=$((ERRORS + 1))
     err_count="$(state_get "$slug" "consecutive_errors")"
@@ -474,6 +571,18 @@ for i in $(seq 0 $((WATCHER_COUNT - 1))); do
 
   if [ -z "$new_answer" ]; then
     echo "$(ts) — [$slug] ERROR: claude returned empty answer" >> "$LOG"
+    state_inc_errors "$slug"
+    ERRORS=$((ERRORS + 1))
+    continue
+  fi
+
+  # Belt-and-braces (2026-07-26): never persist a CLI failure message as a
+  # watcher answer, even if a future wording slips past the detectors above.
+  # Storing one destroys the baseline AND reports "no change" when both days
+  # fail with the same message — exactly what happened on 2026-07-25/26.
+  if printf '%s' "$new_answer" | grep -q -iE "$LA_AUTH_FAIL_RE|$LA_CREDIT_FAIL_RE"; then
+    echo "$(ts) — [$slug] ERROR: answer looks like a CLI failure message; refusing to store (baseline preserved)" >> "$LOG"
+    touch "$STATE_DIR/.web_watchers_auth_failed"
     state_inc_errors "$slug"
     ERRORS=$((ERRORS + 1))
     continue

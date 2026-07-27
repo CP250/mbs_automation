@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.mbs.heartbeat</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/cpreston/dev/mbs_automation/scripts/mbs_heartbeat.sh</string>
+    </array>
+
+    <!-- Fire at 11:00 local time: after com.mbs.daily's 06:00 fire plus its full
+         five-attempt retry ladder (~1.75 hr of awake time). The script also
+         defers while mbs_daily still holds a live lock, so an unusually long
+         run is not mistaken for a failure. -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>11</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+
+    <!-- Also run at login/boot, so a Mac that was powered off all morning still
+         gets checked. The per-day stamp (written only on a healthy check)
+         prevents duplicate healthy runs. -->
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>/Users/cpreston/.mbs_automation/mbs_heartbeat.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/cpreston/.mbs_automation/mbs_heartbeat.err.log</string>
+</dict>
+</plist>

@@ -8,10 +8,10 @@ Use the mbs_automation skill. Execute `/obsidian-person $ARGUMENTS`:
 
 The argument is a person's name (handle typos and partial matches). People are the most duplicate-prone note type (name variants, nicknames, first-name-only), so searching before writing matters most here.
 
-1. Read `_CLAUDE.md` at the vault root.
+1. Read `admin/mbs_system/brain/_CLAUDE.md`.
 2. **Search before writing** (shell-grep, fuzzy): look for an existing note under the person's full name, nickname, or first name. `social/` already holds many people. If a typo or approximate name, show what was found and confirm before proceeding. Never silently create a near-duplicate (e.g. a second "Brendan" when "Brendan Contant" exists).
 3. **If found:** confirm, then update — refresh `last_interaction` to today, append new context, add any new wikilinks.
-4. **If not found:** create the note. **Default location is `social/people/<first_last>.md`** (renamed 2026-06-12 from `social/friends/people/` because not everyone there is already a friend; `relationship:` is the discriminator, not the folder). Pillar-specific exceptions: Avery in `social/acrp/`, Madi in `social/ftd/`, dogs in `social/dogs/`, Polar contacts in `money/project_polar/`, Verition colleagues in `money/verition/`. Frontmatter:
+4. **If not found:** create the note. **Default location is `social/people/<first_last>.md`** (renamed from `social/friends/people/` because not everyone there is already a friend; `relationship:` is the discriminator, not the folder). **Consolidated 2026-07-12: `social/people/` is now the single directory for every person in the vault, dogs excepted.** The old pillar-specific exceptions are gone — Avery is `social/people/avery_preston/`, Madi is `social/people/madi_potter/`, Polar and Verition colleagues are `social/people/<first_last>.md` or `<first_last>/`, and mentors/mentees live there too (`social/mentors/` and `social/mentees/` keep only the general programme material and link out). **The one standing exception is dogs, which stay in `social/dogs/`.** A person may be promoted from `<first_last>.md` to a folder `<first_last>/` once they accumulate genuinely separate documents (see the note-vs-folder policy ADR, 2026-07-12); the person's own note then lives inside as the landing doc. Dead people or people P no longer speaks with move to `social/people/_archive/`. Frontmatter:
    ```yaml
    ---
    type: person

@@ -8,10 +8,10 @@ Use the mbs_automation skill. Execute `/obsidian-adr $ARGUMENTS`:
 
 The optional argument is the decision topic; if absent, infer it from recent conversation. This records a **structural** decision — a choice about the vault itself (a new convention, a folder reorganization, a renaming rule, a pillar boundary, a schema change), not a decision inside a life project. For project-level decisions use `/obsidian-decide` instead.
 
-1. Read `_CLAUDE.md` at the vault root (and `references/vault-schema.md` for the pillar map).
+1. Read `admin/mbs_system/brain/_CLAUDE.md` (and `references/vault-schema.md` for the pillar map).
 2. Identify the structural decision — from the argument or from recent conversation (e.g. a convention was adopted, a folder was reorganized, a naming rule changed, a pillar boundary was clarified). Confirm in one sentence what you understood before writing.
-3. **Search before writing** (per `references/write-rules.md`, exhaustively per the search-completeness rule in `references/vault-schema.md`): check `admin/obsidian_optimize/` and the vault root for an existing record on this same decision so you update rather than duplicate.
-4. Write the decision record to `admin/obsidian_optimize/adr_YYYY-MM-DD_<snake_case_title>.md` (this is vault-meta, which lives under `admin/`). Frontmatter:
+3. **Search before writing** (per `references/write-rules.md`, exhaustively per the search-completeness rule in `references/vault-schema.md`): check `admin/mbs_system/design/` and the vault root for an existing record on this same decision so you update rather than duplicate.
+4. Write the decision record to `admin/mbs_system/design/adr_YYYY-MM-DD_<snake_case_title>.md` (this is vault-meta, which lives under `admin/`). Frontmatter:
    ```yaml
    ---
    type: decision
