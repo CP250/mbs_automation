@@ -8,7 +8,7 @@ Use the mbs_automation skill. Execute `/obsidian-export $ARGUMENTS`:
 
 The optional argument is the format: `json` (default) or `markdown`. This produces a flat, structured snapshot of the vault so an external tool or agent can understand its contents without knowing the pillar layout. It is read-only over the vault — it only writes the one snapshot file.
 
-1. Read `admin/mbs_system/brain/_CLAUDE.md`, and `index.md` for the catalog.
+1. Read `admin/mbs_system/brain/_CLAUDE.md`, and `admin/mbs_system/brain/vault_file_tree.md` for the file listing.
 2. **Scan the vault exhaustively** (per the search-completeness rule in `references/vault-schema.md` — enumerate every note across the pillars, do not sample). Cover the eight pillars (`admin`, `create`, `culture`, `health`, `money`, `skills`, `social`, `sports`) plus `captured/` and the root files. **Exclude `trash/` entirely** (opaque), and **mark any `_archive/` note as `"archived": true`** so consumers can rank it as historical.
 3. For each note, extract:
    - `path` — path relative to the vault root

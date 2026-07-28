@@ -14,6 +14,19 @@ Checks:
 - Naming/convention    : non-_archive archive folders (vaults_*, old/, archive/), files at vault root
 - Empty folders
 - Template leftovers    : unfilled <% %> Templater syntax outside template dirs
+- Doc path drift       : literal `backtick paths` in system/reference docs (_CLAUDE.md,
+                          SETUP.md, VISION.md, ROADMAP.md, RENAMING_PLAN.md,
+                          PROJECT_BOOTSTRAP.md, ref_*.md) that don't resolve on disk —
+                          date/placeholder segments (YYYY-MM-DD, <slug>, etc.) are
+                          treated as wildcards, so a whole pattern is flagged only if
+                          NOTHING on disk matches it. Added 2026-07-21 after SETUP.md
+                          was found to document a `session_awareness` report path that
+                          had silently moved (design/ → obsidian_optimize/).
+- Ambiguous bare refs  : a bare `filename.md` (no path) mentioned in one of those same
+                          docs that resolves to more than one file in the vault by
+                          basename — the exact shape of the bug that let SETUP.md's bare
+                          `log.md` reference get taken literally and produce a duplicate
+                          log file at the vault root (2026-06-29 → found & fixed 2026-07-21).
 
 Deliberately NOT checked (hybrid vault):
 - Missing frontmatter on human notes — that's the norm, not a problem.
@@ -196,7 +209,7 @@ def check_conventions(notes: dict, vault: Path) -> list:
                     "message": f"Non-standard archive folder (should be _archive/): {folder}/",
                     "files": [folder],
                 })
-    allowed_root = {"_CLAUDE.md", "SOUL.md", "CRITICAL_FACTS.md", "index.md", "log.md", "PINNED.md"}
+    allowed_root = {"CLAUDE.md"}  # brain files moved to admin/mbs_system/brain/
     for rel, n in notes.items():
         if "/" not in rel and rel not in allowed_root:
             issues.append({
@@ -224,7 +237,12 @@ def check_empty_folders(vault: Path) -> list:
 
 # Foundation/meta docs contain illustrative [[link]] syntax and folder navigation;
 # don't flag their links as broken.
-SKIP_LINK_DOCS = {"_CLAUDE.md", "SOUL.md", "CRITICAL_FACTS.md"}
+SKIP_LINK_DOCS = {
+    "admin/mbs_system/brain/_CLAUDE.md",
+    "admin/mbs_system/brain/SOUL.md",
+    "admin/mbs_system/brain/CRITICAL_FACTS.md",
+    "admin/mbs_system/brain/IDENTITY_FIREWALL.md",
+}
 # Embedded attachments ([[image.png]] etc.) point to files, not notes — don't flag.
 ATTACHMENT_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp", ".pdf", ".canvas",
                    ".excalidraw", ".mp4", ".mov", ".mp3", ".m4a", ".heic", ".tif", ".tiff", ".html"}
@@ -273,6 +291,150 @@ def check_template_leftovers(notes: dict) -> list:
     return issues
 
 
+# ── Doc path drift + ambiguous bare refs ────────────────────────────────────
+# Scope is an EXACT allowlist, not a basename match. Per-folder `_CLAUDE.md` files
+# legitimately use paths relative to their OWN folder (that's the convention, not a
+# bug) — checking those against the vault root produces wall-to-wall false positives.
+# The real risk is concentrated in the handful of global/foundation docs that every
+# session reads and that describe vault-root-relative or home-relative paths as if
+# absolute: the same list `check_broken_links` already treats as foundation/meta
+# (SKIP_LINK_DOCS) plus the sibling design docs in the same folder as SETUP.md.
+DOC_SCOPE = SKIP_LINK_DOCS | {
+    "admin/mbs_system/design/SETUP.md",
+    "admin/mbs_system/design/VISION.md",
+    "admin/mbs_system/design/ROADMAP.md",
+    "admin/mbs_system/design/PROJECT_BOOTSTRAP.md",
+    # RENAMING_PLAN.md deliberately excluded: it's a current-name -> proposed-name table,
+    # so its "Current" column is SUPPOSED to contain names that no longer exist post-rename.
+    # Flagging those would be flagging the document for doing its job.
+}
+BACKTICK_RE = re.compile(r"`([^`\s]+)`")
+PLACEHOLDER_TOKEN_RE = re.compile(r"<[^>/\\]+>|YYYY(?:-MM(?:-DD)?)?|\bMM\b|\bDD\b|\bWW\b")
+# after placeholder substitution, a real path/glob pattern only ever contains these
+SAFE_PATTERN_RE = re.compile(r"^[A-Za-z0-9_./~*-]+$")
+KNOWN_TOP_LEVEL = {
+    "admin", "create", "culture", "daily_notes", "health", "money",
+    "skills", "social", "sports", "captured", "trash", "_archive", "attachments",
+}
+PATH_EXTENSIONS = {
+    ".md", ".py", ".sh", ".json", ".plist", ".log", ".txt", ".yml", ".yaml",
+    ".canvas", ".html", ".js", ".ts", ".css",
+}
+# secondary roots to try for a bare relative candidate before calling it drift — SETUP.md
+# in particular writes elliptically ("Wrapper: `~/dev/mbs_automation/scripts/x.sh`. Job:
+# `launchd/y.plist`") where later paths are implicitly relative to the script repo, not
+# the vault. Try vault root first (the common case), then these, before flagging.
+SECONDARY_ROOTS = ("dev/mbs_automation", "dev/mbs_automation/scripts")
+
+
+def _looks_like_real_path(candidate: str) -> bool:
+    """Filter out slash-bearing tokens that aren't actually filesystem paths: Claude Code
+    slash-commands (`/obsidian-init`), GitHub owner/repo shorthand (`CP250/mbs_automation`),
+    and bare single-segment directory mentions (`_archive/`, `trash/`) that are almost always
+    illustrating a CONVENTION ("every folder gets an `_archive/`"), not pointing at one
+    specific instance — those top-level names are foundational enough that drift here is
+    vanishingly unlikely, and the false-positive rate isn't worth the marginal coverage."""
+    if candidate.startswith("/"):
+        return candidate.count("/") >= 2  # a bare "/word" with no second segment is a slash-command
+    if candidate.startswith("~/"):
+        return True
+    if candidate.rstrip("/").count("/") == 0:
+        return False  # single bare segment ("_archive/", "trash/", "cars/") — too generic to check
+    first = candidate.split("/", 1)[0]
+    return first in KNOWN_TOP_LEVEL or Path(candidate).suffix.lower() in PATH_EXTENSIONS
+
+
+def check_doc_path_drift(notes: dict, vault: Path) -> list:
+    """Backtick literal paths in scoped foundation docs that don't resolve on disk.
+    Placeholder segments (<slug>, YYYY-MM-DD, ...) become glob wildcards first, so a
+    pattern is only flagged if NOTHING matches it anywhere it could plausibly live
+    (vault-relative, home-relative/absolute, or — as a fallback for bare relative
+    paths — the mbs_automation script repo) — not just the literal placeholder string."""
+    issues, seen = [], set()
+    for rel, n in notes.items():
+        if rel not in DOC_SCOPE:
+            continue
+        for raw in BACKTICK_RE.findall(n["content"]):
+            candidate = raw.rstrip(",.;:)]}")
+            if "/" not in candidate or candidate.startswith(("http://", "https://", "mailto:")):
+                continue
+            if not _looks_like_real_path(candidate):
+                continue
+            key = (rel, candidate)
+            if key in seen:
+                continue
+            seen.add(key)
+
+            pattern = PLACEHOLDER_TOKEN_RE.sub("*", candidate)
+            if not SAFE_PATTERN_RE.match(pattern):
+                continue  # not a real path/glob token (HTML comment marker, prose w/ slash, etc.)
+            has_wildcard = "*" in pattern
+
+            if pattern.startswith("~/"):
+                bases = [(Path.home(), pattern[2:])]
+            elif pattern.startswith("/"):
+                bases = [(Path("/"), pattern.lstrip("/"))]
+            else:
+                rest = pattern.rstrip("/")
+                bases = [(vault, rest)] + [(Path.home() / r, rest) for r in SECONDARY_ROOTS]
+
+            def _hit(base, rest):
+                try:
+                    return any(base.glob(rest)) if has_wildcard else (base / rest).exists()
+                except (OSError, ValueError):
+                    return True  # unparseable — don't flag what we can't evaluate
+
+            if not any(_hit(b, r) for b, r in bases):
+                issues.append({
+                    "type": "doc_path_drift", "severity": "warning",
+                    "message": f"Path `{candidate}` referenced in {rel} does not resolve to anything on disk",
+                    "files": [rel],
+                })
+    return issues
+
+
+# Filenames the vault deliberately repeats in every/many folders by convention
+# (_CLAUDE.md and _HANDOFF.md per admin/mbs_system/brain/_CLAUDE.md itself; README.md
+# and its variants per STRUCTURAL_STEMS above). Many matches for these is the intended
+# design, not a collision — excluded so the check stays about SURPRISING ambiguity.
+KNOWN_REPEATED_BASENAMES = {"_claude.md", "_handoff.md", "readme.md", "_readme.md"}
+MAX_SUSPICIOUS_MATCHES = 5  # more than this looks like an intentional repeated pattern, not an accident
+
+
+def check_ambiguous_bare_refs(notes: dict) -> list:
+    """A bare `filename.md` (no directory) referenced in a scoped foundation doc that
+    resolves to a SMALL number (2-5) of files in the vault by basename — enough to be a
+    surprising collision, not a known one-per-folder convention. This is the exact shape
+    of the bug that let SETUP.md's bare `log.md` mention get taken literally and produce
+    a duplicate log file at the vault root (2026-06-29 sweep; found & fixed 2026-07-21,
+    where the count was exactly 2)."""
+    by_name = defaultdict(list)
+    for rel in notes:
+        by_name[rel.rsplit("/", 1)[-1]].append(rel)
+    issues, seen = [], set()
+    for rel, n in notes.items():
+        if rel not in DOC_SCOPE:
+            continue
+        for raw in BACKTICK_RE.findall(n["content"]):
+            candidate = raw.rstrip(",.;:)]}")
+            if "/" in candidate or not re.match(r"^[A-Za-z0-9_.-]+\.md$", candidate):
+                continue
+            if candidate.lower() in KNOWN_REPEATED_BASENAMES:
+                continue
+            key = (rel, candidate)
+            if key in seen:
+                continue
+            seen.add(key)
+            matches = by_name.get(candidate, [])
+            if 1 < len(matches) <= MAX_SUSPICIOUS_MATCHES:
+                issues.append({
+                    "type": "ambiguous_bare_ref", "severity": "warning",
+                    "message": f"Bare `{candidate}` in {rel} resolves to {len(matches)} files: {', '.join(sorted(matches))}",
+                    "files": [rel],
+                })
+    return issues
+
+
 def run_health_check(vault: Path) -> dict:
     notes = load_vault(vault)
     checks = [
@@ -284,6 +446,8 @@ def run_health_check(vault: Path) -> dict:
         ("Naming/convention", check_conventions(notes, vault)),
         ("Orphans (agent notes)", check_orphans(notes)),
         ("Empty folders", check_empty_folders(vault)),
+        ("Doc path drift", check_doc_path_drift(notes, vault)),
+        ("Ambiguous bare refs", check_ambiguous_bare_refs(notes)),
     ]
     all_issues, counts = [], {}
     for label, issues in checks:

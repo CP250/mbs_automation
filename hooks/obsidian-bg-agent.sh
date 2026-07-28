@@ -73,7 +73,7 @@ printf '%s\n\n' "$SUMMARY" >> "$PROMPT_FILE"
 
 cat >> "$PROMPT_FILE" << 'INSTRUCTIONS'
 INSTRUCTIONS:
-1. Read _CLAUDE.md, SOUL.md, and CRITICAL_FACTS.md at the vault root first — follow their rules
+1. Read _CLAUDE.md, SOUL.md, and CRITICAL_FACTS.md in admin/mbs_system/brain/ first — follow their rules
    exactly. Where silent, follow references/ai-first-rules.md, references/vault-schema.md, and
    references/write-rules.md from the mbs_automation skill.
 2. Identify vault-worthy items in the summary: decisions made, tasks created or completed,
@@ -98,8 +98,8 @@ INSTRUCTIONS:
    "## For future Claude" preamble and do NOT add an ai-first: flag — this is a hybrid vault.
 6. Propagate (never write in isolation): link new items from today's tasks daily note inside a
    bounded "## Vault Agent" section only (daily_notes/tasks/tasks_TODAY.md, using the TODAY value
-   above) — never touch P's own sections of that note. Append a timestamped line to log.md. Update
-   index.md if a note was created.
+   above) — never touch P's own sections of that note. Append a timestamped line to
+   admin/mbs_system/design/log/TODAY.md (the ops log, same TODAY value; never a bare root log.md).
 
 CONSTRAINTS:
 - Use filesystem tools only (Read, Write, Edit, Glob, Grep) — MCP is not available here.

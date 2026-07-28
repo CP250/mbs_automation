@@ -8,7 +8,7 @@ Use the mbs_automation skill. Execute `/obsidian-project $ARGUMENTS`:
 
 The argument is a project name (handle typos and partial matches). This command creates or updates a project note that passes the amnesia test — its single most important job is that every active project carries at least one unchecked `- [ ]` body checkbox naming the next concrete step, because an active project with no next step is the exact failure this whole system exists to catch. (The vault used to encode this as a frontmatter `next_action:` field; that field was retired on 2026-06-06 in favor of the body checklist as the single source of truth.)
 
-1. Read `_CLAUDE.md`, `SOUL.md`, `CRITICAL_FACTS.md` at the vault root.
+1. Read `admin/mbs_system/brain/_CLAUDE.md`, `SOUL.md`, `CRITICAL_FACTS.md`.
 2. **Search before writing.** Search the vault (filename + content, fuzzy) for an existing project — including working-title variants, which are the common duplicate source. Exclude `trash/`; treat `_archive/` hits as historical. If a typo or approximate name, show what was found and confirm before proceeding. Never silently create a note with a misspelled or near-duplicate name.
 3. **If found:** show it, confirm, then update with new info from the conversation — add/tick body checkboxes as appropriate, append to Recent Activity / Key Decisions, update `status` if it changed.
 4. **If not found:** determine the pillar (`admin`, `create`, `culture`, `health`, `money`, `skills`, `social`, `sports`) from context per `references/vault-schema.md`; if genuinely ambiguous, ask. Create the note as `<pillar>/project_<snake_case_name>.md`. If the project will accumulate sub-notes or attachments, use a folder: `<pillar>/project_<name>/project_<name>.md`. Match the pattern of existing projects in that pillar (read 1–2 first).
@@ -35,7 +35,7 @@ The argument is a project name (handle typos and partial matches). This command 
    - The body checkbox added in step 7 IS the propagation to the Tasks plugin — the Tasks-plugin queries in the pillar dashboard and in `daily_notes/tasks/...` will find it via `path includes <pillar>` filters. Do not separately duplicate it into a per-pillar todo file unless P asks.
    - Link the project from today's tasks daily note (`daily_notes/tasks/tasks_YYYY-MM-DD.md`, inside the bounded `## Vault Agent` section or a one-line mention — never touch P's own sections).
    - If a person is involved, link the project from their note in `social/` (create a stub if absent).
-   - Append a timestamped line to `admin/mbs_system/design/log.md`; update `index.md` for the new note.
+   - Append a timestamped line to `admin/mbs_system/design/log.md`.
 
 ---
 

@@ -1,21 +1,21 @@
 ---
-description: Refine the vault's _CLAUDE.md against the live structure, and (re)generate index.md + log.md
+description: Refine the vault's _CLAUDE.md against the live structure, and maintain the ops log
 category: meta
 triggers_en: ["init vault", "refresh vault manifest", "update claude md", "scan vault"]
 ---
 
 Use the mbs_automation skill. Execute `/obsidian-init`:
 
-P's vault already has a hand-authored `_CLAUDE.md`, `SOUL.md`, and `CRITICAL_FACTS.md` at the root. This command **refines, it does not regenerate from scratch.** Never clobber the hand-authored files.
+P's vault already has a hand-authored files in `admin/mbs_system/brain/`. This command **refines, it does not regenerate from scratch.** Never clobber the hand-authored files.
 
-1. Read `_CLAUDE.md`, `SOUL.md`, `CRITICAL_FACTS.md` at the vault root.
+1. Read `admin/mbs_system/brain/_CLAUDE.md`, `SOUL.md`, `CRITICAL_FACTS.md`.
 2. Map the live vault (`list_files_in_vault()` or filesystem). The structure is the 8 life pillars (admin, create, culture, daily_notes, health, money, skills, social, sports) plus `captured/`, `_archive/` (per folder), `trash/`, `_to_clean/`, `attachments/`. See `references/vault-schema.md`.
 3. Spawn parallel subagents to sample for drift:
    - **Pillar-sample agent(s)**: read one or two notes per pillar to confirm naming/frontmatter conventions still match `_CLAUDE.md`.
    - **Convention agent**: check for violations — non-`_archive` archive folders, `vaults_*` leftovers, files at root, redundant pillar prefixes.
 4. Compare live structure against what `_CLAUDE.md` describes. Produce a **diff**: new/renamed pillars or subfolders, stale facts, convention drift.
 5. **Show the diff and ask before changing `_CLAUDE.md`.** Apply only gap-fills and drift corrections; preserve P's wording and the amnesia-test framing. (Template/shape: `references/claude-md-template.md`.)
-6. (Re)generate `index.md` at the vault root — a catalog grouped **by pillar**, one line per note: `- [[Note Name]] — brief description` (from frontmatter or first line). Exclude `trash/`; mark `_archive/` entries as historical. Claude reads this first to navigate.
+6. `index.md` was retired 2026-07-28 (redundant with the nightly `vault_file_tree.md` and per-folder `_CLAUDE.md` files). Do not generate or recreate it.
 7. Initialize/update the ops log: the `admin/mbs_system/design/log.md` file is a thin pointer; per-day entries go in `admin/mbs_system/design/log/YYYY-MM-DD.md` (frontmatter `type: log`, `date`; append-only `**HH:MM** — action | description`). Write today's init entry.
 8. Confirm what changed and tell P to restart the Claude session so updates take effect.
 

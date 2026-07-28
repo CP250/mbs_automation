@@ -187,7 +187,7 @@ def render_block(stats: dict[str, Any]) -> str:
 
 
 def update_index(vault: Path, block: str) -> bool:
-    index = vault / "index.md"
+    index = vault / "admin/mbs_system/brain/index.md"
     if not index.is_file():
         sys.stderr.write(f"warning: {index} not found — printing block to stdout instead\n")
         print(block)

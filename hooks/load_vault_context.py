@@ -51,7 +51,7 @@ def main() -> int:
     if not (cwd_n == vault_n or cwd_n.startswith(vault_n + "/")):
         return 0
 
-    claude_md = Path(vault) / "_CLAUDE.md"
+    claude_md = Path(vault) / "admin/mbs_system/brain/_CLAUDE.md"
     if not claude_md.is_file():
         return 0
 
@@ -61,9 +61,9 @@ def main() -> int:
     header = (
         f"**Vault root**: `{vault}`\n"
         f"**Key files** (absolute paths — use these directly, no discovery needed):\n"
-        f"  - `{v / '_CLAUDE.md'}` — this operating manual (already loaded)\n"
-        f"  - `{v / 'index.md'}` — navigation hub\n"
-        f"  - `{v / 'log.md'}` — operation log\n"
+        f"  - `{v / 'admin/mbs_system/brain/_CLAUDE.md'}` — this operating manual (already loaded)\n"
+        f"  - `{v / 'admin/mbs_system/brain/vault_file_tree.md'}`: nightly file listing (existence checks; index.md retired 2026-07-28)\n"
+        f"  - `{v / 'admin/mbs_system/design/log.md'}`: operation log pointer (daily entries in design/log/)\n"
         "**Do NOT run `ls`, `Glob`, or `Bash` to discover the vault or its folders.**\n"
         "Use the vault root path above and the folder names from the manual below directly.\n\n"
         "---\n\n"

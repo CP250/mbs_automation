@@ -32,7 +32,7 @@ Decision made
   → note in today's daily note
 ```
 
-Always append to `log.md` (timestamped) when a structural change happens, and update `index.md` when a note is created or deleted.
+Always append to the ops log (`admin/mbs_system/design/log/YYYY-MM-DD.md`, timestamped) when a structural change happens.
 
 ## Internal linking
 Use `[[Note Name]]` — Obsidian resolves by basename (default "shortest path" setting). Always link people, projects, places, recurring concepts. Never hardcode full paths in links. If the target doesn't exist, create a stub (below).

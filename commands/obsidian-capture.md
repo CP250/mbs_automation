@@ -8,7 +8,7 @@ Use the mbs_automation skill. Execute `/obsidian-capture $ARGUMENTS`:
 
 The optional argument is the thought/idea text. If not provided, pull the most recent idea from the conversation. The whole point is **zero friction** — get it into `captured/` fast and move on. The morning report's inbox triage (`/obsidian-daily`) proposes a pillar destination later; this command does not need to file it correctly, just capture it without loss.
 
-1. Read `_CLAUDE.md` at the vault root.
+1. Read `admin/mbs_system/brain/_CLAUDE.md`.
 2. Take the argument as the thought, or pull it from recent conversation context.
 3. Search `captured/` for a closely related existing capture — if there's a clear match, append to it rather than making a near-duplicate. (Don't over-search; this is meant to be fast.)
 4. If new, create `captured/<snake_case_title>.md` with minimal frontmatter:

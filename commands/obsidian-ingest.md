@@ -8,7 +8,7 @@ Use the mbs_automation skill. Execute `/obsidian-ingest $ARGUMENTS`:
 
 The argument is a URL, file path, or pasted text. If none, ask what to ingest. This is the **simplified** ingest: it creates one well-structured reference note and *proposes* connections. It does NOT autonomously rewrite the vault (the old "vault rewrites itself" behavior is removed — it violates the propose-don't-dispose boundary).
 
-1. Read `_CLAUDE.md` at the vault root.
+1. Read `admin/mbs_system/brain/_CLAUDE.md`.
 2. Read or fetch the source:
    - **Article/URL** — fetch the page content.
    - **PDF/document/text** — read it directly.
@@ -27,7 +27,7 @@ The argument is a URL, file path, or pasted text. If none, ask what to ingest. T
    ```
    Body: a self-contained summary (amnesia test), the verbatim source URL inline, key claims with recency markers, and `[[wikilinks]]` to people/projects/concepts **that already exist** (stub only if clearly warranted — don't manufacture links).
 5. **Propose, don't rewrite.** If the source updates, contradicts, or enriches an existing note, do NOT edit that note. Instead, list the proposed updates ("this supersedes the rate in [[ref_x]]"; "contradicts [[project_y]]'s assumption") and let P approve each. Existing human notes are never auto-modified.
-6. Propagate: mention the ingest in today's tasks daily note (`## Vault Agent` section); append to `admin/mbs_system/design/log.md`; update `index.md` for the new note.
+6. Propagate: mention the ingest in today's tasks daily note (`## Vault Agent` section); append to `admin/mbs_system/design/log.md`.
 
 ---
 

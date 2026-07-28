@@ -1,12 +1,12 @@
 ---
-description: Run a vault health audit — duplicates, orphans, broken links, missing next-steps, naming/_archive drift. Report-only.
+description: Run a vault health audit — duplicates, orphans, broken links, missing next-steps, naming/_archive drift, stale doc-path references. Report-only.
 category: meta
 triggers_en: ["vault health", "check vault", "audit vault", "vault diagnostics"]
 ---
 
 Use the mbs_automation skill. Execute `/obsidian-health`:
 
-1. Read `_CLAUDE.md`, `SOUL.md`, `CRITICAL_FACTS.md` at the vault root.
+1. Read `admin/mbs_system/brain/_CLAUDE.md`, `SOUL.md`, `CRITICAL_FACTS.md`.
 2. Run: `python3 ~/.claude/skills/mbs_automation/scripts/vault_health.py --path /Users/cpreston/Vaults/storage_mbs --json` (use `python3`, not `python`)
 3. Parse the JSON and split into categories. Spawn parallel subagents to verify each:
    - **Links agent**: confirm broken `[[wikilinks]]`; since links resolve by basename, a "broken" link usually means a renamed/missing target. Propose the fix (re-point or create stub).
@@ -16,10 +16,11 @@ Use the mbs_automation skill. Execute `/obsidian-health`:
    - **Frontmatter agent**: notes **the agent wrote** (amnesia-test notes) missing required fields. **Do NOT flag the ~4,500 existing human notes** for missing frontmatter — they're exempt by design (hybrid vault).
    - **Convention agent**: naming-convention violations and any non-`_archive` archive folders (stray `vaults_*`, `old/`, `archive/`); files stranded at the vault root.
    - **Orphans agent**: notes with no inbound links and not in `_archive/`. (Note: a note linked only from a daily note is functionally orphaned.)
-4. **Exclusions:** never scan `trash/` (opaque). Treat `_archive/` hits as historical/low-priority. `_to_clean/` is P's manual backlog — report its size but don't propose work there unless asked.
+   - **Doc-path agent** (added 2026-07-21): confirm each `doc_path_drift` and `ambiguous_bare_ref` hit is real, not a false positive the scanner's heuristics missed. Scope is deliberately narrow — only `_CLAUDE.md`/`SOUL.md`/`CRITICAL_FACTS.md`/`IDENTITY_FIREWALL.md` and the design docs next to `SETUP.md` (`VISION.md`, `ROADMAP.md`, `PROJECT_BOOTSTRAP.md`) — because these are the load-bearing docs every session and scheduled job reads literally; per-folder `_CLAUDE.md` files are excluded on purpose (they use paths relative to their own folder, which is correct, not drift). For each hit, propose the fix: either the doc is stale and needs the real path substituted in, or (for `ambiguous_bare_ref`) the doc should spell out the full qualifying path instead of a bare filename. This check exists because of a real incident: SETUP.md referenced the vault op-log as bare `log.md` instead of its full path, and a 2026-06-29 scheduled sweep took that literally and created a duplicate `log.md` at the vault root — see `admin/mbs_system/design/log.md`'s 2026-07-21 entry.
+4. **Exclusions:** never scan `trash/` (opaque). Treat `_archive/` hits as historical/low-priority. `_to_clean/` is P's manual backlog — report its size but don't propose work there unless asked. `RENAMING_PLAN.md` is deliberately excluded from the doc-path check — it's a current-name → proposed-name table, so its "current" column is *supposed* to contain names that no longer exist.
 5. Group by severity:
    - 🔴 Critical: broken links, active projects missing a next action.
-   - 🟡 Warning: duplicates, stale active projects, naming/convention drift, agent-note frontmatter gaps.
+   - 🟡 Warning: duplicates, stale active projects, naming/convention drift, agent-note frontmatter gaps, doc-path drift, ambiguous bare refs.
    - ⚪ Info: orphans, empty folders, root strays, `_to_clean/` size.
 6. **Fixes:** for safe ones (re-point a broken link, fix a naming violation, propose a `next_action`), offer to apply. For **archiving** to `_archive/` - list it and require explicit P approval (archiving signals "completed work P wants to keep"; that judgment is P's). For **disposal of junk / true duplicates / accidents** - move to `trash/` at the vault root, no permission needed (per `_CLAUDE.md` Disposal section, 2026-06-14). **Never permanently delete; never auto-archive.** If about to ask "can I delete this?", the answer is: move to `trash/` and continue. Trash is reversible; the move IS the disposal.
 7. Append to the operation log: `**HH:MM** — health | X critical, Y warning, Z info`.

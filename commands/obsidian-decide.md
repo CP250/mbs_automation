@@ -8,7 +8,7 @@ Use the mbs_automation skill. Execute `/obsidian-decide $ARGUMENTS`:
 
 Capture decisions so the reasoning doesn't evaporate when the session closes. The optional argument narrows to a specific topic.
 
-1. Read `_CLAUDE.md` at the vault root.
+1. Read `admin/mbs_system/brain/_CLAUDE.md`.
 2. Scan the conversation for decisions **actually made** — conclusions reached, choices committed to, directions changed. If a topic argument is given, focus there.
 3. For each decision, capture: the decision itself, the date (`YYYY-MM-DD`), the reasoning/alternatives considered, and any follow-on action it implies.
 4. **Find the relevant project note** (shell-grep the vault — search exhaustively per the search-completeness rule in `references/vault-schema.md`; do not conclude "no project note exists" without listing and grepping the candidate pillars). Append each decision to that note's `## Key Decisions` section:

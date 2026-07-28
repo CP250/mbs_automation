@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.mbs.the-record</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/cpreston/dev/mbs_automation/scripts/the_record.sh</string>
+    </array>
+
+    <!-- EVENT-ANCHORED, not clock-anchored. Fires when a transcript is added to
+         or changed in the raw/ drop-zone. The processed-manifest makes repeated
+         fires idempotent. -->
+    <key>WatchPaths</key>
+    <array>
+        <string>/Users/cpreston/Vaults/storage_mbs/money/project_the_record/raw</string>
+    </array>
+
+    <!-- Also run at login/boot to catch anything dropped while logged out. -->
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>/Users/cpreston/.mbs_automation/the_record.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/cpreston/.mbs_automation/the_record.err.log</string>
+</dict>
+</plist>

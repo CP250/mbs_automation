@@ -32,7 +32,7 @@ The argument is a person's name (handle typos and partial matches). People are t
    - Add a `### YYYY-MM-DD - <one-line title>` subsection under `## Meetings` with Setting, the arc of the conversation in named beats, P's takeaways, offers/asks, and action items as Tasks-plugin checkboxes with `#<pillar> 🆔 <id> 📅 <date>` so they flow into Morgen.
    - If P uploaded a loose meeting-notes file (typically named `YYYYMMDD_<who>_meeting.md` at vault root), integrate its content via this pattern, then archive the loose file.
    - Reference example: `social/people/tom_van_riper.md` (2026-06-12 lunch with TVR).
-7. **Propagate:** log the interaction in today's tasks daily note (bounded `## Vault Agent` section); if the person is tied to a project, link them from that project note. Append to `admin/mbs_system/design/log.md`; update `index.md` for a new note.
+7. **Propagate:** log the interaction in today's tasks daily note (bounded `## Vault Agent` section); if the person is tied to a project, link them from that project note. Append to `admin/mbs_system/design/log.md`.
 
 ---
 

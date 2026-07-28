@@ -8,7 +8,7 @@ Use the mbs_automation skill. Execute `/obsidian-board $ARGUMENTS`:
 
 The optional argument is a board name. Handle typos and partial matches.
 
-1. Read `_CLAUDE.md` first if it exists in the vault root
+1. Read `admin/mbs_system/brain/_CLAUDE.md` first if it exists
 2. If a board name is given, search `Boards/` for it (fuzzy match)
 3. If no name given, list available boards and ask which one
 4. Read and display the current board state: columns, item counts, overdue items (past `@{date}`)

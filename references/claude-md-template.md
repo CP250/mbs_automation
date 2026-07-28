@@ -1,10 +1,10 @@
 # `_CLAUDE.md` Template
 
-`_CLAUDE.md` lives at the vault root and is the first thing every Claude surface reads. **P's vault already has a hand-authored `_CLAUDE.md`** (written with full project context). So `/obsidian-init`'s job here is to **refine, not regenerate**.
+`_CLAUDE.md` lives at `admin/mbs_system/brain/` and is the first thing every Claude surface reads. **P's vault already has a hand-authored `_CLAUDE.md`** (written with full project context). So `/obsidian-init`'s job here is to **refine, not regenerate**.
 
 ## How `/obsidian-init` should behave
 
-1. Check for an existing `_CLAUDE.md` at the vault root. **It exists.** Read it.
+1. Check for an existing `admin/mbs_system/brain/_CLAUDE.md`. **It exists.** Read it.
 2. Map the live vault (`list_files_in_vault` or filesystem) and compare against what `_CLAUDE.md` describes.
 3. Propose a **diff** — folders/conventions that drifted, new pillars/subfolders, stale facts — and **ask before overwriting.** Never clobber the hand-authored file.
 4. Only fill gaps and correct drift. Preserve P's wording, the amnesia-test framing, and the rules below.
@@ -48,7 +48,7 @@ The amnesia-test framing: hold P's life, recall it on demand, defend against str
 [name=folder convention; agent is librarian/dispatcher not domain expert; reads other sessions' transcripts; suggests renames, can't rename sessions]
 
 ## Key files (read order)
-[_CLAUDE.md, SOUL.md, CRITICAL_FACTS.md, index.md, log.md]
+[admin/mbs_system/brain/_CLAUDE.md, SOUL.md, CRITICAL_FACTS.md, LEARNINGS_DIGEST.md, vault_file_tree.md; LEARNINGS.md and design/log.md on demand]
 
 ## Installed plugins worth knowing
 [Tasks+archiver, Journals, Templater, Dataview, Git, Terminal, google-calendar+Morgen, Glasp+Read It Later, custom obsidian-ch8-tab, BRAT; basename link resolution]

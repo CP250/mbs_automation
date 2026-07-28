@@ -27,7 +27,7 @@ The optional argument is the idea title/keyword. If not given, scan `captured/` 
    Body (amnesia-self-sufficient): **description** (what this is and why it matters), **goals** (3–5 concrete outcomes), **plan** (phased steps), **open questions** (what still needs answering), **related** (wikilinks to everything found in step 3). External claims get recency markers + verbatim source URLs.
 6. **Turn the plan into tasks** (Tasks-plugin, not boards): write the first actionable steps as `- [ ] … #<pillar> 🆔 <6-char-id> 📅 <due?>` lines on the project note, under a `## Next action` heading. **There is no `next_action:` frontmatter field** — it was retired 2026-06-06 and the first unchecked body checkbox IS the next action, so nothing needs mirroring. A `status: active` project whose body has zero unchecked checkboxes is the failure state the whole system exists to catch.
 7. **The fragment evolves, it doesn't die.** Leave the original capture in place and add a link to the new project note ("graduated to [[project_…]]"). Don't delete or archive it.
-8. **Propagate:** link the project from today's tasks daily note (bounded `## Vault Agent` section), link involved people from `social/`, append to `admin/mbs_system/design/log.md`, update `index.md`.
+8. **Propagate:** link the project from today's tasks daily note (bounded `## Vault Agent` section), link involved people from `social/`, append to `admin/mbs_system/design/log.md`.
 9. **Report** what was created, what was linked, and what still needs P's input.
 
 ---

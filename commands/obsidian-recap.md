@@ -8,7 +8,7 @@ Use the mbs_automation skill. Execute `/obsidian-recap $ARGUMENTS`:
 
 The argument is the period: `today`, `week`, or `month` (default `week`). This is a lighter, read-only cousin of `/obsidian-review` — a quick narrative catch-up, no note written.
 
-1. Read `_CLAUDE.md` at the vault root.
+1. Read `admin/mbs_system/brain/_CLAUDE.md`.
 2. Determine the date range.
 3. **Read the period's vault activity exhaustively** (per the search-completeness rule in `references/vault-schema.md` — enumerate every daily note in the range, don't sample):
    - Both daily journals: `daily_notes/tasks/` and `daily_notes/health/`.

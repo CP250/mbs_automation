@@ -1,6 +1,6 @@
 # Vault Schema Reference — mbs_automation
 
-The structure of P's vault. This is the canonical map; commands route by it. It overrides any generic structure assumptions. Companion to the vault-root `_CLAUDE.md`.
+The structure of P's vault. This is the canonical map; commands route by it. It overrides any generic structure assumptions. Companion to `admin/mbs_system/brain/_CLAUDE.md`.
 
 This vault is **hybrid**, not wiki-style: ~4,500 existing human-readable notes organized by life pillars, with new agent-written notes following the amnesia-test conventions below. The agent is not the sole writer — P writes too, and domain Cowork projects write into their folders.
 
@@ -8,10 +8,11 @@ This vault is **hybrid**, not wiki-style: ~4,500 existing human-readable notes o
 
 ```
 /Users/cpreston/Vaults/storage_mbs/
-├── _CLAUDE.md             ← operating manual (read first, every session)
-├── SOUL.md                ← who P is, how to work with him
-├── CRITICAL_FACTS.md      ← what's true right now (family, health, work, locations)
-├── index.md               ← catalog of vault pages (read for navigation)
+├── CLAUDE.md              ← vault auto-loader (single root file)
+├── admin/mbs_system/brain/ ← brain files (operating manual, identity, catalog)
+
+
+
 ├── log.md                 ← append-only operation log
 │
 ├── admin/                 ← taxes, cars, citizenships, digital_life, legal, betterment, home, projects

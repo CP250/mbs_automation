@@ -8,7 +8,7 @@ Use the mbs_automation skill. Execute `/obsidian-reconcile $ARGUMENTS`:
 
 The optional argument is a topic/entity to focus on; otherwise scan broadly. This finds notes that disagree with each other. **It never auto-resolves or rewrites** (the old "rewrite the outdated page" behavior is removed — it violates the propose-don't-dispose and never-auto-rewrite boundaries). It surfaces conflicts and proposes fixes; P decides.
 
-1. Read `_CLAUDE.md`, `CRITICAL_FACTS.md` at the vault root.
+1. Read `admin/mbs_system/brain/_CLAUDE.md`, `CRITICAL_FACTS.md`.
 2. Find contradictions (shell-grep + reads; parallel read subagents for breadth). Exclude `trash/`. Look for:
    - Conflicting factual claims across notes (dates, numbers, names, statuses).
    - Outdated entity info (a role/company/relationship that a newer note contradicts).

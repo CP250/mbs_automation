@@ -18,7 +18,7 @@ description: >
 # mbs_automation
 
 > Claude operates P's Obsidian vault as his external memory — it holds his life so he doesn't have to, and recalls any part of it on demand. The standard is the **amnesia test**: if P woke up remembering nothing, the vault tells him what things are, where they are, and what to do next. The failure mode it defends against: stress + distraction making him lose the next step.
-> Read `_CLAUDE.md`, `SOUL.md`, `CRITICAL_FACTS.md` at the vault root first, every session.
+> Read `admin/mbs_system/brain/_CLAUDE.md`, `SOUL.md`, `CRITICAL_FACTS.md` first, every session.
 
 ---
 
@@ -40,10 +40,10 @@ Standard file tools (Read, Write, Edit, Glob) against `/Users/cpreston/Vaults/st
 
 ### 1. First time in a vault → read `_CLAUDE.md`
 
-Before doing anything in a vault, check if `_CLAUDE.md` exists at the vault root:
+Before doing anything in a vault, check if `admin/mbs_system/brain/_CLAUDE.md` exists:
 
 ```
-get_file_contents("_CLAUDE.md")
+get_file_contents("admin/mbs_system/brain/_CLAUDE.md")
 ```
 
 If it exists: follow its rules exactly — they override the defaults in this skill. Where `_CLAUDE.md` is silent, fall back to the defaults below.
@@ -118,7 +118,7 @@ Two structural files that keep the vault navigable and auditable:
 Vaults initialized with `/obsidian-init` (v0.9+) use a split log structure instead of a monolithic `log.md`:
 
 - **`Logs/YYYY-MM-DD.md`** — one file per day, append-only. Format: `**HH:MM** — action | description`
-- **`log.md` at vault root** — pointer file only. Never write entries here; it explains the per-day structure and ships the entry template.
+- **`admin/mbs_system/brain/log.md`** — pointer file only. Never write entries here; it explains the per-day structure and ships the entry template.
 
 To migrate an existing monolithic `log.md`: run `python3 scripts/migrate_log.py --vault <path>`.
 To refresh the stats block in `index.md` after bulk writes: run `python3 scripts/vault_stats.py --vault <path>`.
@@ -205,7 +205,7 @@ See `references/write-rules.md` for the complete guide. Summary:
 
 This is the most important concept in this skill.
 
-`_CLAUDE.md` lives at the vault root and persists Claude's operating rules across every session and every surface (Claude Desktop, Claude Code, VS Code, terminal). Without it, Claude has to re-learn your vault conventions every conversation.
+`_CLAUDE.md` lives at `admin/mbs_system/brain/` and persists Claude's operating rules across every session and every surface (Claude Desktop, Claude Code, VS Code, terminal). Without it, Claude has to re-learn your vault conventions every conversation.
 
 **Precedence rule:** `_CLAUDE.md` wins on all vault-specific rules (folder names, naming conventions, frontmatter fields, auto-save behavior, private folders). The defaults in this skill file apply only where `_CLAUDE.md` is silent. Never let skill defaults override an explicit `_CLAUDE.md` rule.
 
@@ -219,7 +219,7 @@ This is the most important concept in this skill.
 
 To generate a `_CLAUDE.md` for an existing vault, run vault discovery then use the template in `references/claude-md-template.md`.
 
-To install it: write the file to the vault root. Every Claude session that starts in that vault should read it first.
+To install it: write the file to `admin/mbs_system/brain/`. Every Claude session that starts in that vault should read it first.
 
 ---
 
@@ -548,7 +548,7 @@ Steps:
    - **Samples agent**: read one existing note per major folder to capture naming conventions and frontmatter patterns
 3. Merge all agent results into a complete picture of the vault
 4. Generate a complete `_CLAUDE.md` using the template in `references/claude-md-template.md`, filled with real values from the vault
-5. Write it to `_CLAUDE.md` at the vault root via `append_content("_CLAUDE.md", content)`
+5. Write it to `admin/mbs_system/brain/_CLAUDE.md` via `append_content("_CLAUDE.md", content)`
 6. Confirm what was written and tell the user to restart their Claude session so the new file takes effect
 
 If `_CLAUDE.md` already exists: show a diff of what would change and ask before overwriting.
