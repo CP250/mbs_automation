@@ -124,6 +124,142 @@ if [ -f "$REAUTH_SENTINEL" ]; then
   add_finding "Claude CLI needs re-auth (first detected ${FIRST_SEEN}) — run \`claude\` then \`/login\` in Terminal"
 fi
 
+# --- check 5: oura sync archive is fresh ------------------------------------
+# Canary: health/health_physical/oura/raw/daily_activity/ - the single most
+# fundamental DATED oura endpoint (step count, calories, activity score).
+# Every DATED/EVENT endpoint gets a file written on every successful sync run
+# even on a no-event day (confirmed 2026-07-30: workout/ and vO2_max/, both
+# sparse-data endpoints, had a same-day fresh file anyway) - the archive
+# writes something daily, not only when there's a real event.
+#
+# Checked by mtime, deliberately NOT by the date encoded in the filename:
+# Oura's own scoring lag means the newest file is normally named for
+# YESTERDAY (activity/sleep finalize the next morning), so a
+# same-day-filename check would false-positive every single day by design.
+# 2 days of slack tolerates one missed sync (the sync job's own --lookback 3
+# self-heals a gap on the next successful run).
+#
+# The daily note's oura frontmatter fields (sleep_score, readiness_score,
+# ...) were considered and rejected as the canary: daily_notes/health/daily/
+# is created by the Journals plugin only when Obsidian is opened (see this
+# script's own "Known non-findings" note in SETUP.md), so its absence means
+# "P didn't open Obsidian today," not "oura sync failed" - using it would
+# conflate two independent failure modes into one noisy, wrong signal.
+#
+# Not gated on which launchd label owns the job (com.cpreston.mbs-oura-sync
+# vs. the renamed com.mbs.oura-sync, see Phase 1 build report): the archive
+# path is the same either way, and the sync itself is already live today,
+# unlike the two new jobs below.
+OURA_CANARY_DIR="$VAULT/health/health_physical/oura/raw/daily_activity"
+if [ ! -d "$OURA_CANARY_DIR" ]; then
+  add_finding "oura sync archive directory missing ($OURA_CANARY_DIR) - the oura-sync launchd job may never have run, or the vault path changed"
+else
+  OURA_RECENT="$(find "$OURA_CANARY_DIR" -maxdepth 1 -name '*.json' -mtime -2 2>/dev/null | head -1)"
+  if [ -z "$OURA_RECENT" ]; then
+    add_finding "oura sync: no daily_activity archive file modified in the last 2 days ($OURA_CANARY_DIR) - check the oura-sync launchd job"
+  fi
+
+  # --- check 5b: the fresh files aren't just fresh, they have real data -----
+  # Added 2026-08-01 after discovering the freshness check above cannot catch
+  # this: for the full 2026-05-26 through 2026-07-31 history, daily_activity
+  # wrote a fresh, valid, EMPTY {"data": [], "next_token": null} file every
+  # single day (a client-side query-parameter bug, not an Oura outage) and
+  # check 5 read that as perfectly healthy for over two months. Freshness
+  # alone cannot distinguish "the job ran and got real data" from "the job
+  # ran and silently got nothing" - the same blind spot check 2 avoids for
+  # the daily report by checking for content, not just file presence.
+  #
+  # The two most recent dated files (by filename, excluding any file dated
+  # today - Oura's scoring lag means today's often has not published yet and
+  # a same-day empty read is expected, not a fault) are inspected for the
+  # exact-empty payload archive.py writes: pretty-printed JSON always
+  # serializes an empty result as the literal line `"data": []`. Two
+  # consecutive real days both empty is the threshold: verified against the
+  # actual archive this session that zero days were genuinely empty for
+  # daily_activity in 68 days of history, so two in a row is a strong signal
+  # of a regression, not a coincidence of ring-off-charging days.
+  OURA_CONTENT_CHECK_FILES="$(find "$OURA_CANARY_DIR" -maxdepth 1 -name '*.json' ! -name "${TODAY}.json" 2>/dev/null | sort -r | head -2)"
+  OURA_CONTENT_FILE_COUNT="$(printf '%s\n' "$OURA_CONTENT_CHECK_FILES" | grep -c . || true)"
+  if [ "$OURA_CONTENT_FILE_COUNT" -ge 2 ]; then
+    OURA_ALL_EMPTY=1
+    while IFS= read -r f; do
+      [ -n "$f" ] || continue
+      grep -qF '"data": []' "$f" 2>/dev/null || OURA_ALL_EMPTY=0
+    done <<< "$OURA_CONTENT_CHECK_FILES"
+    if [ "$OURA_ALL_EMPTY" -eq 1 ]; then
+      add_finding "oura sync: the 2 most recent daily_activity archive files are both empty (\"data\": []) - files are fresh but content looks broken, check the oura-sync launchd job and api.py's query params"
+    fi
+  fi
+fi
+
+# --- check 6: pointer-check ran recently (once activated) -------------------
+# Gated on the job actually being installed
+# (~/Library/LaunchAgents/com.mbs.pointer-check.plist present). This
+# heartbeat script is LIVE infrastructure - com.mbs.heartbeat already runs
+# daily at 11:00 and at every login - so an UNGATED check here would start
+# reporting "pointer-check has never run" the moment this file is saved,
+# even though Phase 1 is build-only and the architect has not activated
+# pointer-check yet. Gating on plist presence means this check switches
+# itself on exactly when the architect runs the activation command (cp +
+# launchctl bootstrap) - no separate step, no false alarm in the interim.
+#
+# Stamp comparison is TODAY-or-YESTERDAY, deliberately NOT stamp==TODAY (the
+# mbs_daily pattern). com.mbs.pointer-check fires at 23:45 - AFTER this
+# heartbeat's own 11:00 check, same calendar day. So on a perfectly healthy
+# system, the stamp this heartbeat sees at 11:00 was written by YESTERDAY's
+# 23:45 run; today's hasn't fired yet. stamp==TODAY would therefore fire a
+# finding every single day regardless of actual health, training P to ignore
+# the heartbeat - exactly the failure mode this whole job exists to avoid.
+if [ -f "$HOME/Library/LaunchAgents/com.mbs.pointer-check.plist" ]; then
+  POINTER_STAMP="$STATE_DIR/last_pointer_check_run"
+  LAST_POINTER="$(cat "$POINTER_STAMP" 2>/dev/null || echo none)"
+  YESTERDAY="$(date -v-1d +%Y-%m-%d)"
+  if [ "$LAST_POINTER" != "$TODAY" ] && [ "$LAST_POINTER" != "$YESTERDAY" ]; then
+    add_finding "pointer-check has not completed since ${LAST_POINTER} (expected ${YESTERDAY} or ${TODAY}, given its 23:45 schedule) - check com.mbs.pointer-check"
+  fi
+fi
+
+# --- check 7: bulk-sync ran today, tolerant of dry-run mode (once activated)
+# Gated the same way and for the same reason as check 6 - bulk-sync is not
+# yet activated in Phase 1.
+#
+# Unlike pointer-check, stamp==TODAY IS the right comparison here:
+# com.mbs.bulk-sync fires at 03:00, BEFORE this heartbeat's 11:00 check, same
+# calendar day - so a healthy run's stamp already reads today by the time
+# this runs (matches the mbs_daily pattern).
+#
+# "Tolerant of dry-run mode": bulk_sync.sh writes its stamp on ANY successful
+# completion, whether LIVE=0 (Phase 1, --dryrun, the current hardwired state)
+# or LIVE=1 (a later, separately-approved phase). This check only reads that
+# stamp - it does not inspect LIVE or look for "--dryrun" anywhere - so a
+# healthy dry-run reads as healthy, full stop. It is not something this check
+# needs to special-case; it falls out of checking the right thing.
+if [ -f "$HOME/Library/LaunchAgents/com.mbs.bulk-sync.plist" ]; then
+  BULK_SYNC_STAMP="$STATE_DIR/last_bulk_sync_run"
+  LAST_BULK_SYNC="$(cat "$BULK_SYNC_STAMP" 2>/dev/null || echo none)"
+  if [ "$LAST_BULK_SYNC" != "$TODAY" ]; then
+    add_finding "bulk-sync has not completed since ${LAST_BULK_SYNC} (its stamp is stale) - check com.mbs.bulk-sync"
+  fi
+fi
+
+# --- check 8: music-discovery dispatch is fresh (added 2026-08-01) -----------
+# Canary: newest dispatch_*.md in culture/listen/project_music_discovery/.
+# The job (com.mbs.music-discovery, renamed from com.cp250.* 2026-08-01) fires
+# Mondays 06:00 and writes one dispatch per run, so on a healthy system the
+# newest dispatch is at most 7 days old; 8 days of slack tolerates a late
+# Monday. Checked by mtime like check 5 (filename dates lag). Ungated: the job
+# is live, unlike checks 6/7 at their creation. Findings land in today's tasks
+# note via alert_tasks_note like every other check (P's requirement 2026-08-01).
+MUSIC_DIR="$VAULT/culture/listen/project_music_discovery"
+if [ ! -d "$MUSIC_DIR" ]; then
+  add_finding "music-discovery output dir missing ($MUSIC_DIR) - check com.mbs.music-discovery"
+else
+  MUSIC_RECENT="$(find "$MUSIC_DIR" -maxdepth 1 -name 'dispatch_*.md' -mtime -8 2>/dev/null | head -1)"
+  if [ -z "$MUSIC_RECENT" ]; then
+    add_finding "music-discovery: no dispatch file modified in the last 8 days ($MUSIC_DIR) - check com.mbs.music-discovery"
+  fi
+fi
+
 # --- verdict ----------------------------------------------------------------
 if [ "$FINDING_COUNT" -eq 0 ]; then
   echo "$TODAY" > "$STAMP"
