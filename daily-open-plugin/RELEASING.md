@@ -17,7 +17,7 @@ All `git` steps are for **P to run by hand** (P uses HTTPS GitHub auth, not SSH)
    git add .
    git commit -m "Initial import: Daily Auto-Open v0.1.0"
    git branch -M main
-   git remote add origin https://github.com/CP250/obsidian-daily-auto-open.git
+   git remote add origin git@github-cp250:CP250/obsidian-daily-auto-open.git   # github-cp250 = CP250 SSH alias (two-identity setup, 2026-08-02)
    git push -u origin main
    ```
 

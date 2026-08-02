@@ -100,7 +100,7 @@ git init
 git add .
 git commit -m "Initial import: MBS Companion v0.2.0 (split from mbs_automation)"
 git branch -M main
-git remote add origin https://github.com/CP250/obsidian-mbs-companion.git
+git remote add origin git@github-cp250:CP250/obsidian-mbs-companion.git   # github-cp250 = CP250 SSH alias (two-identity setup, 2026-08-02)
 git push -u origin main
 ```
 
