@@ -78,6 +78,19 @@ if [ -d "$DAILY_LOCK" ]; then
   fi
 fi
 
+# Same not-late-yet guard for team-brief: its 06:45 fire plus a full retry
+# ladder (~35 min) is normally long done by 11:00, but a wake-coalesced fire
+# can still be mid-run when a login triggers this heartbeat. Live PID in its
+# lock = not late yet; exit without stamping so the next trigger re-checks.
+TEAM_BRIEF_LOCK="$STATE_DIR/team_brief.lock"
+if [ -f "$HOME/Library/LaunchAgents/com.mbs.team-brief.plist" ] && [ -d "$TEAM_BRIEF_LOCK" ]; then
+  HOLDER_PID="$(cat "$TEAM_BRIEF_LOCK/pid" 2>/dev/null)"
+  if [ -n "${HOLDER_PID:-}" ] && kill -0 "$HOLDER_PID" 2>/dev/null; then
+    echo "$(ts) - team_brief still running (PID $HOLDER_PID); not late yet, will re-check on next trigger." >> "$LOG"
+    exit 0
+  fi
+fi
+
 TASKS_NOTE="$VAULT/daily_notes/tasks/tasks_${TODAY}.md"
 
 # Findings are accumulated as a counter + newline-joined string rather than a
@@ -257,6 +270,67 @@ else
   MUSIC_RECENT="$(find "$MUSIC_DIR" -maxdepth 1 -name 'dispatch_*.md' -mtime -8 2>/dev/null | head -1)"
   if [ -z "$MUSIC_RECENT" ]; then
     add_finding "music-discovery: no dispatch file modified in the last 8 days ($MUSIC_DIR) - check com.mbs.music-discovery"
+  fi
+fi
+
+# --- check 9: capture triage ran inside the morning report (added 2026-08-01)
+# The obsidian-daily command emits a "### Triage" marker inside ## Vault Agent
+# on every run, even a nothing-to-triage day (project_task_triage phase 1).
+# Fires only when a REAL report landed without the marker: that is "the daily
+# ran but the triage step was silently dropped". Mornings with no report at
+# all are already covered by checks 2/3; re-flagging here would double the
+# noise. First expected live morning: 2026-08-02 (2026-08-01's report predates
+# the feature, and that day's heartbeat had already stamped healthy).
+if [ -f "$TASKS_NOTE" ] && grep -qE '^## Vault Agent' "$TASKS_NOTE" \
+   && ! grep -qE '^## Vault Agent \(skipped' "$TASKS_NOTE" \
+   && ! grep -qE '^### Triage' "$TASKS_NOTE"; then
+  add_finding "morning report landed without its ### Triage subsection - the capture-triage step did not run; check ~/dev/mbs_automation/commands/obsidian-daily.md step 3c and ~/.mbs_automation/mbs_daily.log"
+fi
+
+# --- check 10: review prep drafted into the current review notes (2026-08-01)
+# project_task_triage phase 2: com.mbs.review-{monthly,quarterly,yearly} run
+# review_reminder.sh (note + notification), then claude drafts a "## Agent
+# prep" section into the period's note in admin/reviews/. Artifact check only,
+# per the watchdog rule: does the section exist. Grace windows cover the
+# creation lag (monthly: first 2 days of the month; quarterly: first 2 days of
+# the quarter's opening month; yearly: first 2 days of January). Gated on the
+# monthly plist being installed, same self-arming pattern as checks 6/7.
+if [ -f "$HOME/Library/LaunchAgents/com.mbs.review-monthly.plist" ]; then
+  DOM=$(( 10#$(date +%d) ))
+  MON=$(( 10#$(date +%m) ))
+  MNOTE="$VAULT/admin/reviews/review_monthly_$(date +%Y-%m).md"
+  if [ "$DOM" -ge 3 ] && { [ ! -f "$MNOTE" ] || ! grep -q '^## Agent prep' "$MNOTE"; }; then
+    add_finding "monthly review prep missing: review_monthly_$(date +%Y-%m).md has no '## Agent prep' section - check com.mbs.review-monthly and ~/.mbs_automation/mbs_review_prep.log"
+  fi
+  QQ=$(( (MON - 1) / 3 + 1 ))
+  QSTART=$(( (QQ - 1) * 3 + 1 ))
+  QNOTE="$VAULT/admin/reviews/review_quarterly_$(date +%Y)-Q${QQ}.md"
+  if { [ "$MON" -ne "$QSTART" ] || [ "$DOM" -ge 3 ]; } && { [ ! -f "$QNOTE" ] || ! grep -q '^## Agent prep' "$QNOTE"; }; then
+    add_finding "quarterly review prep missing: review_quarterly_$(date +%Y)-Q${QQ}.md has no '## Agent prep' section - check com.mbs.review-quarterly and ~/.mbs_automation/mbs_review_prep.log"
+  fi
+  YNOTE="$VAULT/admin/reviews/review_yearly_$(date +%Y).md"
+  if [ "$MON" -eq 1 ] && [ "$DOM" -ge 3 ] && { [ ! -f "$YNOTE" ] || ! grep -q '^## Agent prep' "$YNOTE"; }; then
+    add_finding "yearly review prep missing: review_yearly_$(date +%Y).md has no '## Agent prep' section - check com.mbs.review-yearly and ~/.mbs_automation/mbs_review_prep.log"
+  fi
+fi
+
+# --- check 11: team brief landed (added 2026-08-03) --------------------------
+# Artifact first, per the watchdog rule: does today's brief file exist in
+# social/project_team_brief/briefs/. The job (com.mbs.team-brief) fires 06:45,
+# before this heartbeat's 11:00 check, so today-scoped checks are correct
+# (mbs_daily pattern, unlike check 6's yesterday-tolerant stamp). Gated on the
+# plist being installed, same self-arming pattern as checks 6/7. The second
+# finding distinguishes the delivery-failed case: team_brief.sh archives the
+# brief BEFORE emailing and stamps only after the send, so file-present with
+# stamp-stale means generation landed but the email did not.
+if [ -f "$HOME/Library/LaunchAgents/com.mbs.team-brief.plist" ]; then
+  TEAM_BRIEF_FILE="$VAULT/social/project_team_brief/briefs/brief_${TODAY}.md"
+  TEAM_BRIEF_STAMP="$STATE_DIR/last_team_brief_run"
+  LAST_TEAM_BRIEF="$(cat "$TEAM_BRIEF_STAMP" 2>/dev/null || echo none)"
+  if [ ! -f "$TEAM_BRIEF_FILE" ]; then
+    add_finding "team-brief: no brief file for today (social/project_team_brief/briefs/brief_${TODAY}.md) - check com.mbs.team-brief and ~/.mbs_automation/team_brief.log"
+  elif [ "$LAST_TEAM_BRIEF" != "$TODAY" ]; then
+    add_finding "team-brief: today's brief file exists but the job never stamped success - the EMAIL likely failed after generation; check ~/.mbs_automation/team_brief.log"
   fi
 fi
 
