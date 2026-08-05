@@ -73,7 +73,7 @@ printf '%s\n\n' "$SUMMARY" >> "$PROMPT_FILE"
 
 cat >> "$PROMPT_FILE" << 'INSTRUCTIONS'
 INSTRUCTIONS:
-1. Read _CLAUDE.md, SOUL.md, and CRITICAL_FACTS.md in admin/mbs_system/brain/ first — follow their rules
+1. Read CLAUDE.md, SOUL.md, and CRITICAL_FACTS.md in admin/mbs_system/brain/ first — follow their rules
    exactly. Where silent, follow references/ai-first-rules.md, references/vault-schema.md, and
    references/write-rules.md from the mbs_automation skill.
 2. Identify vault-worthy items in the summary: decisions made, tasks created or completed,
@@ -86,8 +86,8 @@ INSTRUCTIONS:
    Boards/, Knowledge/, or wiki/ (those folders do not exist in this vault):
    - People  -> social/ (update last_interaction; create a stub only if clearly warranted).
    - Projects-> the right pillar; if status is active, ensure a real next_action is set.
-   - Work/dev session -> a log note in the project/pillar folder
-     (<pillar>/.../log_YYYY-MM-DD_<slug>.md).
+   - Work/dev session -> a log note in the project/pillar folder's _logs/
+     (<pillar>/.../_logs/log_YYYY-MM-DD_<slug>.md; create _logs/ if absent).
    - Tasks   -> a Tasks-plugin line "- [ ] <desc> #<pillar> 📅 <due if known>" in the relevant
      pillar's todo. There are NO kanban boards. Never delete completed tasks (task-archiver
      handles archiving).

@@ -8,10 +8,10 @@ Use the mbs_automation skill. Execute `/obsidian-log`:
 
 Capture what a work or thinking session produced so it isn't lost when the session closes.
 
-1. Read `admin/mbs_system/brain/_CLAUDE.md`.
+1. Read `admin/mbs_system/brain/CLAUDE.md`.
 2. Infer the project/pillar from the conversation (shell-grep to find the right project note — search exhaustively per the search-completeness rule in `references/vault-schema.md`; never conclude "no matching project note exists" without listing and grepping the candidate pillars). If genuinely ambiguous, ask.
 3. Build the log from the conversation: what was worked on, problems hit, decisions made, next steps. Capture only what actually happened — do not invent progress (see anti-fabrication).
-4. Save as a log note in the relevant location: a project folder (`<pillar>/project_<name>/log_YYYY-MM-DD_<slug>.md`) or the pillar (e.g. `money/<employer>/log_YYYY-MM-DD_<slug>.md`). Frontmatter:
+4. Save as a log note in the relevant location's `_logs/` (create it if absent): a project folder (`<pillar>/project_<name>/_logs/log_YYYY-MM-DD_<slug>.md`) or the pillar (e.g. `money/<employer>/_logs/log_YYYY-MM-DD_<slug>.md`). Frontmatter:
    ```yaml
    ---
    type: log

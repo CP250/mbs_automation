@@ -34,7 +34,7 @@ Common acceptance criteria for every command (the "Note rule" contract):
 **Verify:**
 1. The correct project/pillar is inferred; on ambiguity the command asks rather than guessing.
 2. **Search-completeness (changed in QA):** the command greps candidate pillars exhaustively before concluding no matching project note exists — it should not create an orphan log because it under-searched.
-3. The log note is saved to a project folder (`<pillar>/project_<name>/log_YYYY-MM-DD_<slug>.md`) or pillar location with `type: log` frontmatter and a `project:` wikilink.
+3. The log note is saved to a project folder's `_logs/` (`<pillar>/project_<name>/_logs/log_YYYY-MM-DD_<slug>.md`) or pillar `_logs/` location with `type: log` frontmatter and a `project:` wikilink.
 4. Body captures only what the session actually produced (anti-fabrication — no inflated outcomes).
 5. Propagation: dated line in the project's Recent Activity, `## Vault Agent` mention in today's daily note, refreshed `next_action` + a Tasks line if a concrete next step emerged, and a `admin/mbs_system/design/log.md` line.
 

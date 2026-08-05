@@ -1,6 +1,6 @@
 # Vault Schema Reference — mbs_automation
 
-The structure of P's vault. This is the canonical map; commands route by it. It overrides any generic structure assumptions. Companion to `admin/mbs_system/brain/_CLAUDE.md`.
+The structure of P's vault. This is the canonical map; commands route by it. It overrides any generic structure assumptions. Companion to `admin/mbs_system/brain/CLAUDE.md`.
 
 This vault is **hybrid**, not wiki-style: ~4,500 existing human-readable notes organized by life pillars, with new agent-written notes following the amnesia-test conventions below. The agent is not the sole writer — P writes too, and domain Cowork projects write into their folders.
 
@@ -28,7 +28,7 @@ This vault is **hybrid**, not wiki-style: ~4,500 existing human-readable notes o
 ├── captured/              ← inbox from external tools (MarkDownload, Glasp, Read It Later)
 ├── _to_clean/             ← legacy backlog P drains manually (NOT the agent's job unless asked)
 ├── attachments/           ← Obsidian-managed
-└── trash/                 ← OPAQUE to reads/searches. Agent's only interaction: move files IN (disposal path). Never delete from. See _CLAUDE.md Disposal section.
+└── trash/                 ← OPAQUE to reads/searches. Agent's only interaction: move files IN (disposal path). Never delete from. See CLAUDE.md Disposal section.
 ```
 
 ### Pillar boundary rules (P's own definitions)
@@ -37,7 +37,8 @@ This vault is **hybrid**, not wiki-style: ~4,500 existing human-readable notes o
 
 ## Folder semantics
 - **`_archive/`** — every folder's archive for deprecated items, completed projects, conversation transcripts. Standard name everywhere (never `vaults_*`, never `old/`). Created on demand. **The agent suggests archiving but NEVER moves anything to `_archive/` autonomously — P decides when something is complete.**
-- **`trash/`** — opaque to reads and searches. The agent never reads, surfaces, or permanently deletes from `trash/`. **The agent's one allowed interaction with `trash/` is to move files INTO it as the disposal path** (per vault `_CLAUDE.md` Disposal section, 2026-06-14). Trash moves do not require permission; the agent never asks "can I delete this?" - the answer is always "move to `trash/` and continue."
+- **`_logs/`** — session write-back logs (`log_YYYY-MM-DD_<topic>.md`), filed under the most specific owning folder (subproject over pillar; pillar root only for folder-wide work). Created on demand. Ranked historical like `_archive/`: searched, never surfaced as an active next step. ADR: `admin/mbs_system/design/adr_2026-08-05_logs_folder_convention.md`.
+- **`trash/`** — opaque to reads and searches. The agent never reads, surfaces, or permanently deletes from `trash/`. **The agent's one allowed interaction with `trash/` is to move files INTO it as the disposal path** (per vault `CLAUDE.md` Disposal section, 2026-06-14). Trash moves do not require permission; the agent never asks "can I delete this?" - the answer is always "move to `trash/` and continue."
 - **`captured/`** — inbox; triage source. Don't treat its contents as filed.
 - **`_to_clean/`** — P's manual backlog. Leave alone unless asked.
 
@@ -123,7 +124,7 @@ project: "[[<project>]]"
 ```
 
 ### Pillar goals note (`goals_<thread>.md`)
-Most goals notes use `type: reference` and live at `<pillar>/<thread>/goals_<thread>.md` (e.g. `create/ch8/goals_ch8.md`, `sports/golf/goals_golf.md`). They roll up to sections of `admin/betterment/goals_long_term.md` via `rolls_up_to:`. The optional weekly-block fields make a thread participate in the **Morgen drop-zone** workflow (see `_CLAUDE.md` → "Weekly time-blocks → Morgen drop zone" and SETUP.md → "com.mbs.weekly-blocks"):
+Most goals notes use `type: reference` and live at `<pillar>/<thread>/goals_<thread>.md` (e.g. `create/ch8/goals_ch8.md`, `sports/golf/goals_golf.md`). They roll up to sections of `admin/betterment/goals_long_term.md` via `rolls_up_to:`. The optional weekly-block fields make a thread participate in the **Morgen drop-zone** workflow (see `CLAUDE.md` → "Weekly time-blocks → Morgen drop zone" and SETUP.md → "com.mbs.weekly-blocks"):
 
 ```yaml
 ---
@@ -144,7 +145,7 @@ The pair `(weekly_minutes, default_block_length)` is the **single source of trut
 - Health journal: `daily_notes/health/daily/daily_note_health_YYYY-MM-DD.md`
 - The agent's morning report appends to the tasks journal inside a bounded `## Vault Agent` section.
 
-## Naming conventions (summary; full detail in `_CLAUDE.md` + the vault's `admin/obsidian_optimize/RENAMING_PLAN.md`)
+## Naming conventions (summary; full detail in `CLAUDE.md` + the vault's `admin/obsidian_optimize/RENAMING_PLAN.md`)
 - Folders: lowercase snake_case, no redundant pillar prefix, singular unless inherently plural.
 - Files: lowercase snake_case; type prefixes `project_*`, `ref_*`, `todo_list_*`, `log_YYYY-MM-DD_*`; plain noun when unsure. No spaces. Dates `YYYY-MM-DD`.
 - Exception: creative drafts in `create/writing/writing_scraps/` keep natural poetic titles — never normalize those.
