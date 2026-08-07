@@ -334,6 +334,91 @@ if [ -f "$HOME/Library/LaunchAgents/com.mbs.team-brief.plist" ]; then
   fi
 fi
 
+# --- check 12: session-awareness sweep landed (added 2026-08-03) -------------
+# Artifact-only, per the watchdog rule: is there a report in the canonical
+# folder with an mtime inside the last 35 days. The sweep is a Cowork scheduled
+# task (monthly, 1st at 08:39), not launchd, so there is no plist to gate on
+# and no stamp file to read - the report IS the only evidence it ran.
+#
+# Be honest about what this buys: at monthly cadence a dead job stays invisible
+# for up to five weeks. This check satisfies the manual's rule that every job
+# P depends on gets a watchdog, and nothing more. The real detection is that a
+# report either appears on the 1st or it does not. If the 2026-10-01 retirement
+# review keeps the job, consider having the sweep write a stamp.
+#
+# Self-arming: silent until the folder holds at least one report, so it never
+# fires on a fresh machine.
+SWEEP_DIR="$VAULT/admin/mbs_system/design/session_awareness"
+if [ -d "$SWEEP_DIR" ] && ls "$SWEEP_DIR"/report_*.md >/dev/null 2>&1; then
+  if [ -z "$(find "$SWEEP_DIR" -name 'report_*.md' -mtime -35 -print -quit 2>/dev/null)" ]; then
+    add_finding "session-awareness sweep: no report in admin/mbs_system/design/session_awareness/ modified in the last 35 days - the monthly Cowork task (1st, 08:39) may have stopped running or is writing elsewhere; check Cowork sidebar > Scheduled"
+  fi
+fi
+
+# --- check 13: the-record has no transcript stuck unprocessed (added 2026-08-07)
+# com.mbs.the-record is EVENT-anchored (WatchPaths on the raw/ drop-zone), not
+# clock-anchored, so there is no daily artifact to look for and no stamp that
+# should read today. Asking "did it produce output today?" would fire every day
+# P simply had nothing to capture - which is not a fault, it is the no-cadence
+# rule working as designed.
+#
+# The question that IS answerable without knowing why: has a transcript landed
+# in raw/ and NOT been recorded in the job's processed-manifest? That is the
+# only state where P is owed output and is not getting it. Artifact-shaped,
+# no network, no claude - same contract as every other check here.
+#
+# 24h of slack (-mmin +1440), deliberately generous: WatchPaths fires within
+# seconds, but a transcript dropped while the Mac is asleep waits for RunAtLoad
+# at the next login, and heartbeat's own RunAtLoad can win that race. A file
+# unprocessed for a full day is unambiguous; anything tighter trades a real
+# signal for false alarms, which is how a watchdog gets ignored.
+#
+# The live-lock guard skips the check mid-run (the job holds the_record.lock
+# while claude works), rather than exiting the whole heartbeat the way the
+# mbs_daily and team-brief guards do - a busy the-record says nothing about
+# the other twelve checks.
+#
+# Second finding, separate failure mode: the plist's WatchPaths is a hardcoded
+# absolute path. The folder was already promoted once (money/verition/the_record
+# -> money/project_the_record, 2026-07-21). If it moves again, the trigger dies
+# silently and nothing else in the system would ever notice.
+#
+# Gated on the plist being installed, same self-arming pattern as checks 6/7/11.
+# That gate is load-bearing here: runbook.md documents permanent teardown as
+# `rm ~/Library/LaunchAgents/com.mbs.the-record.plist`, so when P ends the
+# project the watchdog retires itself with it. A `bootout`-only pause leaves the
+# plist in place and this check will still speak up, which is why the finding
+# names that possibility instead of asserting a failure.
+if [ -f "$HOME/Library/LaunchAgents/com.mbs.the-record.plist" ]; then
+  RECORD_RAW="$VAULT/money/project_the_record/raw"
+  RECORD_MANIFEST="$STATE_DIR/the_record_processed.txt"
+  RECORD_LOCK="$STATE_DIR/the_record.lock"
+  RECORD_BUSY=0
+  if [ -d "$RECORD_LOCK" ]; then
+    RECORD_PID="$(cat "$RECORD_LOCK/pid" 2>/dev/null)"
+    if [ -n "${RECORD_PID:-}" ] && kill -0 "$RECORD_PID" 2>/dev/null; then
+      RECORD_BUSY=1
+    fi
+  fi
+  if [ ! -d "$RECORD_RAW" ]; then
+    add_finding "the-record: the raw/ drop-zone is missing ($RECORD_RAW) - the plist's WatchPaths is an absolute path, so a moved or renamed folder kills the trigger silently; check com.mbs.the-record"
+  elif [ "$RECORD_BUSY" -eq 0 ]; then
+    RECORD_STUCK_COUNT=0
+    RECORD_STUCK_FIRST=""
+    while IFS= read -r f; do
+      [ -n "$f" ] || continue
+      RECORD_BASE="$(basename "$f")"
+      if [ ! -f "$RECORD_MANIFEST" ] || ! grep -Fxq "$RECORD_BASE" "$RECORD_MANIFEST"; then
+        RECORD_STUCK_COUNT=$((RECORD_STUCK_COUNT + 1))
+        [ -z "$RECORD_STUCK_FIRST" ] && RECORD_STUCK_FIRST="$RECORD_BASE"
+      fi
+    done < <(find "$RECORD_RAW" -maxdepth 1 -type f -name '*.md' -mmin +1440 2>/dev/null | sort)
+    if [ "$RECORD_STUCK_COUNT" -gt 0 ]; then
+      add_finding "the-record: ${RECORD_STUCK_COUNT} transcript(s) in money/project_the_record/raw/ unprocessed for over 24h (oldest: ${RECORD_STUCK_FIRST}) - the job did not fire, failed, or is booted out; check ~/.mbs_automation/the_record.log and com.mbs.the-record"
+    fi
+  fi
+fi
+
 # --- verdict ----------------------------------------------------------------
 if [ "$FINDING_COUNT" -eq 0 ]; then
   echo "$TODAY" > "$STAMP"
