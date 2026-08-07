@@ -310,10 +310,14 @@ notify_daily_note() {
   local slug="$1"
   local url="$2"
   local change_description="$3"
+  local prior_state="${4:-}"
   daily_note_header
   {
     echo "- [ ] **\`$slug\`** changed: $change_description"
     echo "    url: $url"
+    if [ -n "$prior_state" ]; then
+      echo "    previous: $prior_state"
+    fi
     echo "    proposed: act on the change (review, schedule, etc.)"
     echo "    status:    "
     echo "    reply:"
@@ -326,6 +330,7 @@ notify_email() {
   local slug="$1"
   local url="$2"
   local change_description="$3"
+  local prior_state="${4:-}"
   local subject="web_watchers: $slug changed"
   local body_file
   body_file="$(mktemp -t web_watchers_body.XXXXXX)"
@@ -334,8 +339,13 @@ notify_email() {
     echo "URL: $url"
     echo "Detected at: $(ts)"
     echo ""
-    echo "--- Change description ---"
+    echo "--- Current state ---"
     echo "$change_description"
+    if [ -n "$prior_state" ]; then
+      echo ""
+      echo "--- Previous state ---"
+      echo "$prior_state"
+    fi
   } > "$body_file"
 
   if send_email "chris.preston@gmail.com" "$subject" "$body_file"; then
@@ -355,13 +365,17 @@ ask_claude() {
   local page_text_file="$2"
   local prompt
   prompt="$(cat <<PROMPT_EOF
-You are answering a structured question about the content of a web page. You will be given:
-1. A question describing what to look for.
-2. The page text.
+You are extracting a CANONICAL, DETERMINISTIC snapshot of specific facts from a web page, for exact-string comparison against tomorrow's snapshot of the same page. Two runs of you, given byte-identical page text, must produce byte-identical output. You will be given:
+1. A question describing exactly what facts to extract.
+2. The page text (visible text only; HTML tags and scripts are already stripped by the caller).
 
-Your job: answer the question using ONLY information from the page text. Be specific and factual. Quote dates, version numbers, and proper nouns exactly. If the page does not contain enough information to answer, say so explicitly with "INSUFFICIENT_INFO".
-
-Output: a short paragraph (1-4 sentences) that is the canonical answer. Do NOT include preamble, do NOT restate the question, do NOT add markdown headings. Just the answer paragraph.
+Rules:
+- Extract ONLY the facts the question asks for, using ONLY information from the page text. Quote dates, version numbers, prices, and proper nouns exactly as they appear.
+- Do NOT editorialize, do NOT comment on whether this is a first check or a repeat check, do NOT mention "last check", "baseline", or any other run of this prompt. You have no memory of prior runs and must not refer to one. Your only input is the page text given below, right now.
+- If the question asks for a list, output one item per line in the exact field order and format the question specifies, in the order the items appear on the page. Do NOT sort or reorder the list yourself: the calling script sorts your output afterward, so matching page order is all that's required of you.
+- Never show your work or reconsider out loud. If you notice a mistake partway through, silently discard it and output only the corrected final answer. The output must contain no trace of an earlier attempt: no "wait", no "actually", no visible self-correction of any kind. If you're not confident about a specific field for a specific item, re-check it against the page text before writing it, rather than writing a guess and correcting it visibly afterward.
+- If the page does not contain enough information to extract the requested facts, output exactly "INSUFFICIENT_INFO" and nothing else, no explanation, no partial data.
+- Output ONLY the extracted facts (or INSUFFICIENT_INFO). No preamble, no restated question, no markdown headings, no trailing remarks.
 
 QUESTION:
 $what_to_watch
@@ -400,70 +414,48 @@ PROMPT_EOF
 }
 
 # ----------------------------------------------------------------------------
-# Helper: semantic equality check
+# NOTE (2026-08-07): a "semantic_equality" LLM judge used to live here,
+# comparing prior vs. new free-form paragraphs and returning SAME/DIFFERENT
+# to suppress false alarms from LLM phrasing variance. It was removed: it was
+# itself non-deterministic and produced false "DIFFERENT" verdicts on
+# unchanged pages (analogue_3d_firmware fired 4 false "changed" emails
+# 2026-08-01..08-04 and again 08-07 for a firmware version that never moved;
+# see ~/.mbs_automation/web_watchers.log). Root cause traced to ask_claude()
+# producing non-deterministic wording even for identical page content, which
+# made byte comparison unreliable, which made this LLM judge the load-bearing
+# gate for every fire — and it was wrong more often than not.
 #
-# Compares two free-form answer paragraphs for SEMANTIC equality. Returns
-# exactly "SAME" or "DIFFERENT" on stdout. Used to suppress false-positive
-# change events caused by LLM phrasing variance: Claude often rewrites the
-# same underlying facts with different word order on subsequent calls. Strict
-# byte-equality on ask_claude output produces a daily false alarm. This second
-# call asks Claude to compare the prior and new answer as descriptions of
-# state, ignoring phrasing.
+# Fix: ask_claude() above now demands a canonical, deterministic snapshot
+# (fixed field order, sorted lists, no editorializing, no self-reference to
+# "prior checks"). With that in place, plain byte-equality is the correct and
+# sufficient comparison — no second LLM call needed. See
+# admin/mbs_system/_logs/log_2026-08-07_web_watchers_fix.md for the full
+# writeup.
 #
-# Cost: one extra Claude call per watcher per fire when strings differ.
-# Defaults to DIFFERENT on any unexpected output, so a broken semantic check
-# fails open (alerts P, never silences a real change).
-# ----------------------------------------------------------------------------
-
-semantic_equality() {
-  local prior="$1"
-  local current="$2"
-  local prompt
-  prompt="$(cat <<PROMPT_EOF
-Two answers were produced by an LLM in response to the SAME question about the SAME web page on two different days. Your job: decide whether they describe the SAME underlying state of the world, or DIFFERENT underlying states (meaning an actual change occurred on the page).
-
-Rules:
-- If both answers convey the same concrete facts (same version numbers, same dates, same prices, same yes/no status, same item lists) with only phrasing or word-order differences, output SAME.
-- If any concrete fact differs (a version number changed, a date moved, a price changed, an item appeared or disappeared, a status flipped), output DIFFERENT.
-- If one answer is "INSUFFICIENT_INFO" and the other is a substantive answer, output DIFFERENT.
-
-Output: exactly one word, either SAME or DIFFERENT. No other text, no punctuation, no explanation.
-
-ANSWER A (prior):
-$prior
-
-ANSWER B (new):
-$current
-PROMPT_EOF
-  )"
-  local raw temp
-  temp="$(mktemp -t web_watchers_semeq.XXXXXX)"
-  claude -p "$prompt" --model opus --dangerously-skip-permissions > "$temp" 2>>"$LOG"
-  if la_is_credit_failure "$temp"; then
-    alert_tasks_note "Automated run failed: web-watchers is out of Claude usage credits (model: opus). Some watchers did not run — top up (/usage-credits) or switch model (/model)."
-    touch "$STATE_DIR/.web_watchers_auth_failed"
-    rm -f "$temp"
-    echo "DIFFERENT"  # fail-open so loop continues, then aborts on flag check
-    return 2
-  fi
-  if la_is_auth_failure "$temp"; then
-    mark_reauth_needed "$LOG"
-    touch "$STATE_DIR/.web_watchers_auth_failed"
-    rm -f "$temp"
-    echo "DIFFERENT"  # fail-open so loop continues, then aborts on flag check
-    return 2
-  fi
-  raw="$(cat "$temp")"
-  rm -f "$temp"
-  local cleaned
-  cleaned="$(echo "$raw" | head -1 | tr -d '[:space:][:punct:]' | tr '[:lower:]' '[:upper:]')"
-  case "$cleaned" in
-    SAME)      echo "SAME" ;;
-    DIFFERENT) echo "DIFFERENT" ;;
-    *)         echo "DIFFERENT" ;;
-  esac
-}
-
+# ROUND 2 (2026-08-07, same day): a live test of the round-1 fix immediately
+# false-fired on artdog_philip_williams: two back-to-back calls against the
+# byte-identical fetched page produced different output, a visible
+# self-correction ("Wait, sorted alphabetically...") whose wording changed
+# between calls, AND a genuine extraction error (IN THE FOREGROUND A DUKE
+# flipped available -> sold, confirmed against the raw page: it was actually
+# sold both times). Root cause traced past the prompt to the INPUT: the fetched
+# page is raw HTML (100-150KB of Squarespace config JSON, <script>/<style>
+# noise) with maybe 3KB of actual visible content, and the model was losing
+# track of which "Sold" badge belonged to which title across all that noise.
+# Two changes: (1) page text is now run through html_to_text.py (stdlib-only
+# HTML stripper) before it ever reaches ask_claude(), so the model sees only
+# visible text; (2) list sorting moved out of the model's job into a plain
+# `sort` in bash, removing the specific instruction that triggered the visible
+# self-correction. Neither change makes a single LLM call provably
+# deterministic, so a third change closes the gap structurally: on any
+# byte-diff from baseline, the main loop below re-asks Claude a second,
+# independent time on the same already-fetched text and only fires a
+# notification if both reads agree. Disagreement is logged and treated as
+# inconclusive (baseline preserved, retried next scheduled run), not as a
+# change. This is two-sample agreement on a mechanical string compare, not a
+# reintroduction of the round-1 LLM judge: the failure mode there was an LLM
+# *judging* semantic sameness, this is bash doing `[ "$a" = "$b" ]` on two
+# independent extractions.
 # ----------------------------------------------------------------------------
 # Main loop — iterate watchers
 # ----------------------------------------------------------------------------
@@ -475,9 +467,9 @@ SKIPPED_NOT_DUE=0
 ERRORS=0
 
 for i in $(seq 0 $((WATCHER_COUNT - 1))); do
-  # Auth-failure short-circuit: ask_claude/semantic_equality touch this flag
-  # file when they detect a 401. Stop processing further watchers; mark the
-  # sentinel; exit non-zero so launchd doesn't stamp success.
+  # Auth-failure short-circuit: ask_claude() touches this flag file when it
+  # detects a 401. Stop processing further watchers; mark the sentinel; exit
+  # non-zero so launchd doesn't stamp success.
   if [ -f "$STATE_DIR/.web_watchers_auth_failed" ]; then
     rm -f "$STATE_DIR/.web_watchers_auth_failed"
     mark_reauth_needed "$LOG"
@@ -564,15 +556,25 @@ for i in $(seq 0 $((WATCHER_COUNT - 1))); do
     continue
   fi
 
-  # Ask Claude
-  echo "$(ts) — [$slug] asking claude for semantic answer" >> "$LOG"
-  new_answer="$(ask_claude "$what_to_watch" "$page_file")"
+  # Strip HTML down to visible text before handing it to Claude (2026-08-07
+  # round 2; see the ROUND 2 note above ask_claude() for why).
+  text_file="$(mktemp -t web_watchers_text.XXXXXX)"
+  if ! python3 "$LIB_DIR/html_to_text.py" "$page_file" > "$text_file" 2>>"$LOG"; then
+    echo "$(ts) — [$slug] WARN: html_to_text conversion failed; falling back to raw page text" >> "$LOG"
+    cp "$page_file" "$text_file"
+  fi
   rm -f "$page_file"
+
+  # Ask Claude. Output is sorted in bash, not by the model (2026-08-07 round 2;
+  # see ask_claude()'s prompt rules above).
+  echo "$(ts) — [$slug] asking claude for semantic answer" >> "$LOG"
+  new_answer="$(ask_claude "$what_to_watch" "$text_file" | sort)"
 
   if [ -z "$new_answer" ]; then
     echo "$(ts) — [$slug] ERROR: claude returned empty answer" >> "$LOG"
     state_inc_errors "$slug"
     ERRORS=$((ERRORS + 1))
+    rm -f "$text_file"
     continue
   fi
 
@@ -585,6 +587,7 @@ for i in $(seq 0 $((WATCHER_COUNT - 1))); do
     touch "$STATE_DIR/.web_watchers_auth_failed"
     state_inc_errors "$slug"
     ERRORS=$((ERRORS + 1))
+    rm -f "$text_file"
     continue
   fi
 
@@ -600,6 +603,7 @@ for i in $(seq 0 $((WATCHER_COUNT - 1))); do
     state_set "$slug" "last_checked" "$(ts)"
     stamp_watcher "$slug" "$frequency"
     PROCESSED=$((PROCESSED + 1))
+    rm -f "$text_file"
     continue
   fi
 
@@ -608,38 +612,41 @@ for i in $(seq 0 $((WATCHER_COUNT - 1))); do
     state_set "$slug" "last_checked" "$(ts)"
     stamp_watcher "$slug" "$frequency"
     PROCESSED=$((PROCESSED + 1))
+    rm -f "$text_file"
     continue
   fi
 
-  # Strings differ. Could be a real change on the page, or could be LLM
-  # phrasing variance describing the same facts. Ask Claude to judge.
-  echo "$(ts) — [$slug] byte-different, running semantic equality check" >> "$LOG"
-  semantic="$(semantic_equality "$prior_answer" "$new_answer")"
-  echo "$(ts) — [$slug] semantic check returned: $semantic" >> "$LOG"
+  # Byte-different from baseline. ask_claude() is asked to be deterministic,
+  # but no single LLM call is provably deterministic: confirm with a second,
+  # independent extraction on the SAME already-fetched page text before
+  # treating this as a real change (2026-08-07 round 2; see the ROUND 2 note
+  # above ask_claude() for the incident that motivated this). This is a plain
+  # string-equality check between two independent reads, not a reintroduction
+  # of the round-1 LLM semantic judge.
+  echo "$(ts) — [$slug] byte-different from baseline; re-asking claude to confirm before notifying" >> "$LOG"
+  confirm_answer="$(ask_claude "$what_to_watch" "$text_file" | sort)"
+  rm -f "$text_file"
 
-  if [ "$semantic" = "SAME" ]; then
-    echo "$(ts) — [$slug] no change (semantically equal; updating stored wording)" >> "$LOG"
-    state_set "$slug" "last_answer" "$new_answer"
+  if [ "$confirm_answer" != "$new_answer" ]; then
+    echo "$(ts) — [$slug] NOT CONFIRMED: two independent reads of the same page text disagree; treating as extraction noise, not a real change. Baseline preserved; will retry next scheduled run." >> "$LOG"
     state_set "$slug" "last_checked" "$(ts)"
-    stamp_watcher "$slug" "$frequency"
-    PROCESSED=$((PROCESSED + 1))
+    ERRORS=$((ERRORS + 1))
     continue
   fi
 
-  # Real change.
-  echo "$(ts) — [$slug] CHANGE DETECTED" >> "$LOG"
+  echo "$(ts) — [$slug] CHANGE DETECTED (byte-different, confirmed by independent 2nd read)" >> "$LOG"
   CHANGED=$((CHANGED + 1))
 
   case "$notification" in
     email)
-      notify_email "$slug" "$url" "$new_answer"
+      notify_email "$slug" "$url" "$new_answer" "$prior_answer"
       ;;
     daily_note)
-      notify_daily_note "$slug" "$url" "$new_answer"
+      notify_daily_note "$slug" "$url" "$new_answer" "$prior_answer"
       ;;
     *)
       echo "$(ts) — [$slug] WARN: unknown notification mode '$notification', falling back to daily_note" >> "$LOG"
-      notify_daily_note "$slug" "$url" "$new_answer"
+      notify_daily_note "$slug" "$url" "$new_answer" "$prior_answer"
       ;;
   esac
 
