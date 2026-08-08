@@ -28,6 +28,11 @@
 #      fire plus its full five-attempt retry ladder (~1.75 hr of awake time).
 #   2. RunAtLoad at login — so a Mac powered off all morning still gets checked.
 #
+# Roster as of 2026-08-08: fifteen checks. 14 (oura-watch ran) and 15
+# (oura-trends artifact) were added alongside the Oura analysis layer; see
+# SETUP.md 'Heartbeat update (2026-08-07)'. Checks 6, 7, 10, 11, 13, 14 and 15
+# self-arm on plist presence.
+#
 # Idempotence: per-day stamp, written ONLY on a healthy check. A failing check
 # deliberately leaves no stamp, so every later trigger re-checks and re-nudges
 # until the underlying problem is fixed. That nag is the feature.
@@ -121,6 +126,15 @@ else
     add_finding "the daily report was skipped and said so in today's note — see the '## Vault Agent (skipped' banner there for the reason"
   elif ! grep -qE '^## Vault Agent' "$TASKS_NOTE"; then
     add_finding "today's tasks note has no ## Vault Agent section — the morning report did not land"
+  fi
+
+  # --- check 2b: the open_tasks property was stamped ------------------------
+  # mbs_daily writes `open_tasks: <n>` into the frontmatter when it creates (or
+  # first touches) today's note. Missing field = the stamp did not run, so the
+  # property is silently absent for the day. Presence check only: the watchdog
+  # asks whether the output exists, never why, and never recounts anything.
+  if ! awk 'NR==1{next} /^---[[:space:]]*$/{exit} {print}' "$TASKS_NOTE" | grep -q '^open_tasks:'; then
+    add_finding "today's tasks note has no open_tasks property - the morning stamp did not run"
   fi
 fi
 
@@ -415,6 +429,57 @@ if [ -f "$HOME/Library/LaunchAgents/com.mbs.the-record.plist" ]; then
     done < <(find "$RECORD_RAW" -maxdepth 1 -type f -name '*.md' -mmin +1440 2>/dev/null | sort)
     if [ "$RECORD_STUCK_COUNT" -gt 0 ]; then
       add_finding "the-record: ${RECORD_STUCK_COUNT} transcript(s) in money/project_the_record/raw/ unprocessed for over 24h (oldest: ${RECORD_STUCK_FIRST}) - the job did not fire, failed, or is booted out; check ~/.mbs_automation/the_record.log and com.mbs.the-record"
+    fi
+  fi
+fi
+
+# --- check 14: oura-watch actually ran (stamp-based, deliberately) -----------
+# com.mbs.oura-watch is SILENT BY DESIGN: on P's own 68-night archive it would
+# have spoken on 3 nights (4.4%). So "did it produce output today" is the wrong
+# question - it would fire on ~95% of healthy days and train P to ignore this
+# whole job, which is the exact failure mode the heartbeat exists to prevent.
+# The only answerable question for a silent-by-design job is whether it RAN,
+# and oura_watch.sh writes its per-day stamp on every success INCLUDING silent
+# ones precisely so this check has something to read.
+#
+# Same family as check 13 (the-record), different mechanism: an event-anchored
+# job has no cadence, so 13 diffs unconsumed input against a manifest; this job
+# does have a cadence, so a stamp is sufficient. The shared rule: ask the
+# question the job's own shape makes answerable.
+#
+# TODAY-or-YESTERDAY, not stamp==TODAY: oura-watch fires at 10:30 and this
+# heartbeat at 11:00, same calendar day, so on a healthy Mac today's stamp is
+# normally already there. The yesterday tolerance covers a late wake, where
+# launchd runs the 10:30 job after this 11:00 check has already passed.
+#
+# Gated on plist presence so it self-arms when P installs the job and retires
+# itself if he removes the plist.
+if [ -f "$HOME/Library/LaunchAgents/com.mbs.oura-watch.plist" ]; then
+  OURA_WATCH_STAMP="$STATE_DIR/last_oura_watch_run"
+  LAST_OURA_WATCH="$(cat "$OURA_WATCH_STAMP" 2>/dev/null || echo none)"
+  OURA_YESTERDAY="$(date -v-1d +%Y-%m-%d)"
+  if [ "$LAST_OURA_WATCH" != "$TODAY" ] && [ "$LAST_OURA_WATCH" != "$OURA_YESTERDAY" ]; then
+    add_finding "oura-watch has not completed since ${LAST_OURA_WATCH} (expected ${OURA_YESTERDAY} or ${TODAY}, given its 10:30 schedule) - note that this job writing NOTHING is normal, it is the job not RUNNING that this reports; check ~/.mbs_automation/oura_watch.log and com.mbs.oura-watch"
+  fi
+fi
+
+# --- check 15: oura-trends wrote its section into this month's review --------
+# Artifact-based, mirroring check 10, because unlike oura-watch this job does
+# produce output every period. Two-day grace so a Mac that was off on the 1st
+# is not a finding. Gated on plist presence, same self-arming reason as 14.
+#
+# The missing-note case is reported separately and points at check 10 rather
+# than blaming this job: oura-trends deliberately refuses to create the review
+# note, because com.mbs.review-monthly owns that note's shape.
+if [ -f "$HOME/Library/LaunchAgents/com.mbs.oura-trends.plist" ]; then
+  OURA_TRENDS_DOM="$(date +%d)"
+  if [ "${OURA_TRENDS_DOM#0}" -ge 3 ]; then
+    OURA_TRENDS_PERIOD="$(date +%Y-%m)"
+    OURA_TRENDS_NOTE="$VAULT/admin/reviews/review_monthly_${OURA_TRENDS_PERIOD}.md"
+    if [ ! -f "$OURA_TRENDS_NOTE" ]; then
+      add_finding "oura-trends has no review note to write into for ${OURA_TRENDS_PERIOD} - the upstream problem is com.mbs.review-monthly, which check 10 should also be reporting"
+    elif ! grep -q '^## Oura trends' "$OURA_TRENDS_NOTE"; then
+      add_finding "oura-trends did not write its section into review_monthly_${OURA_TRENDS_PERIOD}.md - check ~/.mbs_automation/oura_trends.log and com.mbs.oura-trends"
     fi
   fi
 fi
