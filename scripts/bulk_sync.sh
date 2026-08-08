@@ -80,6 +80,29 @@ BULK_PILLARS="attachments create culture skills social sports"
 SENSITIVE_PILLARS="admin health money"
 NEVER_PILLARS="trash"
 
+# ============================================================================
+# TIER RESTRICTION - read this before moving this job to a server.
+#
+# This script touches BOTH crypt domains, which is correct ON P'S LAPTOP: the
+# architecture gives the laptop both passwords ("sensitive | Password S |
+# Laptop only"). It is NOT correct anywhere else.
+#
+# adr_2026-07-30_two_location_storage_model.md (amendment 2026-08-01) says the
+# com.mbs.bulk-sync job and the automation EC2 instance hold the BULK key only,
+# and that sensitive material "sits behind a second key that no always-on
+# machine ever holds". project_aws_launchd_migration plans to move this launchd
+# cluster onto that EC2 box. When that happens this job must NOT carry the
+# sensitive tier with it.
+#
+# So the tier set is a knob, not an assumption. On the EC2 instance, set:
+#   MBS_BULK_SYNC_TIERS=bulk
+# and the sensitive pillars are skipped outright - the script will not even
+# reference the sensitive remote, so a box without password S cannot fail
+# halfway through and cannot be blamed for a gap it was told to leave.
+# Default "bulk sensitive" is the laptop behavior.
+# ============================================================================
+TIERS="${MBS_BULK_SYNC_TIERS:-bulk sensitive}"
+
 mkdir -p "$STATE_DIR"
 
 # Always Eastern - P's timezone (matches vault_index.sh / pointer_check.sh).
@@ -210,13 +233,23 @@ copy_pillar() {
   return "$rc"
 }
 
+echo "$(ts) - tiers enabled: ${TIERS}" >> "$LOG"
+
 FAILED=0
-for pillar in $BULK_PILLARS; do
-  copy_pillar "$pillar" "bulk" || FAILED=$((FAILED + 1))
-done
-for pillar in $SENSITIVE_PILLARS; do
-  copy_pillar "$pillar" "sensitive" || FAILED=$((FAILED + 1))
-done
+case " $TIERS " in
+  *" bulk "*)
+    for pillar in $BULK_PILLARS; do
+      copy_pillar "$pillar" "bulk" || FAILED=$((FAILED + 1))
+    done ;;
+  *) echo "$(ts) -   bulk tier disabled by MBS_BULK_SYNC_TIERS, skipped" >> "$LOG" ;;
+esac
+case " $TIERS " in
+  *" sensitive "*)
+    for pillar in $SENSITIVE_PILLARS; do
+      copy_pillar "$pillar" "sensitive" || FAILED=$((FAILED + 1))
+    done ;;
+  *) echo "$(ts) -   sensitive tier disabled by MBS_BULK_SYNC_TIERS, skipped (expected on the automation EC2 box, which must not hold password S)" >> "$LOG" ;;
+esac
 
 if [ "$FAILED" -ne 0 ]; then
   echo "$(ts) - FAILED: $FAILED pillar(s) errored; no stamp written, will retry next trigger. Manifest: $MANIFEST" >> "$LOG"
