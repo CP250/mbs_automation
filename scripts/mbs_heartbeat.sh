@@ -28,10 +28,11 @@
 #      fire plus its full five-attempt retry ladder (~1.75 hr of awake time).
 #   2. RunAtLoad at login — so a Mac powered off all morning still gets checked.
 #
-# Roster as of 2026-08-08: fifteen checks. 14 (oura-watch ran) and 15
+# Roster as of 2026-08-08: sixteen checks. 14 (oura-watch ran) and 15
 # (oura-trends artifact) were added alongside the Oura analysis layer; see
-# SETUP.md 'Heartbeat update (2026-08-07)'. Checks 6, 7, 10, 11, 13, 14 and 15
-# self-arm on plist presence.
+# SETUP.md 'Heartbeat update (2026-08-07)'. 16 (bulk-sync refused to classify
+# an asset dir) was added when bulk_sync.sh was rewritten onto the encrypted
+# S3 estate. Checks 6, 7, 10, 11, 13, 14, 15 and 16 self-arm on plist presence.
 #
 # Idempotence: per-day stamp, written ONLY on a healthy check. A failing check
 # deliberately leaves no stamp, so every later trigger re-checks and re-nudges
@@ -481,6 +482,29 @@ if [ -f "$HOME/Library/LaunchAgents/com.mbs.oura-trends.plist" ]; then
     elif ! grep -q '^## Oura trends' "$OURA_TRENDS_NOTE"; then
       add_finding "oura-trends did not write its section into review_monthly_${OURA_TRENDS_PERIOD}.md - check ~/.mbs_automation/oura_trends.log and com.mbs.oura-trends"
     fi
+  fi
+fi
+
+# --- check 16: bulk-sync found nothing it refused to classify (2026-08-08) ---
+# Companion to check 7. Check 7 asks whether bulk-sync RAN; this asks whether
+# it silently SKIPPED something, which a stamp cannot express.
+#
+# bulk_sync.sh maps each top-level dir of ~/storage_mbs_assets/ to a crypt tier
+# (bulk vs sensitive) from a fixed list. A directory it does not recognise is
+# deliberately NOT uploaded - guessing a tier could put sensitive material
+# under the bulk key, which the automation EC2 box is allowed to hold, so a
+# gap is the safer failure. But an un-backed-up pillar that nobody is told
+# about is exactly the silent failure this heartbeat exists to end, so the
+# script drops a marker file and this check turns it into a nag.
+#
+# Fix: add the directory to BULK_PILLARS or SENSITIVE_PILLARS in
+# ~/dev/mbs_automation/scripts/bulk_sync.sh (and keep it in agreement with
+# mbs_aws/scripts/classification-reference.tsv). The marker clears itself on
+# the next run once every directory is classified.
+if [ -f "$HOME/Library/LaunchAgents/com.mbs.bulk-sync.plist" ]; then
+  BULK_SYNC_UNCLASSIFIED="$STATE_DIR/bulk_sync_unclassified"
+  if [ -f "$BULK_SYNC_UNCLASSIFIED" ]; then
+    add_finding "bulk-sync is NOT backing up unrecognised asset dir(s): $(tr -d '\n' < "$BULK_SYNC_UNCLASSIFIED")- assign each a crypt tier in bulk_sync.sh"
   fi
 fi
 

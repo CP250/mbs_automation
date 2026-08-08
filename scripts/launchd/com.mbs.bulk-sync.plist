@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.mbs.bulk-sync</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/cpreston/dev/mbs_automation/scripts/bulk_sync.sh</string>
+    </array>
+
+    <!-- 03:00 local time, daily. LIVE since 2026-08-08: bulk_sync.sh was
+         rewritten onto the ENCRYPTED estate (rclone crypt -> bulk:/sensitive:)
+         and actually uploads. It previously pushed plaintext to the legacy
+         bucket, which is being deleted. The per-day stamp keeps every trigger
+         idempotent, so RunAtLoad below cannot cause a double run. -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>3</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+
+    <!-- Also fire at login/boot; the per-day stamp prevents double-runs. -->
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>/Users/cpreston/.mbs_automation/bulk_sync.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/cpreston/.mbs_automation/bulk_sync.err.log</string>
+</dict>
+</plist>
