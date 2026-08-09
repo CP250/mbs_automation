@@ -28,11 +28,13 @@
 #      fire plus its full five-attempt retry ladder (~1.75 hr of awake time).
 #   2. RunAtLoad at login — so a Mac powered off all morning still gets checked.
 #
-# Roster as of 2026-08-08: sixteen checks. 14 (oura-watch ran) and 15
+# Roster as of 2026-08-09: seventeen checks. 14 (oura-watch ran) and 15
 # (oura-trends artifact) were added alongside the Oura analysis layer; see
 # SETUP.md 'Heartbeat update (2026-08-07)'. 16 (bulk-sync refused to classify
 # an asset dir) was added when bulk_sync.sh was rewritten onto the encrypted
-# S3 estate. Checks 6, 7, 10, 11, 13, 14, 15 and 16 self-arm on plist presence.
+# S3 estate; 17 (the vault itself has a working offsite backup) was added when
+# that gap was found and closed. Checks 6, 7, 10, 11, 13, 14, 15, 16 and 17
+# self-arm on plist presence.
 #
 # Idempotence: per-day stamp, written ONLY on a healthy check. A failing check
 # deliberately leaves no stamp, so every later trigger re-checks and re-nudges
@@ -505,6 +507,32 @@ if [ -f "$HOME/Library/LaunchAgents/com.mbs.bulk-sync.plist" ]; then
   BULK_SYNC_UNCLASSIFIED="$STATE_DIR/bulk_sync_unclassified"
   if [ -f "$BULK_SYNC_UNCLASSIFIED" ]; then
     add_finding "bulk-sync is NOT backing up unrecognised asset dir(s): $(tr -d '\n' < "$BULK_SYNC_UNCLASSIFIED")- assign each a crypt tier in bulk_sync.sh"
+  fi
+fi
+
+# --- check 17: the vault itself is being backed up offsite (2026-08-09) ------
+# The highest-stakes check in this file, because it guards the thing every
+# other check reports INTO. Until 2026-08-09 the vault had no working backup at
+# all: no git remote, not in iCloud, and a Time Machine destination that had
+# not mounted since 2025-08-18. com.mbs.vault-backup now copies it, encrypted,
+# to sensitive:_vault/ four times a day.
+#
+# Age-based rather than stamp==TODAY, because the job runs four times daily and
+# the stamp holds a timestamp, not a date. 30 hours tolerates a Mac that was
+# closed overnight plus a missed morning window without crying wolf, while
+# still catching a job that has genuinely stopped.
+if [ -f "$HOME/Library/LaunchAgents/com.mbs.vault-backup.plist" ]; then
+  VB_STAMP="$STATE_DIR/last_vault_backup_run"
+  if [ ! -f "$VB_STAMP" ]; then
+    add_finding "vault-backup has never completed - the vault has NO offsite copy; check ~/.mbs_automation/vault_backup.log"
+  else
+    VB_MTIME="$(stat -f %m "$VB_STAMP" 2>/dev/null || echo 0)"
+    VB_AGE=$(( ( $(date +%s) - VB_MTIME ) / 3600 ))
+    if [ "$VB_MTIME" -eq 0 ]; then
+      add_finding "vault-backup stamp at ${VB_STAMP} is unreadable"
+    elif [ "$VB_AGE" -gt 30 ]; then
+      add_finding "vault-backup last succeeded ${VB_AGE}h ago (threshold 30h) - the vault's offsite copy is going stale; check com.mbs.vault-backup"
+    fi
   fi
 fi
 

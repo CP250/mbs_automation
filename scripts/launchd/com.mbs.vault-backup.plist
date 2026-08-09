@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.mbs.vault-backup</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/cpreston/dev/mbs_automation/scripts/vault_backup.sh</string>
+    </array>
+
+    <!-- Four times a day, offset from com.mbs.bulk-sync's 03:00 so the two do
+         not contend for bandwidth. The vault is 189 MB of mostly text and
+         rclone transfers it incrementally, so a run is seconds once warm.
+         Four fires means worst-case data loss of about six hours instead of a
+         day. There is deliberately no per-day skip stamp in the script: an
+         incremental backup is idempotent, and more often is strictly better. -->
+    <key>StartCalendarInterval</key>
+    <array>
+        <dict><key>Hour</key><integer>3</integer><key>Minute</key><integer>15</integer></dict>
+        <dict><key>Hour</key><integer>9</integer><key>Minute</key><integer>15</integer></dict>
+        <dict><key>Hour</key><integer>15</integer><key>Minute</key><integer>15</integer></dict>
+        <dict><key>Hour</key><integer>21</integer><key>Minute</key><integer>15</integer></dict>
+    </array>
+
+    <!-- Also fire at login/boot, so a Mac that was off through every scheduled
+         window still backs up promptly. The lock prevents overlap. -->
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>/Users/cpreston/.mbs_automation/vault_backup.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/cpreston/.mbs_automation/vault_backup.err.log</string>
+</dict>
+</plist>
