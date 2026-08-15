@@ -391,6 +391,18 @@ else
       elif [ "$MUSIC_RELEASES" -eq 0 ]; then
         add_finding "music-discovery: $(basename "$MUSIC_NEWEST") reports 0 releases (smallest week on record is 80) - the Gmail label or the parser is broken, not a quiet week"
       fi
+      # --- check 8c: no source failed on the run that wrote it (2026-08-15) --
+      # Since v0.2 the job pulls from two independent sources: the Gmail label
+      # (four record shops) and the thequietus.com REST API. index.js isolates
+      # each one, so a dead source degrades the dispatch instead of killing the
+      # run, and it records that in a "sources_failed:" frontmatter key. Without
+      # this check a Quietus outage or a Cloudflare block would produce a
+      # dispatch that looks entirely healthy to checks 8 and 8b: fresh mtime,
+      # non-zero release count, silently missing its whole reviews section.
+      MUSIC_FAILED="$(sed -n 's/^sources_failed:[[:space:]]*//p' "$MUSIC_NEWEST" 2>/dev/null | head -1)"
+      if [ -n "$MUSIC_FAILED" ]; then
+        add_finding "music-discovery: $(basename "$MUSIC_NEWEST") was written with a failed source (${MUSIC_FAILED}) - that section is missing from the dispatch; check ~/dev/mbs-music-discovery/run.log, then regenerate with: cd ~/dev/mbs-music-discovery && node index.js --week=$(basename "$MUSIC_NEWEST" .md | sed 's/^dispatch_//') --force"
+      fi
     fi
   fi
 fi
