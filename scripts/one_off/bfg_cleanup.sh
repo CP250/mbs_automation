@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# bfg_cleanup.sh — Strip binary file history from the vault's git repo
+# bfg_cleanup.sh - Strip binary file history from the vault's git repo
 #
 # Usage:
 #   bash /Users/cpreston/Vaults/storage_mbs/admin/mbs_system/bfg_cleanup.sh
@@ -25,9 +25,9 @@ cd "$VAULT"
 echo "── Step 1: Committing current state ────────────────────────────────"
 git add -A
 if git diff --cached --quiet; then
-  echo "  Nothing to commit — working tree already clean."
+  echo "  Nothing to commit - working tree already clean."
 else
-  git commit -m "chore: pre-BFG snapshot — binaries migrated to storage_mbs_assets"
+  git commit -m "chore: pre-BFG snapshot - binaries migrated to storage_mbs_assets"
   echo "  Committed current state."
 fi
 echo ""

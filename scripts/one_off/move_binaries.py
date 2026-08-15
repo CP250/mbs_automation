@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-move_binaries.py — Migrate vault binary files to ~/storage_mbs_assets/
+move_binaries.py - Migrate vault binary files to ~/storage_mbs_assets/
 
 Usage:
   python3 /Users/cpreston/Vaults/storage_mbs/admin/mbs_system/move_binaries.py            # live run
@@ -17,7 +17,7 @@ What it does:
        - ![alt](relative.ext)  → ![alt](file:///path/to/image.ext)
        - [[binary.ext]]        → [binary.ext](file:///path/to/binary.ext)
   4. Adds  asset_path: <dir>  to frontmatter of project_*.md / goals_*.md
-     files whose adjacent binaries were moved — only if those notes already
+     files whose adjacent binaries were moved - only if those notes already
      have a frontmatter block.
   5. Writes a full migration log to:
        admin/mbs_system/brain/log_binary_migration.md
@@ -220,7 +220,7 @@ def maybe_add_asset_path(path: Path):
         return
 
     if not content.startswith("---"):
-        return  # no frontmatter block — skip
+        return  # no frontmatter block - skip
 
     end = content.find("\n---", 3)
     if end == -1:
@@ -268,7 +268,7 @@ def write_log():
 def main():
     print(f"Vault : {VAULT}")
     print(f"Assets: {ASSETS}")
-    print(f"Mode  : {'DRY RUN — no files will be changed' if DRY_RUN else 'LIVE'}")
+    print(f"Mode  : {'DRY RUN - no files will be changed' if DRY_RUN else 'LIVE'}")
     print()
 
     # 1. Move

@@ -7,7 +7,7 @@ description: >
   unattended, so it ships inert. It requires BOTH OBSIDIAN_VAULT_PATH and
   OBSIDIAN_BG_AGENT_ENABLED=1, plus a manual PostCompact registration in
   ~/.claude/settings.json (see hooks/postcompact.hook.example.json), before it
-  does anything. Add/update only — never deletes, moves, or archives; never
+  does anything. Add/update only - never deletes, moves, or archives; never
   touches trash/ or existing human notes in bulk.
 script: obsidian-bg-agent.sh
 enabled: false

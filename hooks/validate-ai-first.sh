@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# validate-ai-first.sh — Enforce the AI-first vault rule on Write/Edit
+# validate-ai-first.sh - Enforce the AI-first vault rule on Write/Edit
 # =============================================================================
 # Fires as a Claude Code PostToolUse hook after Write/Edit. Inspects the
 # written file and warns if it does not follow the AI-first rule defined in
@@ -19,7 +19,7 @@
 # Scope:
 #   - Only inspects files inside OBSIDIAN_VAULT_PATH (env var)
 #   - Skips raw/, templates/, _export/, .obsidian/, and any path containing
-#     /.git/ — those are system/template paths, not first-class notes
+#     /.git/ - those are system/template paths, not first-class notes
 #   - Skips any file not ending in .md
 #
 # Exit codes:
@@ -59,7 +59,7 @@ WARNINGS=()
 FIRST_LINE=$(head -1 "$FILE")
 if [[ "$FIRST_LINE" != "---" ]]; then
   WARNINGS+=("$BASENAME has no frontmatter (expected --- on the first line). AI-first notes need date/type/tags/ai-first metadata.")
-  # Without frontmatter we can't run the other checks meaningfully — surface
+  # Without frontmatter we can't run the other checks meaningfully - surface
   # this single warning and exit.
   printf 'AI-first warning: %s\n' "${WARNINGS[0]}" >&2
   exit 1

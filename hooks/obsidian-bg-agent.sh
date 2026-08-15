@@ -1,20 +1,20 @@
 #!/usr/bin/env bash
-# obsidian-bg-agent.sh — PostCompact vault propagation hook (OPT-IN, DISABLED BY DEFAULT)
+# obsidian-bg-agent.sh - PostCompact vault propagation hook (OPT-IN, DISABLED BY DEFAULT)
 #
 # =============================================================================
-# TRUST CAVEAT — READ BEFORE ENABLING
+# TRUST CAVEAT - READ BEFORE ENABLING
 # =============================================================================
 # This hook spawns a HEADLESS Claude subprocess with --dangerously-skip-permissions
 # that writes to P's vault UNATTENDED after every context compaction. The vault
 # holds taxes, legal, health, and financial data. An unattended writer that skips
 # permission prompts is a real trust surface.
 #
-# It is therefore SHIPPED INERT. Nothing wires it automatically — not install.sh,
+# It is therefore SHIPPED INERT. Nothing wires it automatically - not install.sh,
 # not scripts/setup.sh, not SKILL.md. It does NOTHING until P deliberately:
 #   1. sets OBSIDIAN_VAULT_PATH, and
 #   2. adds the PostCompact hook block to ~/.claude/settings.json (steps below).
 # Until both are done, this file is dormant. As an extra guard, the hook also
-# requires OBSIDIAN_BG_AGENT_ENABLED=1 — so even a stray hook registration will
+# requires OBSIDIAN_BG_AGENT_ENABLED=1 - so even a stray hook registration will
 # no-op unless P has explicitly flipped the enable flag.
 #
 # Safety boundaries the spawned agent MUST respect (encoded in the prompt below):
@@ -28,7 +28,7 @@
 # summary from the transcript, then runs a headless agent to propagate
 # anything worth preserving into the pillar-structured vault.
 #
-# ENABLE (P does this manually, when ready — see hooks/postcompact.hook.example.json):
+# ENABLE (P does this manually, when ready - see hooks/postcompact.hook.example.json):
 #   1. Set OBSIDIAN_VAULT_PATH in ~/.claude/settings.json env section.
 #   2. Set OBSIDIAN_BG_AGENT_ENABLED=1 in the same env section.
 #   3. Add the PostCompact hook block (see the example file) to ~/.claude/settings.json.
@@ -73,7 +73,7 @@ printf '%s\n\n' "$SUMMARY" >> "$PROMPT_FILE"
 
 cat >> "$PROMPT_FILE" << 'INSTRUCTIONS'
 INSTRUCTIONS:
-1. Read CLAUDE.md, SOUL.md, and CRITICAL_FACTS.md in admin/mbs_system/brain/ first — follow their rules
+1. Read CLAUDE.md, SOUL.md, and CRITICAL_FACTS.md in admin/mbs_system/brain/ first - follow their rules
    exactly. Where silent, follow references/ai-first-rules.md, references/vault-schema.md, and
    references/write-rules.md from the mbs_automation skill.
 2. Identify vault-worthy items in the summary: decisions made, tasks created or completed,
@@ -82,7 +82,7 @@ INSTRUCTIONS:
    existing one before creating. Never duplicate. Per the search-completeness rule, do not
    conclude a note is absent without listing and grepping the candidate pillars.
 4. Route each item to the correct life pillar (admin, create, culture, health, money, skills,
-   social, sports) per references/vault-schema.md — never to People/, Projects/, Dev Logs/,
+   social, sports) per references/vault-schema.md - never to People/, Projects/, Dev Logs/,
    Boards/, Knowledge/, or wiki/ (those folders do not exist in this vault):
    - People  -> social/ (update last_interaction; create a stub only if clearly warranted).
    - Projects-> the right pillar; if status is active, ensure a real next_action is set.
@@ -95,17 +95,17 @@ INSTRUCTIONS:
 5. New notes must pass the AMNESIA TEST: self-contained context, frontmatter (type, date, tags,
    plus type-specific fields), next_action on active projects, recency markers + verbatim source
    URLs on external claims, and [[wikilinks]] for every person/project/place/concept. Do NOT add a
-   "## For future Claude" preamble and do NOT add an ai-first: flag — this is a hybrid vault.
+   "## For future Claude" preamble and do NOT add an ai-first: flag - this is a hybrid vault.
 6. Propagate (never write in isolation): link new items from today's tasks daily note inside a
    bounded "## Vault Agent" section only (daily_notes/tasks/tasks_TODAY.md, using the TODAY value
-   above) — never touch P's own sections of that note. Append a timestamped line to
+   above) - never touch P's own sections of that note. Append a timestamped line to
    admin/mbs_system/design/log/TODAY.md (the ops log, same TODAY value; never a bare root log.md).
 
 CONSTRAINTS:
-- Use filesystem tools only (Read, Write, Edit, Glob, Grep) — MCP is not available here.
+- Use filesystem tools only (Read, Write, Edit, Glob, Grep) - MCP is not available here.
 - Run completely silently. No output to the user. No questions.
 - If the summary contains nothing vault-worthy, exit without touching the vault.
-- Match each pillar's existing writing style, frontmatter, and naming (lowercase snake_case) — read
+- Match each pillar's existing writing style, frontmatter, and naming (lowercase snake_case) - read
   1-2 existing notes in a folder before writing there.
 - ADD or UPDATE only. NEVER delete, move, or archive anything. NEVER touch trash/ or .obsidian/.
 - NEVER bulk-rewrite existing human notes. Suggest-don't-dispose: do not act on _archive/.
@@ -114,7 +114,7 @@ INSTRUCTIONS
 PROMPT=$(cat "$PROMPT_FILE")
 rm -f "$PROMPT_FILE"
 
-# Run headless agent in vault directory — async, logs to /tmp for debugging
+# Run headless agent in vault directory - async, logs to /tmp for debugging
 (
   cd "$VAULT" && \
   claude --dangerously-skip-permissions -p "$PROMPT" >> /tmp/obsidian-bg-agent.log 2>&1
