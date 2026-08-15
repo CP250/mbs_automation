@@ -1,5 +1,5 @@
 #!/bin/bash
-# web_watchers.sh — daily web-page change-watcher driven by admin/web_watchers.md.
+# web_watchers.sh - daily web-page change-watcher driven by admin/web_watchers.md.
 #
 # Reads the YAML list embedded in admin/web_watchers.md, iterates active watchers,
 # applies per-watcher frequency stamps, fetches each due URL, asks Claude (via
@@ -7,37 +7,37 @@
 # last-known answer in the state file, and fires a notification when the answer
 # changes.
 #
-# Pairs with mbs_daily.sh / mbs_weekly.sh / oslo_weekly.sh — same launchd idiom
+# Pairs with mbs_daily.sh / mbs_weekly.sh / oslo_weekly.sh - same launchd idiom
 # (state dir, per-period stamp, PATH export, log to ~/.mbs_automation/).
 #
 # Triggered by launchd (see scripts/launchd/com.mbs.web-watchers.plist):
 #   1. StartCalendarInterval daily 08:30 local.
-#   2. Wake from sleep — launchd coalesces the missed fire and runs on wake.
-#   3. RunAtLoad at login — covers a powered-off Mac.
+#   2. Wake from sleep - launchd coalesces the missed fire and runs on wake.
+#   3. RunAtLoad at login - covers a powered-off Mac.
 #
 # Two stamp layers:
-#   - Outer: ~/.mbs_automation/last_web_watchers_run — once-per-day idempotency
+#   - Outer: ~/.mbs_automation/last_web_watchers_run - once-per-day idempotency
 #     for the JOB itself. If the job has already run today, exit 0.
-#   - Inner: ~/.mbs_automation/last_web_watchers_<slug>_run — per-watcher
+#   - Inner: ~/.mbs_automation/last_web_watchers_<slug>_run - per-watcher
 #     idempotency based on its declared frequency (daily | weekly | monthly).
 #     A `weekly` watcher checked yesterday will skip today.
 #
 # State file:
-#   - ~/.mbs_automation/web_watchers_state.json — one entry per slug with the
+#   - ~/.mbs_automation/web_watchers_state.json - one entry per slug with the
 #     last-known Claude answer plus a timestamp. Lives outside the vault so
 #     repeated checks don't generate vault git commits.
 #
 # Notifications:
-#   - `notification: email` — uses lib_email.sh (sourced). Subject prefixed with
+#   - `notification: email` - uses lib_email.sh (sourced). Subject prefixed with
 #     "web_watchers:". Body = the change description Claude produced.
-#   - `notification: daily_note` — appends a `## Web Watchers — <date>` section
+#   - `notification: daily_note` - appends a `## Web Watchers - <date>` section
 #     to today's tasks note in the Vault Agent reply-loop format.
 #
 # Failure handling:
 #   - curl failure (network, 404, timeout): logged, watcher's per-slug error
 #     counter incremented in state. Three consecutive errors fires a daily-note
 #     nudge per watcher ("watcher <slug> has failed 3 consecutive fires").
-#   - claude -p failure: same model — counted, not propagated as a job failure.
+#   - claude -p failure: same model - counted, not propagated as a job failure.
 #   - YAML parse failure (yq fails): job ABORTS with non-zero, no stamp written,
 #     so next launchd trigger retries. The watch-list file is the spec.
 
@@ -70,7 +70,7 @@ ts() { date '+%Y-%m-%d %H:%M:%S'; }
 # ----------------------------------------------------------------------------
 
 if [ -f "$STAMP" ] && [ "$(cat "$STAMP" 2>/dev/null)" = "$TODAY" ]; then
-  echo "$(ts) — already ran for $TODAY, skipping." >> "$LOG"
+  echo "$(ts) - already ran for $TODAY, skipping." >> "$LOG"
   exit 0
 fi
 
@@ -95,7 +95,7 @@ require_bin() {
   local name="$1"
   local install_hint="$2"
   if ! command -v "$name" >/dev/null 2>&1; then
-    echo "$(ts) — ERROR: '$name' not found on PATH. Install with: $install_hint" >> "$LOG"
+    echo "$(ts) - ERROR: '$name' not found on PATH. Install with: $install_hint" >> "$LOG"
     exit 1
   fi
 }
@@ -137,19 +137,19 @@ wait_for_network() {
   local max_tries=12 i
   for i in $(seq 1 "$max_tries"); do
     if network_up; then
-      echo "$(ts) — network reachable after $i check(s)" >> "$LOG"
+      echo "$(ts) - network reachable after $i check(s)" >> "$LOG"
       return 0
     fi
-    echo "$(ts) — network not ready; waiting 10s ($i/$max_tries)" >> "$LOG"
+    echo "$(ts) - network not ready; waiting 10s ($i/$max_tries)" >> "$LOG"
     sleep 10
   done
-  echo "$(ts) — network still not ready after $max_tries checks; proceeding anyway" >> "$LOG"
+  echo "$(ts) - network still not ready after $max_tries checks; proceeding anyway" >> "$LOG"
   return 1
 }
 
 wait_for_network
 
-echo "$(ts) — starting web-watchers run for $TODAY" >> "$LOG"
+echo "$(ts) - starting web-watchers run for $TODAY" >> "$LOG"
 
 # ----------------------------------------------------------------------------
 # Ensure state file exists with at least an empty object
@@ -157,7 +157,7 @@ echo "$(ts) — starting web-watchers run for $TODAY" >> "$LOG"
 
 if [ ! -f "$STATE_FILE" ]; then
   echo '{}' > "$STATE_FILE"
-  echo "$(ts) — initialized empty state file at $STATE_FILE" >> "$LOG"
+  echo "$(ts) - initialized empty state file at $STATE_FILE" >> "$LOG"
 fi
 
 # ----------------------------------------------------------------------------
@@ -173,7 +173,7 @@ journal-date: $TODAY
 ---
 
 EOF
-  echo "$(ts) — pre-flight: created minimal $DAILY_NOTE" >> "$LOG"
+  echo "$(ts) - pre-flight: created minimal $DAILY_NOTE" >> "$LOG"
 fi
 
 # ----------------------------------------------------------------------------
@@ -193,18 +193,18 @@ awk '
 ' "$WATCH_LIST" > "$TMP_YAML"
 
 if [ ! -s "$TMP_YAML" ]; then
-  echo "$(ts) — ERROR: could not extract YAML block from $WATCH_LIST. Aborting." >> "$LOG"
+  echo "$(ts) - ERROR: could not extract YAML block from $WATCH_LIST. Aborting." >> "$LOG"
   exit 1
 fi
 
 # Validate YAML parses + has the expected list shape.
 if ! yq eval '. | type == "!!seq"' "$TMP_YAML" >/dev/null 2>&1; then
-  echo "$(ts) — ERROR: extracted YAML is not a sequence (list). Aborting." >> "$LOG"
+  echo "$(ts) - ERROR: extracted YAML is not a sequence (list). Aborting." >> "$LOG"
   exit 1
 fi
 
 WATCHER_COUNT="$(yq eval 'length' "$TMP_YAML")"
-echo "$(ts) — parsed $WATCHER_COUNT watcher(s) from $WATCH_LIST" >> "$LOG"
+echo "$(ts) - parsed $WATCHER_COUNT watcher(s) from $WATCH_LIST" >> "$LOG"
 
 # ----------------------------------------------------------------------------
 # Helper: get/set per-slug state in the JSON state file
@@ -270,7 +270,7 @@ is_due_today() {
       [ "$last" != "$this_month" ]
       ;;
     *)
-      echo "$(ts) — WARN: unknown frequency '$frequency' for $slug, treating as daily" >> "$LOG"
+      echo "$(ts) - WARN: unknown frequency '$frequency' for $slug, treating as daily" >> "$LOG"
       [ "$last" != "$TODAY" ]
       ;;
   esac
@@ -297,9 +297,9 @@ daily_note_header() {
   if [ "$DAILY_NOTE_HEADER_WRITTEN" -eq 0 ]; then
     {
       echo ""
-      echo "## Web Watchers — $TODAY"
+      echo "## Web Watchers - $TODAY"
       echo ""
-      echo "**$NOW** — web_watchers | change events from this morning's run."
+      echo "**$NOW** - web_watchers | change events from this morning's run."
       echo ""
     } >> "$DAILY_NOTE"
     DAILY_NOTE_HEADER_WRITTEN=1
@@ -323,7 +323,7 @@ notify_daily_note() {
     echo "    reply:"
     echo ""
   } >> "$DAILY_NOTE"
-  echo "$(ts) — notified daily-note for $slug" >> "$LOG"
+  echo "$(ts) - notified daily-note for $slug" >> "$LOG"
 }
 
 notify_email() {
@@ -349,9 +349,9 @@ notify_email() {
   } > "$body_file"
 
   if send_email "chris.preston@gmail.com" "$subject" "$body_file"; then
-    echo "$(ts) — notified email for $slug" >> "$LOG"
+    echo "$(ts) - notified email for $slug" >> "$LOG"
   else
-    echo "$(ts) — ERROR: email send failed for $slug" >> "$LOG"
+    echo "$(ts) - ERROR: email send failed for $slug" >> "$LOG"
   fi
   rm -f "$body_file"
 }
@@ -392,13 +392,13 @@ PROMPT_EOF
   temp="$(mktemp -t web_watchers_claude.XXXXXX)"
   claude -p "$prompt" --model opus --dangerously-skip-permissions > "$temp" 2>>"$LOG"
   if la_is_credit_failure "$temp"; then
-    alert_tasks_note "Automated run failed: web-watchers is out of Claude usage credits (model: opus). Some watchers did not run — top up (/usage-credits) or switch model (/model)."
+    alert_tasks_note "Automated run failed: web-watchers is out of Claude usage credits (model: opus). Some watchers did not run - top up (/usage-credits) or switch model (/model)."
     touch "$STATE_DIR/.web_watchers_auth_failed"
     rm -f "$temp"
     echo "INSUFFICIENT_INFO"
     return 2
   fi
-  # Auth patterns come from $LA_AUTH_FAIL_RE in lib_auth.sh — single source of
+  # Auth patterns come from $LA_AUTH_FAIL_RE in lib_auth.sh - single source of
   # truth. Before 2026-07-26 this grep was inlined and too narrow, so an expired
   # OAuth session was stored verbatim as a watcher answer, silently destroying
   # both baselines and reporting "no change (byte-equal)".
@@ -423,12 +423,12 @@ PROMPT_EOF
 # see ~/.mbs_automation/web_watchers.log). Root cause traced to ask_claude()
 # producing non-deterministic wording even for identical page content, which
 # made byte comparison unreliable, which made this LLM judge the load-bearing
-# gate for every fire — and it was wrong more often than not.
+# gate for every fire - and it was wrong more often than not.
 #
 # Fix: ask_claude() above now demands a canonical, deterministic snapshot
 # (fixed field order, sorted lists, no editorializing, no self-reference to
 # "prior checks"). With that in place, plain byte-equality is the correct and
-# sufficient comparison — no second LLM call needed. See
+# sufficient comparison - no second LLM call needed. See
 # admin/mbs_system/_logs/log_2026-08-07_web_watchers_fix.md for the full
 # writeup.
 #
@@ -457,7 +457,7 @@ PROMPT_EOF
 # *judging* semantic sameness, this is bash doing `[ "$a" = "$b" ]` on two
 # independent extractions.
 # ----------------------------------------------------------------------------
-# Main loop — iterate watchers
+# Main loop - iterate watchers
 # ----------------------------------------------------------------------------
 
 PROCESSED=0
@@ -473,7 +473,7 @@ for i in $(seq 0 $((WATCHER_COUNT - 1))); do
   if [ -f "$STATE_DIR/.web_watchers_auth_failed" ]; then
     rm -f "$STATE_DIR/.web_watchers_auth_failed"
     mark_reauth_needed "$LOG"
-    echo "$(ts) — aborting watcher loop on Claude Code auth failure; $PROCESSED of $WATCHER_COUNT processed before abort. Next trigger after re-auth will retry from scratch." >> "$LOG"
+    echo "$(ts) - aborting watcher loop on Claude Code auth failure; $PROCESSED of $WATCHER_COUNT processed before abort. Next trigger after re-auth will retry from scratch." >> "$LOG"
     exit 2
   fi
 
@@ -486,20 +486,20 @@ for i in $(seq 0 $((WATCHER_COUNT - 1))); do
 
   if [ "$active" != "true" ]; then
     SKIPPED_INACTIVE=$((SKIPPED_INACTIVE + 1))
-    echo "$(ts) — [$slug] inactive, skipping" >> "$LOG"
+    echo "$(ts) - [$slug] inactive, skipping" >> "$LOG"
     continue
   fi
 
   if ! is_due_today "$slug" "$frequency"; then
     SKIPPED_NOT_DUE=$((SKIPPED_NOT_DUE + 1))
-    echo "$(ts) — [$slug] not due (frequency=$frequency), skipping" >> "$LOG"
+    echo "$(ts) - [$slug] not due (frequency=$frequency), skipping" >> "$LOG"
     continue
   fi
 
-  echo "$(ts) — [$slug] fetching $url" >> "$LOG"
+  echo "$(ts) - [$slug] fetching $url" >> "$LOG"
 
   # Fetch with network-aware retry (2026-07-07 hardening). A failed curl is
-  # only a WATCHER error if the network itself is up — otherwise it's the
+  # only a WATCHER error if the network itself is up - otherwise it's the
   # Mac's morning dark-wake window and retrying later is the fix, not
   # incrementing the slug's error counter. Same backoff schedule as
   # mbs_daily.sh; `sleep` pauses while the Mac sleeps, so these effectively
@@ -520,7 +520,7 @@ for i in $(seq 0 $((WATCHER_COUNT - 1))); do
     fi
     if [ "$attempt" -lt 5 ]; then
       delay="${FETCH_RETRY_DELAYS[$((attempt - 1))]}"
-      echo "$(ts) — [$slug] curl failed with network down; sleeping ${delay}s before fetch retry $((attempt + 1))/5" >> "$LOG"
+      echo "$(ts) - [$slug] curl failed with network down; sleeping ${delay}s before fetch retry $((attempt + 1))/5" >> "$LOG"
       sleep "$delay"
     fi
   done
@@ -530,26 +530,26 @@ for i in $(seq 0 $((WATCHER_COUNT - 1))); do
     # run WITHOUT the outer stamp so the next launchd trigger (login, wake
     # coalesce, or tomorrow 08:30) retries from scratch. Watchers already
     # processed this run keep their per-slug stamps and won't re-fire. No
-    # per-slug error counters are touched — this is not a watcher problem.
-    echo "$(ts) — [$slug] ERROR: network still down after all fetch retries; aborting run without outer stamp" >> "$LOG"
+    # per-slug error counters are touched - this is not a watcher problem.
+    echo "$(ts) - [$slug] ERROR: network still down after all fetch retries; aborting run without outer stamp" >> "$LOG"
     rm -f "$page_file"
     exit 1
   fi
 
   if [ "$url_error" -eq 1 ]; then
-    echo "$(ts) — [$slug] ERROR: curl failed (network up — URL problem)" >> "$LOG"
+    echo "$(ts) - [$slug] ERROR: curl failed (network up - URL problem)" >> "$LOG"
     state_inc_errors "$slug"
     ERRORS=$((ERRORS + 1))
     err_count="$(state_get "$slug" "consecutive_errors")"
     if [ "$err_count" -ge "$ERROR_THRESHOLD" ]; then
-      notify_daily_note "$slug" "$url" "**FAILED $err_count consecutive fires** — check URL or pause this watcher in admin/web_watchers.md"
+      notify_daily_note "$slug" "$url" "**FAILED $err_count consecutive fires** - check URL or pause this watcher in admin/web_watchers.md"
     fi
     rm -f "$page_file"
     continue
   fi
 
   if [ ! -s "$page_file" ]; then
-    echo "$(ts) — [$slug] ERROR: empty page response" >> "$LOG"
+    echo "$(ts) - [$slug] ERROR: empty page response" >> "$LOG"
     state_inc_errors "$slug"
     ERRORS=$((ERRORS + 1))
     rm -f "$page_file"
@@ -560,18 +560,18 @@ for i in $(seq 0 $((WATCHER_COUNT - 1))); do
   # round 2; see the ROUND 2 note above ask_claude() for why).
   text_file="$(mktemp -t web_watchers_text.XXXXXX)"
   if ! python3 "$LIB_DIR/html_to_text.py" "$page_file" > "$text_file" 2>>"$LOG"; then
-    echo "$(ts) — [$slug] WARN: html_to_text conversion failed; falling back to raw page text" >> "$LOG"
+    echo "$(ts) - [$slug] WARN: html_to_text conversion failed; falling back to raw page text" >> "$LOG"
     cp "$page_file" "$text_file"
   fi
   rm -f "$page_file"
 
   # Ask Claude. Output is sorted in bash, not by the model (2026-08-07 round 2;
   # see ask_claude()'s prompt rules above).
-  echo "$(ts) — [$slug] asking claude for semantic answer" >> "$LOG"
+  echo "$(ts) - [$slug] asking claude for semantic answer" >> "$LOG"
   new_answer="$(ask_claude "$what_to_watch" "$text_file" | sort)"
 
   if [ -z "$new_answer" ]; then
-    echo "$(ts) — [$slug] ERROR: claude returned empty answer" >> "$LOG"
+    echo "$(ts) - [$slug] ERROR: claude returned empty answer" >> "$LOG"
     state_inc_errors "$slug"
     ERRORS=$((ERRORS + 1))
     rm -f "$text_file"
@@ -581,9 +581,9 @@ for i in $(seq 0 $((WATCHER_COUNT - 1))); do
   # Belt-and-braces (2026-07-26): never persist a CLI failure message as a
   # watcher answer, even if a future wording slips past the detectors above.
   # Storing one destroys the baseline AND reports "no change" when both days
-  # fail with the same message — exactly what happened on 2026-07-25/26.
+  # fail with the same message - exactly what happened on 2026-07-25/26.
   if printf '%s' "$new_answer" | grep -q -iE "$LA_AUTH_FAIL_RE|$LA_CREDIT_FAIL_RE"; then
-    echo "$(ts) — [$slug] ERROR: answer looks like a CLI failure message; refusing to store (baseline preserved)" >> "$LOG"
+    echo "$(ts) - [$slug] ERROR: answer looks like a CLI failure message; refusing to store (baseline preserved)" >> "$LOG"
     touch "$STATE_DIR/.web_watchers_auth_failed"
     state_inc_errors "$slug"
     ERRORS=$((ERRORS + 1))
@@ -597,8 +597,8 @@ for i in $(seq 0 $((WATCHER_COUNT - 1))); do
   prior_answer="$(state_get "$slug" "last_answer")"
 
   if [ -z "$prior_answer" ]; then
-    # First observation for this slug — store, don't notify
-    echo "$(ts) — [$slug] first observation, storing baseline (no notify)" >> "$LOG"
+    # First observation for this slug - store, don't notify
+    echo "$(ts) - [$slug] first observation, storing baseline (no notify)" >> "$LOG"
     state_set "$slug" "last_answer" "$new_answer"
     state_set "$slug" "last_checked" "$(ts)"
     stamp_watcher "$slug" "$frequency"
@@ -608,7 +608,7 @@ for i in $(seq 0 $((WATCHER_COUNT - 1))); do
   fi
 
   if [ "$new_answer" = "$prior_answer" ]; then
-    echo "$(ts) — [$slug] no change (byte-equal)" >> "$LOG"
+    echo "$(ts) - [$slug] no change (byte-equal)" >> "$LOG"
     state_set "$slug" "last_checked" "$(ts)"
     stamp_watcher "$slug" "$frequency"
     PROCESSED=$((PROCESSED + 1))
@@ -623,18 +623,18 @@ for i in $(seq 0 $((WATCHER_COUNT - 1))); do
   # above ask_claude() for the incident that motivated this). This is a plain
   # string-equality check between two independent reads, not a reintroduction
   # of the round-1 LLM semantic judge.
-  echo "$(ts) — [$slug] byte-different from baseline; re-asking claude to confirm before notifying" >> "$LOG"
+  echo "$(ts) - [$slug] byte-different from baseline; re-asking claude to confirm before notifying" >> "$LOG"
   confirm_answer="$(ask_claude "$what_to_watch" "$text_file" | sort)"
   rm -f "$text_file"
 
   if [ "$confirm_answer" != "$new_answer" ]; then
-    echo "$(ts) — [$slug] NOT CONFIRMED: two independent reads of the same page text disagree; treating as extraction noise, not a real change. Baseline preserved; will retry next scheduled run." >> "$LOG"
+    echo "$(ts) - [$slug] NOT CONFIRMED: two independent reads of the same page text disagree; treating as extraction noise, not a real change. Baseline preserved; will retry next scheduled run." >> "$LOG"
     state_set "$slug" "last_checked" "$(ts)"
     ERRORS=$((ERRORS + 1))
     continue
   fi
 
-  echo "$(ts) — [$slug] CHANGE DETECTED (byte-different, confirmed by independent 2nd read)" >> "$LOG"
+  echo "$(ts) - [$slug] CHANGE DETECTED (byte-different, confirmed by independent 2nd read)" >> "$LOG"
   CHANGED=$((CHANGED + 1))
 
   case "$notification" in
@@ -645,7 +645,7 @@ for i in $(seq 0 $((WATCHER_COUNT - 1))); do
       notify_daily_note "$slug" "$url" "$new_answer" "$prior_answer"
       ;;
     *)
-      echo "$(ts) — [$slug] WARN: unknown notification mode '$notification', falling back to daily_note" >> "$LOG"
+      echo "$(ts) - [$slug] WARN: unknown notification mode '$notification', falling back to daily_note" >> "$LOG"
       notify_daily_note "$slug" "$url" "$new_answer" "$prior_answer"
       ;;
   esac
@@ -661,7 +661,7 @@ done
 # Summary
 # ----------------------------------------------------------------------------
 
-echo "$(ts) — summary: $PROCESSED processed, $CHANGED changed, $SKIPPED_INACTIVE inactive, $SKIPPED_NOT_DUE not-due, $ERRORS error(s)" >> "$LOG"
+echo "$(ts) - summary: $PROCESSED processed, $CHANGED changed, $SKIPPED_INACTIVE inactive, $SKIPPED_NOT_DUE not-due, $ERRORS error(s)" >> "$LOG"
 
 # macOS notification (silent if not granted; never blocks)
 if [ "$CHANGED" -gt 0 ]; then
@@ -674,7 +674,7 @@ fi
 if [ -f "$STATE_DIR/.web_watchers_auth_failed" ]; then
   rm -f "$STATE_DIR/.web_watchers_auth_failed"
   mark_reauth_needed "$LOG"
-  echo "$(ts) — aborting before stamp: Claude Code auth failure on the final watcher of the run. Next trigger after re-auth will retry." >> "$LOG"
+  echo "$(ts) - aborting before stamp: Claude Code auth failure on the final watcher of the run. Next trigger after re-auth will retry." >> "$LOG"
   exit 2
 fi
 
@@ -683,5 +683,5 @@ clear_reauth_sentinel
 
 # Outer stamp last (only on success)
 echo "$TODAY" > "$STAMP"
-echo "$(ts) — completed successfully; stamped $TODAY" >> "$LOG"
+echo "$(ts) - completed successfully; stamped $TODAY" >> "$LOG"
 exit 0

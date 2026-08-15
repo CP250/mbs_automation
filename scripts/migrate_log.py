@@ -108,7 +108,7 @@ def split_log(text: str) -> dict[str, str]:
         if body:
             sections.setdefault(date, []).append(body)
 
-    # Concatenate duplicate-date sections (defensive — log.md may have repeats)
+    # Concatenate duplicate-date sections (defensive - log.md may have repeats)
     return {date: "\n\n".join(parts) for date, parts in sections.items()}
 
 

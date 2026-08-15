@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-music_dedup.py — Music library dedup + format audit
+music_dedup.py - Music library dedup + format audit
 
 TASK 1 (cross-library duplicates)
     Finds albums in both /Volumes/music/redacted and /Volumes/music/what that
@@ -99,7 +99,7 @@ def find_album_dirs(root: Path, max_depth: int = 2) -> list[Path]:
     (root/album/) and nested (root/artist/album/) layouts.
     """
     results = []
-    # Always start from root's children (depth 1) — never treat root as an album
+    # Always start from root's children (depth 1) - never treat root as an album
     try:
         initial = [(d, 1) for d in sorted(root.iterdir()) if d.is_dir()]
     except PermissionError:
@@ -351,7 +351,7 @@ def main() -> None:
     if args.move:
         print("⚠  --move is active. Cross-library dupes WILL be moved to !!delete/.\n")
     else:
-        print("DRY RUN — pass --move to actually move files\n")
+        print("DRY RUN - pass --move to actually move files\n")
 
     if args.clear_cache and CACHE_FILE.exists():
         CACHE_FILE.unlink()

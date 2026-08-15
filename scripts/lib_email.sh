@@ -1,5 +1,5 @@
 #!/bin/bash
-# lib_email.sh — sourceable SMTP send helper for mbs_automation scripts.
+# lib_email.sh - sourceable SMTP send helper for mbs_automation scripts.
 #
 # Provides one function: send_email <to> <subject> <body_file>
 #   - <to>          recipient address (string)
@@ -8,7 +8,7 @@
 #
 # Reads SMTP credentials from a file at ~/.mbs_automation/secrets/gmail_app_password.
 # The file must contain exactly the Gmail app password on a single line (16 chars
-# with or without spaces — Google's app-password format). Permissioned 600 by P.
+# with or without spaces - Google's app-password format). Permissioned 600 by P.
 # SMTP user is fixed to chris.preston@gmail.com.
 #
 # Returns 0 on success, non-zero on failure. Caller decides how to surface errors.
