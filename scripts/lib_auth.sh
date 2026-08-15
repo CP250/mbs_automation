@@ -21,7 +21,7 @@
 REAUTH_SENTINEL="${REAUTH_SENTINEL:-$HOME/.mbs_automation/needs_reauth}"
 
 # ---------------------------------------------------------------------------
-# Failure-string detection — single source of truth (added 2026-07-26).
+# Failure-string detection - single source of truth (added 2026-07-26).
 #
 # WHY THIS EXISTS: the original detector matched only the API-key shape of an
 # auth failure ("authentication_error", "API Error: 401"). On 2026-07-25 the
@@ -91,7 +91,7 @@ mark_reauth_needed() {
   # Also leave a visible line in today's tasks note. A macOS notification is
   # transient and easy to miss (and never fires at all if the Mac was asleep);
   # the vault is where P actually looks. Mirrors the credit-exhaustion path.
-  alert_tasks_note "Automated runs paused: Claude CLI authentication failed (expired session or 401). Reports not generated — run \`claude\` then \`/login\` in Terminal; jobs resume on the next trigger."
+  alert_tasks_note "Automated runs paused: Claude CLI authentication failed (expired session or 401). Reports not generated: run \`claude\` then \`/login\` in Terminal; jobs resume on the next trigger."
 }
 
 # Delete the sentinel. Called after any successful Claude run.
@@ -102,7 +102,7 @@ clear_reauth_sentinel() {
 }
 
 # Append a visible one-line alert into today's tasks note so an automation
-# failure (out of usage credits, etc.) is never silent in the vault — the way a
+# failure (out of usage credits, etc.) is never silent in the vault - the way a
 # missing ## Vault Agent report was on 2026-07-24. Best-effort; never fails the
 # caller. Deduped by message text so a retry loop (or per-row job) writes once.
 # Uses $VAULT if the caller set it, else the canonical vault path.
@@ -119,7 +119,7 @@ alert_tasks_note() {
   # Dedupe: if this exact message already alerted in today's note, do nothing.
   grep -qF -- "$msg" "$note" 2>/dev/null && return 0
   grep -qF -- "$heading" "$note" 2>/dev/null || printf '\n%s\n' "$heading" >> "$note" 2>/dev/null
-  printf -- '- **%s ET** — %s\n' "$(date '+%H:%M')" "$msg" >> "$note" 2>/dev/null || true
+  printf -- '- **%s ET**: %s\n' "$(date '+%H:%M')" "$msg" >> "$note" 2>/dev/null || true
 }
 
 # Hard timeout for claude -p calls, in seconds. Observed 2026-06-18 and
@@ -195,18 +195,18 @@ run_claude_p() {
   fi
   # Usage-credit exhaustion. Like a 401, retrying inside this session is
   # pointless until P tops up credits (/usage-credits) or switches model
-  # (/model) — but unlike a 401 it must stay visible in the vault, so drop a
+  # (/model) - but unlike a 401 it must stay visible in the vault, so drop a
   # deduped line into today's tasks note here and return 3. Detection runs
   # regardless of exit code (the CLI may exit 0 while printing this message).
   if la_is_credit_failure "$temp"; then
-    alert_tasks_note "Automated run failed: Claude CLI is out of usage credits (model: $CLAUDE_MODEL). Report not generated — top up (/usage-credits) or switch model (/model), then it recovers on the next run."
+    alert_tasks_note "Automated run failed: Claude CLI is out of usage credits (model: $CLAUDE_MODEL). Report not generated: top up (/usage-credits) or switch model (/model), then it recovers on the next run."
     rm -f "$temp"
     return 3
   fi
   # Auth detection runs regardless of exit code. The claude CLI has been
   # observed (2026-06-18) returning exit 0 even on 401 responses, so we
   # cannot rely on rc alone. Patterns live in $LA_AUTH_FAIL_RE at the top of
-  # this file — widened 2026-07-26 to cover the OAuth-expiry wording.
+  # this file - widened 2026-07-26 to cover the OAuth-expiry wording.
   if la_is_auth_failure "$temp"; then
     rm -f "$temp"
     return 2

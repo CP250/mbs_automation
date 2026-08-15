@@ -1,34 +1,35 @@
 #!/bin/bash
-# mbs_heartbeat.sh — verify that the morning report actually landed.
+# mbs_heartbeat.sh - verify that the morning report actually landed.
 #
 # WHY THIS EXISTS (2026-07-26)
 # ----------------------------
 # Every automation failure in this system so far was found by P noticing, not
 # by the system reporting:
-#   2026-07-05  connection/DNS failure at wake — silent
-#   2026-07-06  API 401 — caught, because lib_auth.sh knew that wording
-#   2026-07-24  out of usage credits (Fable) — caught, same reason
-#   2026-07-25  OAuth session expired — SILENT for two days, because the
+#   2026-07-05  connection/DNS failure at wake - silent
+#   2026-07-06  API 401 - caught, because lib_auth.sh knew that wording
+#   2026-07-24  out of usage credits (Fable) - caught, same reason
+#   2026-07-25  OAuth session expired - SILENT for two days, because the
 #               wording did not match lib_auth.sh's patterns
 #
 # Each fix widened the detector by one string. That approach can only ever
 # catch failures whose wording was anticipated. This job takes the opposite
 # approach: it does not care WHY the report is missing, only WHETHER it is
-# there. It asks one question — "does today's tasks note contain a real
-# ## Vault Agent section?" — and shouts if the answer is no.
+# there. It asks one question - "does today's tasks note contain a real
+# ## Vault Agent section?" - and shouts if the answer is no.
 #
 # THE DESIGN RULE: this script must not share fate with what it checks.
 # It therefore calls NO network service and NO `claude` binary. Pure bash,
 # filesystem only. If it cannot run, the Mac is off, and nothing else ran
-# either. Do not add a Claude call to this script — that would recreate the
+# either. Do not add a Claude call to this script - that would recreate the
 # exact coupling it exists to break.
 #
 # Triggered by launchd (scripts/launchd/com.mbs.heartbeat.plist):
-#   1. StartCalendarInterval at 11:00 local — well after mbs_daily's 06:00
+#   1. StartCalendarInterval at 11:00 local - well after mbs_daily's 06:00
 #      fire plus its full five-attempt retry ladder (~1.75 hr of awake time).
-#   2. RunAtLoad at login — so a Mac powered off all morning still gets checked.
+#   2. RunAtLoad at login - so a Mac powered off all morning still gets checked.
 #
-# Roster as of 2026-08-09: seventeen checks. 14 (oura-watch ran) and 15
+# Roster as of 2026-08-15: seventeen checks (5b widened to three oura slugs
+# and 14b added; both are sub-checks, not new roster entries). 14 (oura-watch ran) and 15
 # (oura-trends artifact) were added alongside the Oura analysis layer; see
 # SETUP.md 'Heartbeat update (2026-08-07)'. 16 (bulk-sync refused to classify
 # an asset dir) was added when bulk_sync.sh was rewritten onto the encrypted
@@ -71,7 +72,7 @@ source "$(dirname "$0")/lib_auth.sh"
 
 # Already verified healthy today? Stop.
 if [ -f "$STAMP" ] && [ "$(cat "$STAMP" 2>/dev/null)" = "$TODAY" ]; then
-  echo "$(ts) — already verified healthy for $TODAY, skipping." >> "$LOG"
+  echo "$(ts) - already verified healthy for $TODAY, skipping." >> "$LOG"
   exit 0
 fi
 
@@ -81,7 +82,7 @@ DAILY_LOCK="$STATE_DIR/mbs_daily.lock"
 if [ -d "$DAILY_LOCK" ]; then
   HOLDER_PID="$(cat "$DAILY_LOCK/pid" 2>/dev/null)"
   if [ -n "${HOLDER_PID:-}" ] && kill -0 "$HOLDER_PID" 2>/dev/null; then
-    echo "$(ts) — mbs_daily still running (PID $HOLDER_PID); not late yet, will re-check on next trigger." >> "$LOG"
+    echo "$(ts) - mbs_daily still running (PID $HOLDER_PID); not late yet, will re-check on next trigger." >> "$LOG"
     exit 0
   fi
 fi
@@ -104,7 +105,7 @@ TASKS_NOTE="$VAULT/daily_notes/tasks/tasks_${TODAY}.md"
 # Findings are accumulated as a counter + newline-joined string rather than a
 # bash array. Reason: launchd runs this with /bin/bash, which on macOS is still
 # 3.2, and there `${#arr[@]}` on an EMPTY array under `set -u` aborts with
-# "unbound variable" — so a perfectly healthy day would crash the watchdog.
+# "unbound variable" - so a perfectly healthy day would crash the watchdog.
 # Verified the hard way: the array version passed on the Linux test host
 # (bash 5) and would have failed on the Mac.
 FINDING_COUNT=0
@@ -124,11 +125,11 @@ else
   # --- check 2: it carries a REAL ## Vault Agent section --------------------
   # A "## Vault Agent (skipped...)" banner means the daily job explained itself
   # on the way down. That is better than silence, but the report still did not
-  # land, so it counts as a finding — with the cause already named in the note.
+  # land, so it counts as a finding - with the cause already named in the note.
   if grep -qE '^## Vault Agent \(skipped' "$TASKS_NOTE"; then
-    add_finding "the daily report was skipped and said so in today's note — see the '## Vault Agent (skipped' banner there for the reason"
+    add_finding "the daily report was skipped and said so in today's note - see the '## Vault Agent (skipped' banner there for the reason"
   elif ! grep -qE '^## Vault Agent' "$TASKS_NOTE"; then
-    add_finding "today's tasks note has no ## Vault Agent section — the morning report did not land"
+    add_finding "today's tasks note has no ## Vault Agent section - the morning report did not land"
   fi
 
   # --- check 2b: the open_tasks property was stamped ------------------------
@@ -151,7 +152,7 @@ fi
 # --- check 4: is Claude Code sitting in a known-broken auth state? ----------
 if [ -f "$REAUTH_SENTINEL" ]; then
   FIRST_SEEN="$(cat "$REAUTH_SENTINEL" 2>/dev/null || echo unknown)"
-  add_finding "Claude CLI needs re-auth (first detected ${FIRST_SEEN}) — run \`claude\` then \`/login\` in Terminal"
+  add_finding "Claude CLI needs re-auth (first detected ${FIRST_SEEN}) - run \`claude\` then \`/login\` in Terminal"
 fi
 
 # --- check 5: oura sync archive is fresh ------------------------------------
@@ -166,8 +167,11 @@ fi
 # Oura's own scoring lag means the newest file is normally named for
 # YESTERDAY (activity/sleep finalize the next morning), so a
 # same-day-filename check would false-positive every single day by design.
-# 2 days of slack tolerates one missed sync (the sync job's own --lookback 3
-# self-heals a gap on the next successful run).
+# 2 days of slack tolerates one missed sync (the sync job's own --lookback
+# self-heals a gap on the next successful run, but ONLY for days still inside
+# that window - raised 3 -> 7 on 2026-08-15 after a 3-day gap was on course to
+# age out unrepaired; a gap older than the lookback needs an explicit
+# `oura_sync.py --backfill START:END` and no job will ever do it unasked).
 #
 # The daily note's oura frontmatter fields (sleep_score, readiness_score,
 # ...) were considered and rejected as the canary: daily_notes/health/daily/
@@ -181,6 +185,10 @@ fi
 # path is the same either way, and the sync itself is already live today,
 # unlike the two new jobs below.
 OURA_CANARY_DIR="$VAULT/health/health_physical/oura/raw/daily_activity"
+# Declared out here, not inside the else branch: check 14b reads it to avoid
+# double-reporting one root cause, and `set -u` aborts on an unset variable if
+# the canary directory is missing.
+OURA_EMPTY_SLUGS=""
 if [ ! -d "$OURA_CANARY_DIR" ]; then
   add_finding "oura sync archive directory missing ($OURA_CANARY_DIR) - the oura-sync launchd job may never have run, or the vault path changed"
 else
@@ -208,17 +216,44 @@ else
   # actual archive this session that zero days were genuinely empty for
   # daily_activity in 68 days of history, so two in a row is a strong signal
   # of a regression, not a coincidence of ring-off-charging days.
-  OURA_CONTENT_CHECK_FILES="$(find "$OURA_CANARY_DIR" -maxdepth 1 -name '*.json' ! -name "${TODAY}.json" 2>/dev/null | sort -r | head -2)"
-  OURA_CONTENT_FILE_COUNT="$(printf '%s\n' "$OURA_CONTENT_CHECK_FILES" | grep -c . || true)"
-  if [ "$OURA_CONTENT_FILE_COUNT" -ge 2 ]; then
+  #
+  # WIDENED 2026-08-15, from daily_activity alone to the three slugs the rest
+  # of the system actually consumes. daily_activity is the canary for "did the
+  # archive get written"; `sleep` and `daily_readiness` are where all six
+  # curated daily-note fields come from (note.py FIELDS_TO_PATCH) and what
+  # oura_watch.py reads every morning. A daily_activity-only check passes clean
+  # while `sleep` goes empty and four of the six fields silently stop
+  # appearing, which is exactly the 2026-06 failure that ran for a week before
+  # P spotted it by eye. Each slug is judged on its own two most recent files,
+  # so one sparse endpoint cannot mask another.
+  #
+  # CAUSE REMOVED FROM THE FINDING 2026-08-15. The old text ended "check the
+  # oura-sync launchd job and api.py's query params" and that is not something
+  # this script can know. Two empty days is equally consistent with a
+  # client-side fetch bug and with the ring never reaching Oura's cloud, and
+  # telling those apart needs a network call this script is forbidden to make
+  # (ADR 2026-07-26, watchdog independence). On 2026-08-14 the asserted cause
+  # pointed the investigation at api.py, which had been correct since the
+  # 2026-08-01 exclusive-end_date fix, while every endpoint including the
+  # inclusive-param ones was equally empty. State the observation, name where
+  # the answer lives, stop there.
+  for oura_slug in daily_activity sleep daily_readiness; do
+    OURA_SLUG_DIR="$VAULT/health/health_physical/oura/raw/$oura_slug"
+    [ -d "$OURA_SLUG_DIR" ] || continue
+    OURA_CONTENT_CHECK_FILES="$(find "$OURA_SLUG_DIR" -maxdepth 1 -name '*.json' ! -name "${TODAY}.json" 2>/dev/null | sort -r | head -2)"
+    OURA_CONTENT_FILE_COUNT="$(printf '%s\n' "$OURA_CONTENT_CHECK_FILES" | grep -c . || true)"
+    [ "$OURA_CONTENT_FILE_COUNT" -ge 2 ] || continue
     OURA_ALL_EMPTY=1
     while IFS= read -r f; do
       [ -n "$f" ] || continue
       grep -qF '"data": []' "$f" 2>/dev/null || OURA_ALL_EMPTY=0
     done <<< "$OURA_CONTENT_CHECK_FILES"
     if [ "$OURA_ALL_EMPTY" -eq 1 ]; then
-      add_finding "oura sync: the 2 most recent daily_activity archive files are both empty (\"data\": []) - files are fresh but content looks broken, check the oura-sync launchd job and api.py's query params"
+      OURA_EMPTY_SLUGS="${OURA_EMPTY_SLUGS}${OURA_EMPTY_SLUGS:+, }$oura_slug"
     fi
+  done
+  if [ -n "$OURA_EMPTY_SLUGS" ]; then
+    add_finding "oura sync: the 2 most recent archive files are both empty (\"data\": []) for ${OURA_EMPTY_SLUGS} - the files are fresh, so the job ran and wrote what it got; whether the ring stopped reaching Oura or the fetch broke needs ~/Library/Logs/mbs-oura-sync.log plus one direct API query"
   fi
 fi
 
@@ -464,6 +499,37 @@ if [ -f "$HOME/Library/LaunchAgents/com.mbs.oura-watch.plist" ]; then
   if [ "$LAST_OURA_WATCH" != "$TODAY" ] && [ "$LAST_OURA_WATCH" != "$OURA_YESTERDAY" ]; then
     add_finding "oura-watch has not completed since ${LAST_OURA_WATCH} (expected ${OURA_YESTERDAY} or ${TODAY}, given its 10:30 schedule) - note that this job writing NOTHING is normal, it is the job not RUNNING that this reports; check ~/.mbs_automation/oura_watch.log and com.mbs.oura-watch"
   fi
+
+  # --- check 14b: oura-watch evaluated a RECENT night, not just any night ----
+  # Added 2026-08-15. Check 14 above asks only whether the job ran, and that is
+  # not the same question as whether its silence means anything. On 2026-08-13
+  # and 2026-08-14 oura-watch ran, loaded an archive whose newest night was
+  # three days old, wrote "NOTE newest archived night is 3 days old ... the sync
+  # may be stuck" into its own log, found no anomalies (of course: it was
+  # re-reading a night it had already cleared), stamped success, and check 14
+  # reported healthy both mornings. The job knew. The watchdog never asked.
+  #
+  # oura_watch.py already prints the answer on every run:
+  #   oura-watch: target_night=2026-08-11 (newest in archive, 3 day(s) old) ...
+  # so this parses its own log rather than recomputing anything. That keeps the
+  # watchdog-independence rule intact: still no network, still no `claude`, just
+  # a file read.
+  #
+  # Suppressed when check 5b already fired. An empty archive makes the newest
+  # loadable night stale by definition, so both checks would fire on one root
+  # cause and P would get the same problem twice in one alert line. When 5b is
+  # quiet and this fires, the archive has real data that oura-watch is somehow
+  # not reading, which is a genuinely different fault worth its own words.
+  #
+  # Threshold 2 days, matching check 5's mtime tolerance: Oura's scoring lag
+  # makes a 1-day-old newest night normal every single morning.
+  OURA_WATCH_LOG="$STATE_DIR/oura_watch.log"
+  if [ -z "$OURA_EMPTY_SLUGS" ] && [ -f "$OURA_WATCH_LOG" ]; then
+    OURA_WATCH_NIGHT_AGE="$(grep 'newest in archive' "$OURA_WATCH_LOG" 2>/dev/null | tail -1 | sed -n 's/.*newest in archive, \([0-9][0-9]*\) day(s) old.*/\1/p')"
+    if [ -n "$OURA_WATCH_NIGHT_AGE" ] && [ "$OURA_WATCH_NIGHT_AGE" -gt 2 ]; then
+      add_finding "oura-watch last evaluated a night ${OURA_WATCH_NIGHT_AGE} days old (threshold 2) - it ran and found no anomaly, but it was re-reading stale data, so its silence is not evidence of a healthy night; check ~/.mbs_automation/oura_watch.log"
+    fi
+  fi
 fi
 
 # --- check 15: oura-trends wrote its section into this month's review --------
@@ -539,20 +605,50 @@ fi
 # --- verdict ----------------------------------------------------------------
 if [ "$FINDING_COUNT" -eq 0 ]; then
   echo "$TODAY" > "$STAMP"
-  echo "$(ts) — healthy: report present in tasks_${TODAY}.md, daily stamp current, no reauth sentinel. Stamped $TODAY." >> "$LOG"
+  echo "$(ts) - healthy: report present in tasks_${TODAY}.md, daily stamp current, no reauth sentinel. Stamped $TODAY." >> "$LOG"
   exit 0
 fi
 
-echo "$(ts) — UNHEALTHY ($FINDING_COUNT finding(s)); no stamp written, will re-check and re-nudge on next trigger:" >> "$LOG"
+echo "$(ts) - UNHEALTHY ($FINDING_COUNT finding(s)); no stamp written, will re-check and re-nudge on next trigger:" >> "$LOG"
 printf '%s' "$FINDINGS_TEXT" | while IFS= read -r f; do
-  [ -n "$f" ] && echo "$(ts) —   • $f" >> "$LOG"
+  [ -n "$f" ] && echo "$(ts) -   * $f" >> "$LOG"
 done
+
+# Build the alert body out of the findings themselves.
+#
+# REWRITTEN 2026-08-15. This line used to read "Heartbeat: today's morning
+# report is missing. ${FIRST_FINDING}. ... this line repeats daily until the
+# report lands again." That wording is from 2026-07-26, when this script had
+# exactly ONE check and "unhealthy" could only ever mean the report was
+# missing. Seventeen checks later the sentence is simply false on any day the
+# report landed and something else broke: on 2026-08-14 it told P his morning
+# report was missing in the very note the morning report had written. Two
+# separate defects, both fixed here:
+#   1. the hardcoded cause, which made every finding read as a report failure;
+#   2. FIRST_FINDING only, which meant findings 2..N never reached the note at
+#      all - they existed solely in mbs_heartbeat.log, which is precisely the
+#      silence this whole script exists to break.
+# Numbering appears only when there is more than one finding, so the common
+# single-finding line stays clean. The body is deterministic for a given set of
+# findings, which is what alert_tasks_note's exact-text dedupe relies on.
+ALERT_BODY=""
+if [ "$FINDING_COUNT" -eq 1 ]; then
+  ALERT_BODY="$FIRST_FINDING"
+else
+  ALERT_N=0
+  while IFS= read -r f; do
+    [ -n "$f" ] || continue
+    ALERT_N=$((ALERT_N + 1))
+    ALERT_BODY="${ALERT_BODY}${ALERT_BODY:+ }(${ALERT_N}) ${f}"
+  done <<< "$FINDINGS_TEXT"
+  ALERT_BODY="${FINDING_COUNT} problems. ${ALERT_BODY}"
+fi
 
 # Land the alert where P actually looks. alert_tasks_note dedupes by message
 # text, so repeated triggers on the same broken day add one line, not twenty.
-alert_tasks_note "Heartbeat: today's morning report is missing. ${FIRST_FINDING}. Full detail in ~/.mbs_automation/mbs_heartbeat.log; this line repeats daily until the report lands again."
+alert_tasks_note "Heartbeat: ${ALERT_BODY}. Full detail in ~/.mbs_automation/mbs_heartbeat.log; this line repeats until the finding clears."
 
 # Best-effort macOS notification; never blocks, never fails the script.
-/usr/bin/osascript -e "display notification \"$FINDING_COUNT problem(s) — today's morning report is missing. See today's tasks note.\" with title \"MBS heartbeat\" sound name \"Sosumi\"" 2>/dev/null || true
+/usr/bin/osascript -e "display notification \"$FINDING_COUNT heartbeat finding(s). See today's tasks note.\" with title \"MBS heartbeat\" sound name \"Sosumi\"" 2>/dev/null || true
 
 exit 1
