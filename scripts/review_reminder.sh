@@ -1,5 +1,5 @@
 #!/bin/bash
-# review_reminder.sh — vault review-cadence reminder, driven by launchd.
+# review_reminder.sh - vault review-cadence reminder, driven by launchd.
 # Creates a dated review note in the vault (if not already present) and fires
 # a macOS notification. Complements the in-vault recurring Tasks-plugin tasks
 # in admin/betterment/operating_system.md (those nudge when Obsidian is open;
@@ -17,7 +17,7 @@ case "$KIND" in
   monthly)
     PERIOD="$(date +%Y-%m)"
     TITLE="Monthly review"
-    PROMPT="Go over ALL projects and ALL goals — does each project still further its goal outcome?"
+    PROMPT="Go over ALL projects and ALL goals - does each project still further its goal outcome?"
     ;;
   quarterly)
     M=$(( 10#$(date +%m) ))           # 10# avoids octal parsing of e.g. 08/09
@@ -48,7 +48,7 @@ date: ${DATE_TAG}
 tags: [admin, review, ${KIND}]
 ---
 
-# ${TITLE} — ${PERIOD}
+# ${TITLE} - ${PERIOD}
 
 > ${PROMPT}
 
@@ -68,4 +68,4 @@ fi
 # macOS notification (best-effort; first run may prompt for notification permission)
 /usr/bin/osascript -e "display notification \"${PROMPT}\" with title \"${TITLE} due\" subtitle \"${PERIOD}\" sound name \"Glass\"" || true
 
-echo "$(date '+%Y-%m-%d %H:%M:%S')  ${KIND}  ${NOTE}" >> "$REVIEWS/.review_reminder.log"
+echo "$(date '+%Y-%m-%d %H:%M:%S')  ${KIND}  ${NOTE}" >> "$HOME/.mbs_automation/review_reminder.log"

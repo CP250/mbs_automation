@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- **`open_tasks` frontmatter property on the tasks daily note:** `mbs_daily.sh` now counts every unchecked `- [ ]` checkbox in the vault (excluding `trash/`, `admin/pn.md`, all `_archive/` and `_logs/`, and all of `daily_notes/`) and stamps it into today's note as `open_tasks: <n>`, directly after `journal-date`. Two new bash functions, `count_open_tasks` and `ensure_open_tasks_field`, both bash-3.2 and BSD safe. Deliberately a morning snapshot: written once at creation, never refreshed, never overwritten if already present. `mbs_heartbeat.sh` gained a matching presence check (check 2b) per the watchdog rule.
 - **SessionStart hook (`hooks/load_vault_context.py`):** injects `_CLAUDE.md` into context once per session when the session starts inside the vault. Eliminates the per-command re-read of `_CLAUDE.md` that burned tokens on every invocation. Wired automatically by `scripts/setup.sh`.
 - **`scripts/setup.sh` updated:** wires the new SessionStart hook (`hooks/load_vault_context.py`) in addition to the existing PostCompact background agent.
 - **Per-day operation logs:** `/obsidian-init` now creates a `Logs/` folder with per-day files (`Logs/YYYY-MM-DD.md`) instead of a monolithic `log.md`. Root `log.md` becomes a pointer file only. Cheaper to read, faster to query.

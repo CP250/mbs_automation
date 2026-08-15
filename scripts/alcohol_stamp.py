@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""alcohol_stamp.py — recompute P's rolling weekly standard-drinks figure from
+"""alcohol_stamp.py - recompute P's rolling weekly standard-drinks figure from
 the daily health notes and stamp it into the two canonical belief docs.
 
 Source of truth: `drinks_home_std` + `drinks_social_std` frontmatter in
@@ -17,7 +17,7 @@ VAULT = os.environ.get("MBS_VAULT_OVERRIDE", "/Users/cpreston/Vaults/storage_mbs
 DAILY = os.path.join(VAULT, "daily_notes/health/daily")
 TARGETS = [
     os.path.join(VAULT, "admin/mbs_system/brain/CRITICAL_FACTS.md"),
-    os.path.join(VAULT, "health/health_physical/00_meta/20260515_-_baseline_health_profile.md"),
+    os.path.join(VAULT, "health/health_physical/meta/2026-05-15_baseline_health_profile.md"),
 ]
 
 def num(txt, key):
@@ -41,7 +41,7 @@ def collect():
 def main():
     rows = collect()
     if not rows:
-        print("no daily drink data found — aborting", file=sys.stderr)
+        print("no daily drink data found - aborting", file=sys.stderr)
         return 1
     today = datetime.date.today()
     total = sum(v for _, v in rows)

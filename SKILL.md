@@ -18,7 +18,7 @@ description: >
 # mbs_automation
 
 > Claude operates P's Obsidian vault as his external memory — it holds his life so he doesn't have to, and recalls any part of it on demand. The standard is the **amnesia test**: if P woke up remembering nothing, the vault tells him what things are, where they are, and what to do next. The failure mode it defends against: stress + distraction making him lose the next step.
-> Read `admin/mbs_system/brain/_CLAUDE.md`, `SOUL.md`, `CRITICAL_FACTS.md` first, every session.
+> Read `admin/mbs_system/brain/CLAUDE.md`, `SOUL.md`, `CRITICAL_FACTS.md` first, every session.
 
 ---
 
@@ -29,7 +29,7 @@ description: >
 Try these methods in order. Use the first one available:
 
 **Method 0 — SessionStart hook (if configured):**
-If `hooks/load_vault_context.py` is wired as a SessionStart hook in `~/.claude/settings.json`, `_CLAUDE.md` is injected into context automatically at session start. Skip step 1 below.
+If `hooks/load_vault_context.py` is wired as a SessionStart hook in `~/.claude/settings.json`, `CLAUDE.md` is injected into context automatically at session start. Skip step 1 below.
 To wire it: `bash scripts/setup.sh "/path/to/vault"` or run `/obsidian-setup`.
 
 **Method A — iansinnott Claude Code MCP plugin (preferred):**
@@ -38,18 +38,18 @@ P runs the "Claude Code MCP" Obsidian plugin (live workspace link via websocket)
 **Method B — Direct filesystem (fallback, always works):**
 Standard file tools (Read, Write, Edit, Glob) against `/Users/cpreston/Vaults/storage_mbs/`. The vault is plain markdown — everything works this way too.
 
-### 1. First time in a vault → read `_CLAUDE.md`
+### 1. First time in a vault → read `CLAUDE.md`
 
-Before doing anything in a vault, check if `admin/mbs_system/brain/_CLAUDE.md` exists:
+Before doing anything in a vault, check if `admin/mbs_system/brain/CLAUDE.md` exists:
 
 ```
-get_file_contents("admin/mbs_system/brain/_CLAUDE.md")
+get_file_contents("admin/mbs_system/brain/CLAUDE.md")
 ```
 
-If it exists: follow its rules exactly — they override the defaults in this skill. Where `_CLAUDE.md` is silent, fall back to the defaults below.
+If it exists: follow its rules exactly — they override the defaults in this skill. Where `CLAUDE.md` is silent, fall back to the defaults below.
 If it doesn't exist: use the defaults in this skill, then offer to create one.
 
-If the SessionStart hook is active, `_CLAUDE.md` is already in context — skip this step.
+If the SessionStart hook is active, `CLAUDE.md` is already in context — skip this step.
 
 ### 2. First time with a new user → run discovery
 
@@ -61,7 +61,7 @@ Scan the structure to understand: folder names, template locations, naming conve
 
 ### 3. No bootstrap — the vault already exists
 
-P has a mature, ~4,500-note vault organized by life pillars. **Do not run `bootstrap_vault.py`, do not apply presets, do not impose a wiki structure.** The structure, conventions, and foundation files (`_CLAUDE.md`, `SOUL.md`, `CRITICAL_FACTS.md`) already exist. Use `/obsidian-init` only to *refine* `_CLAUDE.md` against the live structure (diff-and-ask), never to regenerate.
+P has a mature, ~4,500-note vault organized by life pillars. **Do not run `bootstrap_vault.py`, do not apply presets, do not impose a wiki structure.** The structure, conventions, and foundation files (`CLAUDE.md`, `SOUL.md`, `CRITICAL_FACTS.md`) already exist. Use `/obsidian-init` only to *refine* `CLAUDE.md` against the live structure (diff-and-ask), never to regenerate.
 
 See `references/vault-schema.md` for the pillar structure.
 
@@ -201,13 +201,13 @@ See `references/write-rules.md` for the complete guide. Summary:
 
 ---
 
-## The `_CLAUDE.md` File
+## The `CLAUDE.md` File
 
 This is the most important concept in this skill.
 
-`_CLAUDE.md` lives at `admin/mbs_system/brain/` and persists Claude's operating rules across every session and every surface (Claude Desktop, Claude Code, VS Code, terminal). Without it, Claude has to re-learn your vault conventions every conversation.
+`CLAUDE.md` lives at `admin/mbs_system/brain/` and persists Claude's operating rules across every session and every surface (Claude Desktop, Claude Code, VS Code, terminal). Without it, Claude has to re-learn your vault conventions every conversation.
 
-**Precedence rule:** `_CLAUDE.md` wins on all vault-specific rules (folder names, naming conventions, frontmatter fields, auto-save behavior, private folders). The defaults in this skill file apply only where `_CLAUDE.md` is silent. Never let skill defaults override an explicit `_CLAUDE.md` rule.
+**Precedence rule:** `CLAUDE.md` wins on all vault-specific rules (folder names, naming conventions, frontmatter fields, auto-save behavior, private folders). The defaults in this skill file apply only where `CLAUDE.md` is silent. Never let skill defaults override an explicit `CLAUDE.md` rule.
 
 **What it contains:**
 - Your vault's folder map and what each folder is for
@@ -217,7 +217,7 @@ This is the most important concept in this skill.
 - People and projects that need special handling
 - Links to key files (boards, dashboard, templates)
 
-To generate a `_CLAUDE.md` for an existing vault, run vault discovery then use the template in `references/claude-md-template.md`.
+To generate a `CLAUDE.md` for an existing vault, run vault discovery then use the template in `references/claude-md-template.md`.
 
 To install it: write the file to `admin/mbs_system/brain/`. Every Claude session that starts in that vault should read it first.
 
@@ -537,7 +537,7 @@ Steps:
 
 ### `/obsidian-init`
 
-**Bootstraps `_CLAUDE.md` for the vault — the operating manual.**
+**Bootstraps `CLAUDE.md` for the vault — the operating manual.**
 
 Steps:
 1. Call `list_files_in_vault()` to map the full structure
@@ -547,11 +547,11 @@ Steps:
    - **Boards agent**: read all files in `Boards/`
    - **Samples agent**: read one existing note per major folder to capture naming conventions and frontmatter patterns
 3. Merge all agent results into a complete picture of the vault
-4. Generate a complete `_CLAUDE.md` using the template in `references/claude-md-template.md`, filled with real values from the vault
-5. Write it to `admin/mbs_system/brain/_CLAUDE.md` via `append_content("_CLAUDE.md", content)`
+4. Generate a complete `CLAUDE.md` using the template in `references/claude-md-template.md`, filled with real values from the vault
+5. Write it to `admin/mbs_system/brain/CLAUDE.md` via `append_content("CLAUDE.md", content)`
 6. Confirm what was written and tell the user to restart their Claude session so the new file takes effect
 
-If `_CLAUDE.md` already exists: show a diff of what would change and ask before overwriting.
+If `CLAUDE.md` already exists: show a diff of what would change and ask before overwriting.
 
 ---
 
@@ -739,7 +739,7 @@ Two autonomous agents run on a schedule, no user intervention. Conservative by d
 
 Prompt to schedule:
 ```
-Read _CLAUDE.md, SOUL.md, CRITICAL_FACTS.md.
+Read CLAUDE.md, SOUL.md, CRITICAL_FACTS.md.
 Append a `## Vault Agent` section to today's tasks daily note (daily_notes/tasks/tasks_YYYY-MM-DD.md):
 - Overdue + due-today tasks (Tasks plugin) across pillars.
 - Active projects with NO next_action — flag each and propose a next step.
@@ -758,7 +758,7 @@ Setup: `/schedule mbs-daily — daily 6:00 AM`
 
 Prompt to schedule:
 ```
-Read _CLAUDE.md.
+Read CLAUDE.md.
 1. Weekly review note (Get Clear / Get Current / Get Creative): what got done, decisions made, people interacted with, what's still open, what to carry forward. Save as a review note (type: review) dated this week; link from the last daily note.
 2. Run: python3 scripts/vault_health.py --path /Users/cpreston/Vaults/storage_mbs --json
    Summarize by severity (critical / warning / info): duplicates, orphans, broken links, missing frontmatter, stale active projects, naming/_archive drift. Report only — fix nothing autonomously.
@@ -782,7 +782,7 @@ Then name the agents and times. To list or remove: `/schedule list` · `/schedul
 
 A background agent that fires automatically whenever Claude compacts the conversation context. It reads the session summary and propagates everything worth preserving to the vault — no user action required.
 
-**What it does:** After each compaction, a headless `claude -p` subprocess wakes up, reads `_CLAUDE.md`, scans the summary for vault-worthy items (people, projects, decisions, tasks, dev work, ideas), and writes updates everywhere they belong — people notes, project notes, dev logs, kanban boards, and today's daily note.
+**What it does:** After each compaction, a headless `claude -p` subprocess wakes up, reads `CLAUDE.md`, scans the summary for vault-worthy items (people, projects, decisions, tasks, dev work, ideas), and writes updates everywhere they belong — people notes, project notes, dev logs, kanban boards, and today's daily note.
 
 **How it works:**
 1. `PostCompact` hook fires in Claude Code after context compaction
@@ -887,7 +887,7 @@ A non-blocking validator that fires after a `Write` or `Edit` on a markdown file
 
 - `references/vault-schema.md` — Complete folder structure + frontmatter specs for all note types
 - `references/write-rules.md` — Detailed writing, linking, and formatting rules
-- `references/claude-md-template.md` — Template for generating a vault's `_CLAUDE.md`
+- `references/claude-md-template.md` — Template for generating a vault's `CLAUDE.md`
 
 ## Scripts
 

@@ -8,7 +8,7 @@ Use the mbs_automation skill. Execute `/obsidian-review $ARGUMENTS`:
 
 The optional argument is `weekly` or `monthly` (ask if unclear). This is the reflective counterpart to the daily safety net: zoom out, see the arc, name what to carry forward.
 
-1. Read `_CLAUDE.md`, `SOUL.md`, `CRITICAL_FACTS.md`.
+1. Read `CLAUDE.md`, `SOUL.md`, `CRITICAL_FACTS.md`.
 2. Determine the period (weekly or monthly) and its date range.
 3. **Read the period's vault history** (shell-grep + reads):
    - Both daily journals: `daily_notes/tasks/` and `daily_notes/health/` for the range.

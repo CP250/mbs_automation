@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.mbs.review-monthly</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/cpreston/dev/mbs_automation/scripts/mbs_review_prep.sh</string>
+        <string>monthly</string>
+    </array>
+
+    <!-- 1st of the month, 06:00 local (P moved from the legacy 09:00, 2026-08-01).
+         Missed fires coalesce onto next wake, launchd-native. -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Day</key><integer>1</integer>
+        <key>Hour</key><integer>6</integer>
+        <key>Minute</key><integer>0</integer>
+    </dict>
+
+    <!-- Catch-up on login/boot; the per-period stamp prevents double runs. -->
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>/Users/cpreston/.mbs_automation/review_prep.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/cpreston/.mbs_automation/review_prep.err.log</string>
+</dict>
+</plist>

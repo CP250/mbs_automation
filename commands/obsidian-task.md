@@ -8,7 +8,7 @@ Use the mbs_automation skill. Execute `/obsidian-task $ARGUMENTS`:
 
 Add a task using P's **Tasks plugin** model. There are no kanban boards — tasks are checkbox lines that live on a project note or a pillar todo list, and "dashboards" are Tasks/Dataview queries.
 
-1. Read `admin/mbs_system/brain/_CLAUDE.md`.
+1. Read `admin/mbs_system/brain/CLAUDE.md`.
 2. Parse the task from the argument, or pull it from recent conversation context if no argument is given.
 3. Infer: pillar (`admin`/`create`/`culture`/`health`/`money`/`skills`/`social`/`sports`), linked project (search for it), linked person, due date, and whether a priority is warranted. Don't over-tag — priority and due are optional.
 4. **Write the task line** in Tasks-plugin syntax (per `references/write-rules.md`):

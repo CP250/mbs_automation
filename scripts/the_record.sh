@@ -1,15 +1,15 @@
 #!/bin/bash
-# the_record.sh — process new "The Record" transcripts as they land.
+# the_record.sh - process new "The Record" transcripts as they land.
 #
 # Part of P's Verition capture-and-synthesis pipeline (money/project_the_record).
 # Unlike the calendar-anchored jobs (mbs_daily, weekly_blocks), this one is
-# EVENT-ANCHORED by design — it fires when a transcript appears in raw/, not on
+# EVENT-ANCHORED by design - it fires when a transcript appears in raw/, not on
 # a clock. That matches the project's core rule: capture is event-triggered, and
 # P will not drop files on a schedule.
 #
 # Triggered by launchd (see launchd/com.mbs.the-record.plist):
-#   1. WatchPaths on the raw/ folder — fires when a file is added or changed.
-#   2. RunAtLoad at login — catches transcripts dropped while logged out.
+#   1. WatchPaths on the raw/ folder - fires when a file is added or changed.
+#   2. RunAtLoad at login - catches transcripts dropped while logged out.
 #
 # Idempotence: a processed-manifest ($MANIFEST) records every transcript already
 # handled. Each run diffs raw/*.md against it and only processes genuinely new
@@ -52,11 +52,11 @@ LOCK_DIR="$STATE_DIR/the_record.lock"
 if ! mkdir "$LOCK_DIR" 2>/dev/null; then
   HOLDER_PID="$(cat "$LOCK_DIR/pid" 2>/dev/null)"
   if [ -n "${HOLDER_PID:-}" ] && kill -0 "$HOLDER_PID" 2>/dev/null; then
-    echo "$(ts) — another instance is running (PID $HOLDER_PID), exiting cleanly" >> "$LOG"
+    echo "$(ts) - another instance is running (PID $HOLDER_PID), exiting cleanly" >> "$LOG"
     exit 0
   fi
   rm -rf "$LOCK_DIR"
-  mkdir "$LOCK_DIR" 2>/dev/null || { echo "$(ts) — ERROR: could not claim lock" >> "$LOG"; exit 1; }
+  mkdir "$LOCK_DIR" 2>/dev/null || { echo "$(ts) - ERROR: could not claim lock" >> "$LOG"; exit 1; }
 fi
 echo $$ > "$LOCK_DIR/pid"
 trap 'rm -rf "$LOCK_DIR" 2>/dev/null' EXIT INT TERM
@@ -72,35 +72,35 @@ while IFS= read -r f; do
 done < <(find "$RAW_DIR" -maxdepth 1 -type f -name '*.md' | sort)
 
 if [ "${#NEW_FILES[@]}" -eq 0 ]; then
-  echo "$(ts) — no new transcripts, nothing to do." >> "$LOG"
+  echo "$(ts) - no new transcripts, nothing to do." >> "$LOG"
   exit 0
 fi
 
 export PATH="/opt/homebrew/bin:/usr/local/bin:$HOME/.local/bin:$HOME/.npm-global/bin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
 CLAUDE_BIN="$(command -v claude || true)"
 if [ -z "$CLAUDE_BIN" ]; then
-  echo "$(ts) — ERROR: 'claude' not found on PATH. Aborting." >> "$LOG"
+  echo "$(ts) - ERROR: 'claude' not found on PATH. Aborting." >> "$LOG"
   exit 1
 fi
 
 FILE_LIST="$(printf 'raw/%s ' "${NEW_FILES[@]}")"
-echo "$(ts) — processing ${#NEW_FILES[@]} new transcript(s): $FILE_LIST (claude: $CLAUDE_BIN)" >> "$LOG"
+echo "$(ts) - processing ${#NEW_FILES[@]} new transcript(s): $FILE_LIST (claude: $CLAUDE_BIN)" >> "$LOG"
 
-cd "$VAULT" || { echo "$(ts) — ERROR: cannot cd to $VAULT" >> "$LOG"; exit 1; }
+cd "$VAULT" || { echo "$(ts) - ERROR: cannot cd to $VAULT" >> "$LOG"; exit 1; }
 
-PROMPT="Unattended run of the-record job for the vault at $VAULT. FIRST read admin/mbs_system/brain/_CLAUDE.md, then money/project_the_record/_HANDOFF.md and money/project_the_record/rules.md — they govern this work and override defaults. New transcript(s) to process, in money/project_the_record/: $FILE_LIST. For each, do all of the following, writing via the filesystem (NOT the Obsidian MCP): (1) Extract candidate lessons into money/project_the_record/verition_lessons.md under '## Candidate lessons (inbox — unconfirmed)', each as a portable principle plus its Verition origin; do not promote into the confirmed body — that is P's call. (2) For each candidate lesson, name the parallel book(s) in money/project_management_arc/ref_manager_to_executive_arc.md (Leadership Pipeline, What Got You Here, CEO Next Door, High Output Management, The Effective Executive, Pfeffer's Power). (3) Weave the transcript into money/project_the_record/verition_history.md in chronological position, and flag with a 🚩 any inconsistency against what is already there (dates, names, sequence). (4) Append a '## The Record' section to today's daily_notes/tasks/tasks_$(date +%Y-%m-%d).md containing: inconsistency questions, omissions/blind spots, and ONE recommended next person/period/situation to capture; format each as a '- [ ]' task with #money and a short 🆔. Respect discretion (rules.md): this material is private, never referenced in Verition-/Polar-facing work. Do NOT push a cadence, deadline, or target length. Keep edits additive; do not rewrite existing confirmed lessons or prior history prose beyond inserting the new material and its flags."
+PROMPT="Unattended run of the-record job for the vault at $VAULT. FIRST read admin/mbs_system/brain/CLAUDE.md, then money/project_the_record/_HANDOFF.md and money/project_the_record/rules.md - they govern this work and override defaults. New transcript(s) to process, in money/project_the_record/: $FILE_LIST. For each, do all of the following, writing via the filesystem (NOT the Obsidian MCP): (1) Extract candidate lessons into money/project_the_record/verition_lessons.md under '## Candidate lessons (inbox - unconfirmed)', each as a portable principle plus its Verition origin; do not promote into the confirmed body - that is P's call. (2) For each candidate lesson, name the parallel book(s) in money/project_management_arc/ref_manager_to_executive_arc.md (Leadership Pipeline, What Got You Here, CEO Next Door, High Output Management, The Effective Executive, Pfeffer's Power). (3) Weave the transcript into money/project_the_record/verition_history.md in chronological position, and flag with a 🚩 any inconsistency against what is already there (dates, names, sequence). (4) Append a '## The Record' section to today's daily_notes/tasks/tasks_$(date +%Y-%m-%d).md containing: inconsistency questions, omissions/blind spots, and ONE recommended next person/period/situation to capture; format each as a '- [ ]' task with #money and a short 🆔. Respect discretion (rules.md): this material is private, never referenced in Verition-/Polar-facing work. Do NOT push a cadence, deadline, or target length. Keep edits additive; do not rewrite existing confirmed lessons or prior history prose beyond inserting the new material and its flags."
 
 run_claude_p "$PROMPT" "$LOG"
 rc=$?
 if [ "$rc" -eq 0 ]; then
   clear_reauth_sentinel
   printf '%s\n' "${NEW_FILES[@]}" >> "$MANIFEST"
-  echo "$(ts) — done; recorded ${#NEW_FILES[@]} transcript(s) in manifest." >> "$LOG"
+  echo "$(ts) - done; recorded ${#NEW_FILES[@]} transcript(s) in manifest." >> "$LOG"
 elif [ "$rc" -eq 2 ]; then
   mark_reauth_needed "$LOG"
-  echo "$(ts) — blocked on Claude auth; no manifest update. Retries after re-auth." >> "$LOG"
+  echo "$(ts) - blocked on Claude auth; no manifest update. Retries after re-auth." >> "$LOG"
   exit 2
 else
-  echo "$(ts) — ERROR: run exited $rc; no manifest update, will retry on next trigger." >> "$LOG"
+  echo "$(ts) - ERROR: run exited $rc; no manifest update, will retry on next trigger." >> "$LOG"
   exit "$rc"
 fi

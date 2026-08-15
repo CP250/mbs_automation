@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""SessionStart hook: inject _CLAUDE.md into context once per session.
+"""SessionStart hook: inject CLAUDE.md into context once per session.
 
 Gated to the AI-Brain vault: fires only when the session's cwd is inside
 $OBSIDIAN_VAULT_PATH. Skips silently otherwise (any output would land in
@@ -12,7 +12,7 @@ Setup:
            "command": "python ~/.claude/skills/mbs_automation/hooks/load_vault_context.py" }
 
 Path normalization handles Windows ("C:\\..."), MSYS ("/c/..."), and POSIX
-("/...") — match works regardless of which form the harness or env var uses.
+("/...") - match works regardless of which form the harness or env var uses.
 """
 from __future__ import annotations
 
@@ -51,7 +51,7 @@ def main() -> int:
     if not (cwd_n == vault_n or cwd_n.startswith(vault_n + "/")):
         return 0
 
-    claude_md = Path(vault) / "admin/mbs_system/brain/_CLAUDE.md"
+    claude_md = Path(vault) / "admin/mbs_system/brain/CLAUDE.md"
     if not claude_md.is_file():
         return 0
 
@@ -60,15 +60,15 @@ def main() -> int:
     v = Path(vault)
     header = (
         f"**Vault root**: `{vault}`\n"
-        f"**Key files** (absolute paths — use these directly, no discovery needed):\n"
-        f"  - `{v / 'admin/mbs_system/brain/_CLAUDE.md'}` — this operating manual (already loaded)\n"
+        f"**Key files** (absolute paths - use these directly, no discovery needed):\n"
+        f"  - `{v / 'admin/mbs_system/brain/CLAUDE.md'}` - this operating manual (already loaded)\n"
         f"  - `{v / 'admin/mbs_system/brain/vault_file_tree.md'}`: nightly file listing (existence checks; index.md retired 2026-07-28)\n"
         f"  - `{v / 'admin/mbs_system/design/log.md'}`: operation log pointer (daily entries in design/log/)\n"
         "**Do NOT run `ls`, `Glob`, or `Bash` to discover the vault or its folders.**\n"
         "Use the vault root path above and the folder names from the manual below directly.\n\n"
         "---\n\n"
-        "Vault operating manual (_CLAUDE.md, loaded once at session start "
-        "by the load_vault_context hook — do not re-read on each command):\n\n"
+        "Vault operating manual (CLAUDE.md, loaded once at session start "
+        "by the load_vault_context hook - do not re-read on each command):\n\n"
     )
 
     output = {

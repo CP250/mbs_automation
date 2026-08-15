@@ -8,7 +8,7 @@ Use the mbs_automation skill. Execute `/obsidian-connect $ARGUMENTS`:
 
 Two topics/domains/notes to connect. If fewer than two are given, ask P for both.
 
-1. Read `admin/mbs_system/brain/_CLAUDE.md`.
+1. Read `admin/mbs_system/brain/CLAUDE.md`.
 2. Parse the two domains (e.g. `/obsidian-connect "rackets strategy" "portfolio construction"`).
 3. For each domain, search the vault (shell-grep; exclude `trash/`): find related notes by title/tags/content and map their wikilinks into a local cluster.
 4. **Find the bridge:**

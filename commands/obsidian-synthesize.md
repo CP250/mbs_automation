@@ -8,7 +8,7 @@ Use the mbs_automation skill. Execute `/obsidian-synthesize`:
 
 The whole-vault cousin of `/obsidian-emerge` (which looks at a recent window). This scans broadly for patterns that span domains and time, and **proposes** synthesis — it does not autonomously write synthesis pages (the old "writes synthesis pages without being asked / on its own schedule" behavior is removed; it violates propose-don't-dispose).
 
-1. Read `_CLAUDE.md`, `SOUL.md`, `admin/mbs_system/brain/LEARNINGS_DIGEST.md`, and the last ~20 lines of `admin/mbs_system/design/log.md`.
+1. Read `CLAUDE.md`, `SOUL.md`, `admin/mbs_system/brain/LEARNINGS_DIGEST.md`, and the last ~20 lines of `admin/mbs_system/design/log.md`.
 2. Scan for synthesis opportunities (shell-grep + reads; parallel read subagents for breadth). Exclude `trash/`; `_archive/` is historical context. Look for:
    - **Cross-domain recurrence** — the same idea/tension appearing in unrelated pillars (e.g. a "breadth vs. conviction" theme in both sports and money).
    - **Entity convergence** — people/projects that co-occur across contexts but aren't linked.

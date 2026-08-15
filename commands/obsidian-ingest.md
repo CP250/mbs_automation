@@ -8,7 +8,7 @@ Use the mbs_automation skill. Execute `/obsidian-ingest $ARGUMENTS`:
 
 The argument is a URL, file path, or pasted text. If none, ask what to ingest. This is the **simplified** ingest: it creates one well-structured reference note and *proposes* connections. It does NOT autonomously rewrite the vault (the old "vault rewrites itself" behavior is removed — it violates the propose-don't-dispose boundary).
 
-1. Read `admin/mbs_system/brain/_CLAUDE.md`.
+1. Read `admin/mbs_system/brain/CLAUDE.md`.
 2. Read or fetch the source:
    - **Article/URL** — fetch the page content.
    - **PDF/document/text** — read it directly.

@@ -8,7 +8,7 @@ Use the mbs_automation skill. Execute `/obsidian-calendar $ARGUMENTS`:
 
 This is vision duty #2: catch the gap between what the vault knows you need to do and what's actually scheduled. The optional argument is a window (`today`, `this week`, `this month`); default to this week.
 
-1. Read `_CLAUDE.md`, `CRITICAL_FACTS.md`.
+1. Read `CLAUDE.md`, `CRITICAL_FACTS.md`.
 2. **Pull the calendar** for the window from Google Calendar (and Morgen if available) via the calendar MCP. List events with times.
 3. **Gather what the vault implies** for the same window (shell-grep, not assumption):
    - Active project `next_action`s and any dated deadlines in project notes.

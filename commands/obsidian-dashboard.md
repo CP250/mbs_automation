@@ -8,7 +8,7 @@ Use the mbs_automation skill. Execute `/obsidian-dashboard $ARGUMENTS`:
 
 The argument is a pillar name (`admin`, `create`, `culture`, `health`, `money`, `skills`, `social`, `sports`); `all` (default) refreshes every pillar. A dashboard is a live `dataview`/`tasks` query note — not a kanban board and not a hand-maintained list. Its job is to surface the system's core duty: every active project should carry a `next_action`, and any that don't are the failure the whole vault exists to catch.
 
-1. Read `admin/mbs_system/brain/_CLAUDE.md` and `references/vault-schema.md` (the canonical query patterns live there).
+1. Read `admin/mbs_system/brain/CLAUDE.md` and `references/vault-schema.md` (the canonical query patterns live there).
 2. Resolve the pillar(s). If a single pillar, confirm it is one of the eight; if `all`, iterate over all eight.
 3. For each pillar, generate (or refresh) the dashboard note at `<pillar>/dashboard_<pillar>.md`. **Search first** (per `references/write-rules.md`): if it already exists, refresh the query blocks in place rather than duplicating, and do not disturb any notes P added below them. Frontmatter:
    ```yaml

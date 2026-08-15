@@ -6,7 +6,7 @@ triggers_en: ["load context", "what is going on", "where am I", "load my world"]
 
 Use the mbs_automation skill. Execute `/obsidian-world`:
 
-1. Read `admin/mbs_system/brain/_CLAUDE.md` first — the operating rules.
+1. Read `admin/mbs_system/brain/CLAUDE.md` first — the operating rules.
 
 2. Load context progressively — start light, go deeper only as needed:
 

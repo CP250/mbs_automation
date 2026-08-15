@@ -10,7 +10,7 @@ This is the co-creative project-decomposition duty: take a rough fragment and tu
 
 The optional argument is the idea title/keyword. If not given, scan `captured/` and recent daily notes (last ~14 days) for candidate fragments and ask P which one.
 
-1. Read `_CLAUDE.md`, `SOUL.md`, `CRITICAL_FACTS.md`.
+1. Read `CLAUDE.md`, `SOUL.md`, `CRITICAL_FACTS.md`.
 2. **Find and read the source fragment** (a `captured/` note, a daily-note line, a stray thought) and any notes it links to.
 3. **Research the vault before designing** (shell-grep, not assumption): existing projects that overlap (don't duplicate), people involved, past decisions that bear on it, and prior similar ideas that were tried — surface those so the spec doesn't reinvent or repeat a known dead end.
 4. **Decompose with P, don't dictate.** Propose the structure, but where a goal, scope, or next step genuinely depends on information you don't have, ask — do not invent it. (See anti-fabrication below.)

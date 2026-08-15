@@ -144,6 +144,7 @@ The pair `(weekly_minutes, default_block_length)` is the **single source of trut
 - Tasks journal: `daily_notes/tasks/tasks_YYYY-MM-DD.md`
 - Health journal: `daily_notes/health/daily/daily_note_health_YYYY-MM-DD.md`
 - The agent's morning report appends to the tasks journal inside a bounded `## Vault Agent` section.
+- Tasks-journal frontmatter is `journal`, `journal-date`, `open_tasks` (added 2026-08-07). `open_tasks` is an integer count of every unchecked `- [ ]` checkbox in the vault, written once by `mbs_daily.sh` when it creates the note. It is a morning snapshot, not a live gauge: nothing refreshes it during the day, and a same-day re-run leaves an existing value alone. Excluded from the count: `trash/`, `admin/pn.md`, every `_archive/` and `_logs/`, and all of `daily_notes/` (the carry-forward region duplicates lines that also live at source). `- [/]` in progress and `- [-]` cancelled do not count as open.
 
 ## Naming conventions (summary; full detail in `CLAUDE.md` + the vault's `admin/obsidian_optimize/RENAMING_PLAN.md`)
 - Folders: lowercase snake_case, no redundant pillar prefix, singular unless inherently plural.

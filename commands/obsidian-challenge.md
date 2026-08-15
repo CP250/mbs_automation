@@ -8,7 +8,7 @@ Use the mbs_automation skill. Execute `/obsidian-challenge $ARGUMENTS`:
 
 The optional argument is the idea/belief/plan to challenge; if absent, infer P's current position from the conversation. This is the honest-mirror duty (see SOUL.md): do not flatter, do not soften, expose what P is avoiding.
 
-1. Read `_CLAUDE.md`, `SOUL.md`.
+1. Read `CLAUDE.md`, `SOUL.md`.
 2. State P's current claim/plan and extract its key premises.
 3. **Search the vault for counter-evidence** (shell-grep; parallel read subagents for breadth). Exclude `trash/`; `_archive/` is fair game as history:
    - Project Key Decisions for past decisions that contradicted or reversed similar thinking.

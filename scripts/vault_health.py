@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-vault_health.py — mbs_automation vault health check (pillar-aware, hybrid vault)
+vault_health.py - mbs_automation vault health check (pillar-aware, hybrid vault)
 
 Audits P's Obsidian vault for ACTIONABLE structural issues, tuned to the hybrid model:
 existing human notes are left alone; the agent only flags things worth fixing.
@@ -14,9 +14,9 @@ Checks:
 - Naming/convention    : non-_archive archive folders (vaults_*, old/, archive/), files at vault root
 - Empty folders
 - Template leftovers    : unfilled <% %> Templater syntax outside template dirs
-- Doc path drift       : literal `backtick paths` in system/reference docs (_CLAUDE.md,
+- Doc path drift       : literal `backtick paths` in system/reference docs (CLAUDE.md,
                           SETUP.md, VISION.md, ROADMAP.md, RENAMING_PLAN.md,
-                          PROJECT_BOOTSTRAP.md, ref_*.md) that don't resolve on disk —
+                          PROJECT_BOOTSTRAP.md, ref_*.md) that don't resolve on disk -
                           date/placeholder segments (YYYY-MM-DD, <slug>, etc.) are
                           treated as wildcards, so a whole pattern is flagged only if
                           NOTHING on disk matches it. Added 2026-07-21 after SETUP.md
@@ -24,13 +24,13 @@ Checks:
                           had silently moved (design/ → obsidian_optimize/).
 - Ambiguous bare refs  : a bare `filename.md` (no path) mentioned in one of those same
                           docs that resolves to more than one file in the vault by
-                          basename — the exact shape of the bug that let SETUP.md's bare
+                          basename - the exact shape of the bug that let SETUP.md's bare
                           `log.md` reference get taken literally and produce a duplicate
                           log file at the vault root (2026-06-29 → found & fixed 2026-07-21).
 
 Deliberately NOT checked (hybrid vault):
-- Missing frontmatter on human notes — that's the norm, not a problem.
-- Orphans among non-frontmatter human notes — most aren't linked, by design.
+- Missing frontmatter on human notes - that's the norm, not a problem.
+- Orphans among non-frontmatter human notes - most aren't linked, by design.
 
 Excluded from scanning: trash/, _to_clean/, .obsidian, .git, attachments.
 _archive/ notes are indexed (so links resolve) but never themselves flagged.
@@ -219,6 +219,35 @@ def check_conventions(notes: dict, vault: Path) -> list:
     return issues
 
 
+def check_phantom_root_log(vault: Path) -> list:
+    """The 2026-06-29 incident artifact, as a standing assertion.
+
+    A run of the session-awareness sweep created `log.md` at the vault root
+    instead of appending to the real op-log. Four later sweeps plus a golf
+    handoff appended to it believing it canonical, and the entries were not
+    recovered for three weeks. The canonical op-log is the dated file at
+    admin/mbs_system/design/log/YYYY-MM-DD.md; design/log.md is a pointer.
+
+    check_conventions already reports loose root files, but at severity "info",
+    where a single line drowns in thousands. This one artifact has a proven
+    three-week detection lag and a known write-amplifying failure mode, so it
+    gets its own critical finding rather than sharing the info bucket.
+    """
+    if (vault / "log.md").exists():
+        return [{
+            "type": "phantom_root_log", "severity": "critical",
+            "message": (
+                "log.md has reappeared at the vault root. This is the "
+                "2026-06-29 incident artifact: agents mistake it for the "
+                "canonical op-log and append to it. The real log is "
+                "admin/mbs_system/design/log/YYYY-MM-DD.md. Move this file to "
+                "trash/ and find what wrote it."
+            ),
+            "files": ["log.md"],
+        }]
+    return []
+
+
 def check_empty_folders(vault: Path) -> list:
     issues = []
     for folder in vault.rglob("*"):
@@ -238,12 +267,12 @@ def check_empty_folders(vault: Path) -> list:
 # Foundation/meta docs contain illustrative [[link]] syntax and folder navigation;
 # don't flag their links as broken.
 SKIP_LINK_DOCS = {
-    "admin/mbs_system/brain/_CLAUDE.md",
+    "admin/mbs_system/brain/CLAUDE.md",
     "admin/mbs_system/brain/SOUL.md",
     "admin/mbs_system/brain/CRITICAL_FACTS.md",
     "admin/mbs_system/brain/IDENTITY_FIREWALL.md",
 }
-# Embedded attachments ([[image.png]] etc.) point to files, not notes — don't flag.
+# Embedded attachments ([[image.png]] etc.) point to files, not notes - don't flag.
 ATTACHMENT_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp", ".pdf", ".canvas",
                    ".excalidraw", ".mp4", ".mov", ".mp3", ".m4a", ".heic", ".tif", ".tiff", ".html"}
 
@@ -292,9 +321,9 @@ def check_template_leftovers(notes: dict) -> list:
 
 
 # ── Doc path drift + ambiguous bare refs ────────────────────────────────────
-# Scope is an EXACT allowlist, not a basename match. Per-folder `_CLAUDE.md` files
+# Scope is an EXACT allowlist, not a basename match. Per-folder `CLAUDE.md` files
 # legitimately use paths relative to their OWN folder (that's the convention, not a
-# bug) — checking those against the vault root produces wall-to-wall false positives.
+# bug) - checking those against the vault root produces wall-to-wall false positives.
 # The real risk is concentrated in the handful of global/foundation docs that every
 # session reads and that describe vault-root-relative or home-relative paths as if
 # absolute: the same list `check_broken_links` already treats as foundation/meta
@@ -304,6 +333,12 @@ DOC_SCOPE = SKIP_LINK_DOCS | {
     "admin/mbs_system/design/VISION.md",
     "admin/mbs_system/design/ROADMAP.md",
     "admin/mbs_system/design/PROJECT_BOOTSTRAP.md",
+    # Added 2026-08-03: the session-awareness sweep's procedure doc. It is the
+    # sweep's ONLY instructions (the Cowork task prompt is now a pointer to it),
+    # so every path it names is load-bearing for an unattended monthly job. This
+    # is precisely the class of doc whose drift went unnoticed for ten weeks
+    # while it lived inside the unreadable Cowork prompt.
+    "admin/mbs_system/design/session_awareness/CLAUDE.md",
     # RENAMING_PLAN.md deliberately excluded: it's a current-name -> proposed-name table,
     # so its "Current" column is SUPPOSED to contain names that no longer exist post-rename.
     # Flagging those would be flagging the document for doing its job.
@@ -320,7 +355,7 @@ PATH_EXTENSIONS = {
     ".md", ".py", ".sh", ".json", ".plist", ".log", ".txt", ".yml", ".yaml",
     ".canvas", ".html", ".js", ".ts", ".css",
 }
-# secondary roots to try for a bare relative candidate before calling it drift — SETUP.md
+# secondary roots to try for a bare relative candidate before calling it drift - SETUP.md
 # in particular writes elliptically ("Wrapper: `~/dev/mbs_automation/scripts/x.sh`. Job:
 # `launchd/y.plist`") where later paths are implicitly relative to the script repo, not
 # the vault. Try vault root first (the common case), then these, before flagging.
@@ -332,14 +367,14 @@ def _looks_like_real_path(candidate: str) -> bool:
     slash-commands (`/obsidian-init`), GitHub owner/repo shorthand (`CP250/mbs_automation`),
     and bare single-segment directory mentions (`_archive/`, `trash/`) that are almost always
     illustrating a CONVENTION ("every folder gets an `_archive/`"), not pointing at one
-    specific instance — those top-level names are foundational enough that drift here is
+    specific instance - those top-level names are foundational enough that drift here is
     vanishingly unlikely, and the false-positive rate isn't worth the marginal coverage."""
     if candidate.startswith("/"):
         return candidate.count("/") >= 2  # a bare "/word" with no second segment is a slash-command
     if candidate.startswith("~/"):
         return True
     if candidate.rstrip("/").count("/") == 0:
-        return False  # single bare segment ("_archive/", "trash/", "cars/") — too generic to check
+        return False  # single bare segment ("_archive/", "trash/", "cars/") - too generic to check
     first = candidate.split("/", 1)[0]
     return first in KNOWN_TOP_LEVEL or Path(candidate).suffix.lower() in PATH_EXTENSIONS
 
@@ -348,8 +383,8 @@ def check_doc_path_drift(notes: dict, vault: Path) -> list:
     """Backtick literal paths in scoped foundation docs that don't resolve on disk.
     Placeholder segments (<slug>, YYYY-MM-DD, ...) become glob wildcards first, so a
     pattern is only flagged if NOTHING matches it anywhere it could plausibly live
-    (vault-relative, home-relative/absolute, or — as a fallback for bare relative
-    paths — the mbs_automation script repo) — not just the literal placeholder string."""
+    (vault-relative, home-relative/absolute, or - as a fallback for bare relative
+    paths - the mbs_automation script repo) - not just the literal placeholder string."""
     issues, seen = [], set()
     for rel, n in notes.items():
         if rel not in DOC_SCOPE:
@@ -382,7 +417,7 @@ def check_doc_path_drift(notes: dict, vault: Path) -> list:
                 try:
                     return any(base.glob(rest)) if has_wildcard else (base / rest).exists()
                 except (OSError, ValueError):
-                    return True  # unparseable — don't flag what we can't evaluate
+                    return True  # unparseable - don't flag what we can't evaluate
 
             if not any(_hit(b, r) for b, r in bases):
                 issues.append({
@@ -394,16 +429,16 @@ def check_doc_path_drift(notes: dict, vault: Path) -> list:
 
 
 # Filenames the vault deliberately repeats in every/many folders by convention
-# (_CLAUDE.md and _HANDOFF.md per admin/mbs_system/brain/_CLAUDE.md itself; README.md
+# (CLAUDE.md and _HANDOFF.md per admin/mbs_system/brain/CLAUDE.md itself; README.md
 # and its variants per STRUCTURAL_STEMS above). Many matches for these is the intended
-# design, not a collision — excluded so the check stays about SURPRISING ambiguity.
-KNOWN_REPEATED_BASENAMES = {"_claude.md", "_handoff.md", "readme.md", "_readme.md"}
+# design, not a collision - excluded so the check stays about SURPRISING ambiguity.
+KNOWN_REPEATED_BASENAMES = {"_claude.md", "claude.md", "_handoff.md", "readme.md", "_readme.md"}
 MAX_SUSPICIOUS_MATCHES = 5  # more than this looks like an intentional repeated pattern, not an accident
 
 
 def check_ambiguous_bare_refs(notes: dict) -> list:
     """A bare `filename.md` (no directory) referenced in a scoped foundation doc that
-    resolves to a SMALL number (2-5) of files in the vault by basename — enough to be a
+    resolves to a SMALL number (2-5) of files in the vault by basename - enough to be a
     surprising collision, not a known one-per-folder convention. This is the exact shape
     of the bug that let SETUP.md's bare `log.md` mention get taken literally and produce
     a duplicate log file at the vault root (2026-06-29 sweep; found & fixed 2026-07-21,
@@ -448,6 +483,7 @@ def run_health_check(vault: Path) -> dict:
         ("Empty folders", check_empty_folders(vault)),
         ("Doc path drift", check_doc_path_drift(notes, vault)),
         ("Ambiguous bare refs", check_ambiguous_bare_refs(notes)),
+        ("Phantom root log", check_phantom_root_log(vault)),
     ]
     all_issues, counts = [], {}
     for label, issues in checks:
@@ -462,7 +498,7 @@ def run_health_check(vault: Path) -> dict:
 
 def print_report(result: dict):
     print("=" * 60)
-    print(f"  VAULT HEALTH — {result['scanned']}  ({result['total_notes']} notes)")
+    print(f"  VAULT HEALTH - {result['scanned']}  ({result['total_notes']} notes)")
     print("=" * 60)
     if result["total_issues"] == 0:
         print("✅ No actionable issues found.")

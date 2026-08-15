@@ -1,11 +1,11 @@
 #!/bin/bash
-# mbs_daily.sh — run the /obsidian-daily morning report at most once per day.
+# mbs_daily.sh - run the /obsidian-daily morning report at most once per day.
 #
 # Triggered by launchd three ways (see scripts/com.mbs.daily.plist):
-#   1. StartCalendarInterval at 06:00 local — runs on time if the Mac is awake.
-#   2. Wake from sleep — launchd coalesces the missed 06:00 fire and runs it
+#   1. StartCalendarInterval at 06:00 local - runs on time if the Mac is awake.
+#   2. Wake from sleep - launchd coalesces the missed 06:00 fire and runs it
 #      when you open the lid. (Native launchd behavior; not cron.)
-#   3. RunAtLoad at login — covers the case where the Mac was fully powered off
+#   3. RunAtLoad at login - covers the case where the Mac was fully powered off
 #      at 06:00, so the report runs shortly after you log back in.
 #
 # Idempotence + retry (2026-06-06 hardening):
@@ -19,7 +19,7 @@
 #   sleeps of 5/10/30/60 min between attempts. Total elapsed up to ~1.75 hr.
 #   macOS sleep pauses the sleep timer (CLOCK_MONOTONIC), so retries effectively
 #   wait for "Mac awake" time rather than wall-clock time. This is the right
-#   behavior — retrying while the network is asleep has no value.
+#   behavior - retrying while the network is asleep has no value.
 # - If all in-script retries fail, the script exits non-zero with no stamp, so
 #   the next launchd trigger (next wake event or tomorrow's 06:00) will retry.
 #
@@ -39,6 +39,11 @@ mkdir -p "$STATE_DIR"
 TODAY="$(date +%Y-%m-%d)"
 ts() { date '+%Y-%m-%d %H:%M:%S'; }
 
+# Structure-review 2026-08-01 drain REMOVED 2026-08-03. It moved sweep reports
+# out of the legacy admin/obsidian_optimize/session_awareness/ landing dir. That
+# dir is gone (disposed to trash/) and the Cowork task's report path was verified
+# canonical, so the loop was dead code. History: design/session_awareness/CLAUDE.md.
+
 # Source the auth-failure detection helpers (lib_auth.sh).
 # shellcheck source=./lib_auth.sh
 source "$(dirname "$0")/lib_auth.sh"
@@ -51,24 +56,24 @@ fi
 
 # Already ran successfully today? Stop.
 if [ -f "$STAMP" ] && [ "$(cat "$STAMP" 2>/dev/null)" = "$TODAY" ]; then
-  echo "$(ts) — already ran for $TODAY, skipping." >> "$LOG"
+  echo "$(ts) - already ran for $TODAY, skipping." >> "$LOG"
   exit 0
 fi
 
-# Single-instance lock. mkdir is atomic — only one launchd invocation can win
+# Single-instance lock. mkdir is atomic - only one launchd invocation can win
 # the create. If we lose, check whether the holder is still alive; if not,
 # the lock is stale (script killed without trap firing) and we claim it.
 LOCK_DIR="$STATE_DIR/mbs_daily.lock"
 if ! mkdir "$LOCK_DIR" 2>/dev/null; then
   HOLDER_PID="$(cat "$LOCK_DIR/pid" 2>/dev/null)"
   if [ -n "${HOLDER_PID:-}" ] && kill -0 "$HOLDER_PID" 2>/dev/null; then
-    echo "$(ts) — another instance is running (PID $HOLDER_PID), exiting cleanly" >> "$LOG"
+    echo "$(ts) - another instance is running (PID $HOLDER_PID), exiting cleanly" >> "$LOG"
     exit 0
   fi
-  echo "$(ts) — stale lock detected (holder PID was ${HOLDER_PID:-unknown}), claiming" >> "$LOG"
+  echo "$(ts) - stale lock detected (holder PID was ${HOLDER_PID:-unknown}), claiming" >> "$LOG"
   rm -rf "$LOCK_DIR"
   if ! mkdir "$LOCK_DIR" 2>/dev/null; then
-    echo "$(ts) — ERROR: could not claim lock after cleanup, aborting" >> "$LOG"
+    echo "$(ts) - ERROR: could not claim lock after cleanup, aborting" >> "$LOG"
     exit 1
   fi
 fi
@@ -82,13 +87,13 @@ export PATH="/opt/homebrew/bin:/usr/local/bin:$HOME/.local/bin:$HOME/.npm-global
 
 CLAUDE_BIN="$(command -v claude || true)"
 if [ -z "$CLAUDE_BIN" ]; then
-  echo "$(ts) — ERROR: 'claude' not found on PATH. Edit PATH in this script. Aborting." >> "$LOG"
+  echo "$(ts) - ERROR: 'claude' not found on PATH. Edit PATH in this script. Aborting." >> "$LOG"
   exit 1
 fi
 
-echo "$(ts) — starting /obsidian-daily for $TODAY (claude: $CLAUDE_BIN)" >> "$LOG"
+echo "$(ts) - starting /obsidian-daily for $TODAY (claude: $CLAUDE_BIN)" >> "$LOG"
 
-cd "$VAULT" || { echo "$(ts) — ERROR: cannot cd to $VAULT" >> "$LOG"; exit 1; }
+cd "$VAULT" || { echo "$(ts) - ERROR: cannot cd to $VAULT" >> "$LOG"; exit 1; }
 
 # --- carry-forward: pull yesterday's above-Vault-Agent region into today ------
 # Moves the region above the first "## Vault Agent" heading from the most-recent
@@ -97,7 +102,13 @@ cd "$VAULT" || { echo "$(ts) — ERROR: cannot cd to $VAULT" >> "$LOG"; exit 1; 
 # below and before the claude -p call, so the morning report sees the carried
 # tasks. Deterministic and idempotent: blanking the source means a launchd retry
 # on the same day finds nothing to carry. Never touches the "## Vault Agent"
-# section, the sibling agent sections, or "# Archived" — only P's own region.
+# section, the sibling agent sections, or "# Archived" - only P's own region.
+# Work-session blocks (2026-08-02, P's top-of-note placement decision): a
+# "### Work session" heading through its "<!-- /work-session -->" terminator is
+# the on-demand /obsidian-work-session command's own of-the-moment section. It
+# NEVER carries forward (stateless-by-design); it is routed into the preserved
+# tail instead, so it stays readable in its own day's note above "## Vault
+# Agent" rather than being destroyed or ratcheting into tomorrow.
 carry_forward_prior_tasks() {
   local today="$1" tasks_dir="$2" today_file="$3" log="$4"
   local prior_date prior_file
@@ -105,9 +116,9 @@ carry_forward_prior_tasks() {
     | grep -oE 'tasks_[0-9]{4}-[0-9]{2}-[0-9]{2}\.md' \
     | sed -E 's/tasks_(.*)\.md/\1/' \
     | awk -v t="$today" '$0 < t' | sort | tail -1)"
-  [ -z "$prior_date" ] && { echo "$(ts) — carry-forward: no prior note, skip" >> "$log"; return 0; }
+  [ -z "$prior_date" ] && { echo "$(ts) - carry-forward: no prior note, skip" >> "$log"; return 0; }
   prior_file="$tasks_dir/tasks_${prior_date}.md"
-  [ -f "$today_file" ] || { echo "$(ts) — carry-forward: today file missing, skip" >> "$log"; return 0; }
+  [ -f "$today_file" ] || { echo "$(ts) - carry-forward: today file missing, skip" >> "$log"; return 0; }
   # Temp dir inside the tasks folder so the final mv is same-filesystem (atomic).
   local tmp; tmp="$(mktemp -d "${tasks_dir}/.carry.XXXXXX")"
   # shellcheck disable=SC2064
@@ -116,16 +127,18 @@ carry_forward_prior_tasks() {
   # tail (first boundary heading onward). Boundary = first "## Vault Agent"; a
   # "# Archived" also stops carry as a fallback for notes with no agent section.
   awk -v carryf="$tmp/carry" -v tailf="$tmp/tail" -v fmf="$tmp/fm" '
-    BEGIN{ inbody=0; intail=0; fmc=0 }
+    BEGIN{ inbody=0; intail=0; fmc=0; ws=0 }
     { if (NR==1 && $0!="---") inbody=1
       if (!inbody){ print >> fmf; if($0=="---"){fmc++; if(fmc==2)inbody=1} next }
-      if (!intail && ($0 ~ /^## Vault Agent/ || $0 ~ /^# Archived/)) intail=1
+      if (!intail && ($0 ~ /^## Vault Agent/ || $0 ~ /^# Archived/)) { intail=1; ws=0 }
       if (intail){ print >> tailf; next }
+      if (!ws && $0 ~ /^### Work session/) ws=1
+      if (ws){ print >> tailf; if ($0 ~ /<!-- \/work-session -->/) ws=0; next }
       if ($0 ~ /^[[:space:]]*- \[[xX-]\][[:space:]]/) next
       if ($0 ~ /^[[:space:]]*- \[[xX-]\]$/) next
       print >> carryf }' "$prior_file"
   [ -f "$tmp/fm" ] || : > "$tmp/fm"; [ -f "$tmp/carry" ] || : > "$tmp/carry"; [ -f "$tmp/tail" ] || : > "$tmp/tail"
-  grep -q '[^[:space:]]' "$tmp/carry" || { echo "$(ts) — carry-forward: empty region, skip" >> "$log"; return 0; }
+  grep -q '[^[:space:]]' "$tmp/carry" || { echo "$(ts) - carry-forward: empty region, skip" >> "$log"; return 0; }
   # Today = today frontmatter + carried region + today's existing body (prepend).
   awk -v carryf="$tmp/carry" '
     BEGIN{ fmc=0; inbody=0; pc=0 }
@@ -137,37 +150,125 @@ carry_forward_prior_tasks() {
   # Source = its frontmatter + 3-line writing gap + tail (agent + archived kept).
   { cat "$tmp/fm"; printf '\n\n\n'; cat "$tmp/tail"; } > "$tmp/prior"
   mv "$tmp/today" "$today_file"; mv "$tmp/prior" "$prior_file"
-  echo "$(ts) — carry-forward: moved $prior_date region into $today, blanked source" >> "$log"
+  echo "$(ts) - carry-forward: moved $prior_date region into $today, blanked source" >> "$log"
+}
+
+# --- triage first-seen state (project_task_triage phase 1, 2026-08-01) --------
+# Records the date each open line in P's region was first seen, so the claude
+# triage step (obsidian-daily.md step 3c) can age errands with 14-day staleness
+# flags. Runs AFTER carry-forward, so resolved [x]/[-] lines never enter the
+# state. Format: YYYY-MM-DD<TAB>normalized line text; append-only, deduped on
+# the exact line text (an edited line is a new identity and restarts its age;
+# accepted). Pure bash/BSD, no network, bash-3.2 safe (no arrays needed).
+update_triage_first_seen() {
+  local today="$1" today_file="$2" state="$3" log="$4"
+  [ -f "$today_file" ] || return 0
+  local tmp tab added=0 line
+  tmp="$(mktemp)"; tab="$(printf '\t')"
+  awk 'NR==1 && $0=="---" {fm=1; next}
+       fm==1 {if ($0=="---") fm=0; next}
+       /^## Vault Agent/ || /^# Archived/ {exit}
+       /^### Work session/ {ws=1}
+       ws==1 {if ($0 ~ /<!-- \/work-session -->/) ws=0; next}
+       {print}' "$today_file" \
+    | sed -E 's/^[[:space:]]*- \[[ xX-]\][[:space:]]*//; s/^[[:space:]]*-[[:space:]]+//; s/[[:space:]]+/ /g; s/^ //; s/ $//' \
+    | grep -v '^$' | sort -u > "$tmp"
+  touch "$state"
+  while IFS= read -r line; do
+    grep -qF "${tab}${line}" "$state" || { printf '%s\t%s\n' "$today" "$line" >> "$state"; added=$((added + 1)); }
+  done < "$tmp"
+  rm -f "$tmp"
+  echo "$(ts) - triage first-seen: recorded $added new line(s)" >> "$log"
+}
+
+# --- open_tasks frontmatter stamp (P decision 2026-08-07) ---------------------
+# Counts every unchecked "- [ ]" checkbox in the vault and writes it into
+# today's tasks note frontmatter as `open_tasks:`. Deliberately a MORNING
+# SNAPSHOT, not a live gauge: the value is written once, at note creation, and
+# is never refreshed later in the day (P: "static, morning snapshot only").
+#
+# Counting rules, all P-chosen after an empirical scan on 2026-08-07 (1531):
+#   - open = "- [ ]" only. "- [/]" in progress and "- [-]" cancelled do not count.
+#   - every unchecked box counts, with or without a Tasks-plugin 🆔.
+#   - excluded trees: trash/ and admin/pn.md (opaque by hard rule), _archive/
+#     and _logs/ (ranked historical by the search-tier rule), daily_notes/
+#     (the carry-forward region duplicates lines that also live at source, so
+#     counting it would inflate and would make the note count itself),
+#     plus .obsidian/ and .git/.
+# The /dev/null argument to grep is load-bearing: BSD xargs still runs the
+# command once when the input is empty, and grep with no file argument would
+# then block reading stdin. Written for macOS bash 3.2 and BSD find/xargs/grep.
+count_open_tasks() {
+  local vault="$1"
+  find "$vault" -type d \( -name trash -o -name .obsidian -o -name .git \
+      -o -name _archive -o -name _logs -o -name daily_notes \) -prune \
+    -o -type f -name '*.md' ! -name 'pn.md' -print0 2>/dev/null \
+    | xargs -0 grep -hE '^[[:space:]]*- \[ \][[:space:]]' /dev/null 2>/dev/null \
+    | wc -l | tr -d ' '
+}
+
+# Insert `open_tasks: <count>` into a tasks note's frontmatter, directly after
+# journal-date. Idempotent and non-destructive: if the field is already there
+# (a same-day retry, or P edited it) the value is left alone, which is what
+# "static snapshot" means. Used for notes that already existed when the daily
+# run started, e.g. one created by alert_tasks_note() during an earlier failure.
+ensure_open_tasks_field() {
+  local file="$1" count="$2" log="$3"
+  [ -f "$file" ] || return 0
+  [ "$(head -1 "$file")" = "---" ] || {
+    echo "$(ts) - open_tasks: $(basename "$file") has no frontmatter, skipped" >> "$log"; return 0; }
+  if awk 'NR==1{next} /^---[[:space:]]*$/{exit} {print}' "$file" | grep -q '^open_tasks:'; then
+    echo "$(ts) - open_tasks: already present in $(basename "$file"), left as is" >> "$log"
+    return 0
+  fi
+  local tmp; tmp="$(mktemp "${file%.md}.opentasksXXXXXX")"
+  awk -v c="$count" '
+    BEGIN{ fm=0; done=0 }
+    NR==1 && $0=="---" { print; fm=1; next }
+    fm==1 && done==0 && $0 ~ /^journal-date:/ { print; print "open_tasks: " c; done=1; next }
+    fm==1 && done==0 && $0 ~ /^---[[:space:]]*$/ { print "open_tasks: " c; print; done=1; fm=0; next }
+    fm==1 && $0 ~ /^---[[:space:]]*$/ { fm=0 }
+    { print }' "$file" > "$tmp" && mv "$tmp" "$file"
+  echo "$(ts) - open_tasks: stamped $count into $(basename "$file")" >> "$log"
 }
 
 # Pre-flight: guarantee today's tasks file exists on this Mac's local disk
 # BEFORE invoking Claude. Why: the Journals plugin's `tasks.autoCreate` is now
-# intentionally disabled (to prevent phone-Mac sync races — phone Journals would
+# intentionally disabled (to prevent phone-Mac sync races - phone Journals would
 # otherwise create an empty competing version while Mac Obsidian is closed).
 # Mac is now solely responsible for tasks-file creation; pre-flight here means
 # the file exists even if the Claude call later fails (API overload, network,
 # whatever) and the user always has somewhere to write. See SETUP.md.
 TODAYS_TASKS="$VAULT/daily_notes/tasks/tasks_${TODAY}.md"
+OPEN_TASKS="$(count_open_tasks "$VAULT")"
 if [ ! -f "$TODAYS_TASKS" ]; then
   mkdir -p "$(dirname "$TODAYS_TASKS")"
   cat > "$TODAYS_TASKS" <<EOF
 ---
 journal: tasks
 journal-date: ${TODAY}
+open_tasks: ${OPEN_TASKS}
 ---
 
 
 
 EOF
-  echo "$(ts) — pre-flight: created minimal $TODAYS_TASKS" >> "$LOG"
+  echo "$(ts) - pre-flight: created minimal $TODAYS_TASKS" >> "$LOG"
+  echo "$(ts) - open_tasks: stamped ${OPEN_TASKS} at creation" >> "$LOG"
+else
+  ensure_open_tasks_field "$TODAYS_TASKS" "$OPEN_TASKS" "$LOG"
 fi
 
 # Carry yesterday's above-Vault-Agent region forward into today (see function
 # definition above). Runs whether or not the pre-flight just created the file.
 carry_forward_prior_tasks "$TODAY" "$VAULT/daily_notes/tasks" "$TODAYS_TASKS" "$LOG"
 
+# Record first-seen dates for the post-carry open lines in P's region: the age
+# source for the claude triage step's errand staleness flags (project_task_triage).
+update_triage_first_seen "$TODAY" "$TODAYS_TASKS" "$STATE_DIR/triage_first_seen" "$LOG"
+
 # Headless run. NOTE: custom slash commands (/obsidian-daily) do NOT expand in
-# `claude -p` non-interactive mode — they only work in an interactive session. So
+# `claude -p` non-interactive mode - they only work in an interactive session. So
 # instead of invoking the slash command, we point Claude at the command file and
 # tell it to execute those instructions. The command file is symlinked from the
 # repo, so this always runs the current logic (single source of truth).
@@ -197,14 +298,14 @@ wait_for_network() {
     # Exit 6 (DNS), 7 (connect refused), 28 (timeout), 35 (TLS) => not ready.
     case "$rc" in
       6|7|28|35)
-        echo "$(ts) — network not ready (curl exit $rc); waiting 10s ($i/$max_tries)" >> "$log"
+        echo "$(ts) - network not ready (curl exit $rc); waiting 10s ($i/$max_tries)" >> "$log"
         sleep 10 ;;
       *)
-        echo "$(ts) — network reachable (curl exit $rc after $i check(s))" >> "$log"
+        echo "$(ts) - network reachable (curl exit $rc after $i check(s))" >> "$log"
         return 0 ;;
     esac
   done
-  echo "$(ts) — network still not ready after $max_tries checks; proceeding anyway" >> "$log"
+  echo "$(ts) - network still not ready after $max_tries checks; proceeding anyway" >> "$log"
   return 1
 }
 wait_for_network "$LOG"
@@ -217,13 +318,13 @@ RETRY_DELAYS=(300 600 1800 3600)
 
 rc=1
 for attempt in $(seq 1 "$MAX_ATTEMPTS"); do
-  echo "$(ts) — attempt $attempt/$MAX_ATTEMPTS" >> "$LOG"
+  echo "$(ts) - attempt $attempt/$MAX_ATTEMPTS" >> "$LOG"
   run_claude_p "$PROMPT" "$LOG"
   rc=$?
   if [ "$rc" -eq 0 ]; then
     clear_reauth_sentinel
     echo "$TODAY" > "$STAMP"
-    echo "$(ts) — completed successfully on attempt $attempt; stamped $TODAY" >> "$LOG"
+    echo "$(ts) - completed successfully on attempt $attempt; stamped $TODAY" >> "$LOG"
     exit 0
   fi
   if [ "$rc" -eq 2 ]; then
@@ -241,7 +342,7 @@ for attempt in $(seq 1 "$MAX_ATTEMPTS"); do
 Claude Code authentication expired (HTTP 401 from Anthropic API). Daily report not generated. Re-authenticate by running `claude` then `/login` in Terminal. Once auth is restored, the next launchd trigger (next wake event or tomorrow's 06:00) will produce the report normally.
 
 BANNER
-      echo "$(ts) — wrote auth-skipped banner to $TODAYS_TASKS" >> "$LOG"
+      echo "$(ts) - wrote auth-skipped banner to $TODAYS_TASKS" >> "$LOG"
     fi
     exit 2
   fi
@@ -250,16 +351,16 @@ BANNER
     # today's tasks note. Retrying is pointless until credits/model are fixed, so
     # stop the loop (mirrors the 401 path) and exit non-zero with no stamp; the
     # next launchd trigger retries once credits are restored.
-    echo "$(ts) — out of usage credits (model ${CLAUDE_MODEL:-opus}); alert written to today's note, not retrying" >> "$LOG"
+    echo "$(ts) - out of usage credits (model ${CLAUDE_MODEL:-opus}); alert written to today's note, not retrying" >> "$LOG"
     exit 3
   fi
   if [ "$attempt" -lt "$MAX_ATTEMPTS" ]; then
     delay="${RETRY_DELAYS[$((attempt - 1))]}"
-    echo "$(ts) — attempt $attempt failed (exit $rc); sleeping ${delay}s before retry $((attempt + 1))" >> "$LOG"
+    echo "$(ts) - attempt $attempt failed (exit $rc); sleeping ${delay}s before retry $((attempt + 1))" >> "$LOG"
     sleep "$delay"
   fi
 done
-echo "$(ts) — all $MAX_ATTEMPTS attempts failed (final exit $rc); will retry on next launchd trigger" >> "$LOG"
+echo "$(ts) - all $MAX_ATTEMPTS attempts failed (final exit $rc); will retry on next launchd trigger" >> "$LOG"
 
 # Connectivity-failure banner (2026-07-06 hardening): unlike a 401, a pure
 # connection/DNS failure used to leave NO explanation in today's note (the
@@ -274,6 +375,6 @@ if [ -f "$TODAYS_TASKS" ] && ! grep -qE '^## Vault Agent' "$TODAYS_TASKS"; then
 Daily report not generated: could not reach the Anthropic API after ${MAX_ATTEMPTS} attempts. This was a connection or DNS failure, not an auth problem, most often the Mac waking for the scheduled run before Wi-Fi/DNS reconnected. The next launchd trigger (next wake event or tomorrow's 06:00) retries automatically. No action needed unless it recurs for several days.
 
 BANNER
-  echo "$(ts) — wrote no-network skipped banner to $TODAYS_TASKS" >> "$LOG"
+  echo "$(ts) - wrote no-network skipped banner to $TODAYS_TASKS" >> "$LOG"
 fi
 exit "$rc"

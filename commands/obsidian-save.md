@@ -6,7 +6,7 @@ triggers_en: ["save this", "save the conversation", "save to vault", "obsidian s
 
 Use the mbs_automation skill. Execute `/obsidian-save`:
 
-1. Read `admin/mbs_system/brain/_CLAUDE.md`, `SOUL.md`, `CRITICAL_FACTS.md`.
+1. Read `admin/mbs_system/brain/CLAUDE.md`, `SOUL.md`, `CRITICAL_FACTS.md`.
 2. Scan the conversation and identify vault-worthy items: decisions, tasks, people mentioned, projects started, ideas, learnings.
 3. Group by type and route to the right **pillar** (admin/create/culture/health/money/skills/social/sports — see `vault-schema.md`). Spawn parallel subagents, one per group:
    - **People agent**: search `social/` for each person; create or update their note; log the interaction.

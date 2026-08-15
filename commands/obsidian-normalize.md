@@ -8,7 +8,7 @@ Use the mbs_automation skill. Execute `/obsidian-normalize $ARGUMENTS`:
 
 The argument is a pillar name (`admin`, `create`, `culture`, `health`, `money`, `skills`, `social`, `sports`) or `all`. This command finds `project_*` notes missing amnesia-test frontmatter and proposes additions one note at a time — it is the engine for schema true-up without touching human content.
 
-1. Read `admin/mbs_system/brain/_CLAUDE.md`, `references/vault-schema.md`, and `references/ai-first-rules.md`.
+1. Read `admin/mbs_system/brain/CLAUDE.md`, `references/vault-schema.md`, and `references/ai-first-rules.md`.
 2. **Scope.** Accept the pillar argument (or `all`). Enumerate every `project_*` file in the target pillar(s), excluding `trash/` and `_archive/`. Report the total count before proceeding.
 3. **Audit each note's frontmatter.** For each project note, read its frontmatter and flag what is missing against the project schema: `type`, `date`, `tags`, `status`, `next_action`, `people`. Notes that already have all required fields are skipped silently.
 4. **Infer safe fields from content.** `type: project` is certain (filename convention). `tags` can be inferred from the pillar path. `status` can be inferred from keywords, recency of edits, and content tone (e.g. "completed," "on hold," recent activity → `active`). `date` defaults to the file's creation date if not present. `people` can be inferred from `[[wikilinks]]` in the body.

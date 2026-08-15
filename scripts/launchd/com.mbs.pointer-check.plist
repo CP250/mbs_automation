@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.mbs.pointer-check</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/cpreston/dev/mbs_automation/scripts/pointer_check.sh</string>
+    </array>
+
+    <!-- 23:45 nightly - 15 min after com.mbs.vault-index (23:30), so this
+         runs against a freshly regenerated vault_file_tree.md. -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>23</integer>
+        <key>Minute</key>
+        <integer>45</integer>
+    </dict>
+
+    <!-- Also fire at login/boot; the per-day stamp prevents double-runs. -->
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>/Users/cpreston/.mbs_automation/pointer_check.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/cpreston/.mbs_automation/pointer_check.err.log</string>
+</dict>
+</plist>

@@ -8,7 +8,7 @@ Use the mbs_automation skill. Execute `/obsidian-emerge $ARGUMENTS`:
 
 The optional argument is a timeframe (e.g. "2 weeks", "this month"); default last 30 days. The goal is insight P cannot easily see himself — surface what the notes imply but never name.
 
-1. Read `_CLAUDE.md`, `SOUL.md`.
+1. Read `CLAUDE.md`, `SOUL.md`.
 2. Determine the date range.
 3. Read the period's vault content (shell-grep + reads; spawn parallel read subagents if the range is large). Exclude `trash/`; treat `_archive/` as historical context only:
    - Both daily journals (`daily_notes/tasks/`, `daily_notes/health/`) — recurring topics, complaints, observations, energy.

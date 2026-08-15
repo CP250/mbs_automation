@@ -118,7 +118,7 @@ Use the mbs_automation skill. Execute `/<name> $ARGUMENTS`:
 
 <one-sentence framing tying P's intent (Phase 1) to the action>
 
-1. Read `admin/mbs_system/brain/_CLAUDE.md` (and `references/vault-schema.md` if it routes by pillar).
+1. Read `admin/mbs_system/brain/CLAUDE.md` (and `references/vault-schema.md` if it routes by pillar).
 2. <step from Phase 5, step 1>
 3. <step from Phase 5, step 2>
 4. <step from Phase 5, step 3>

@@ -8,7 +8,7 @@ Use the mbs_automation skill. Execute `/obsidian-visualize $ARGUMENTS`:
 
 The optional argument is a scope: a pillar name (`money`, `social`, …), a project or person name, a topic, or `full` for the whole vault (default `full`). Full-vault on a ~4,500-note vault is large — if the scope is `full`, confirm with P or suggest narrowing to a pillar first.
 
-1. Read `admin/mbs_system/brain/_CLAUDE.md`, and `admin/mbs_system/brain/vault_file_tree.md` for the file listing.
+1. Read `admin/mbs_system/brain/CLAUDE.md`, and `admin/mbs_system/brain/vault_file_tree.md` for the file listing.
 2. Build the graph (per the search-completeness rule in `references/vault-schema.md` — enumerate the in-scope notes exhaustively, do not sample):
    - **Scoped to a pillar/project/person/topic:** start from the matching note(s), follow outgoing `[[wikilinks]]` two hops, and include inbound links found by grepping for the basename.
    - **Full:** map every note and the links between them. **Exclude `trash/`.** Include `_archive/` notes but mark them historical (see colour below).
