@@ -282,6 +282,27 @@ if [ -f "$HOME/Library/LaunchAgents/com.mbs.pointer-check.plist" ]; then
   if [ "$LAST_POINTER" != "$TODAY" ] && [ "$LAST_POINTER" != "$YESTERDAY" ]; then
     add_finding "pointer-check has not completed since ${LAST_POINTER} (expected ${YESTERDAY} or ${TODAY}, given its 23:45 schedule) - check com.mbs.pointer-check"
   fi
+
+  # --- check 6b: the last run actually scanned a vault (2026-08-15) ---------
+  # P chose the log as the artifact. pointer_check.sh writes one line per run:
+  #   vault_health.py: 9571 notes scanned, 505 broken wikilink(s) after ...
+  # Read from the LAST "starting pointer check run" marker forward, so this
+  # judges the most recent run rather than finding an old healthy number left
+  # by a run three days ago. Two distinct faults are separated deliberately:
+  # a run that never reached the scan line died partway, while a run that
+  # reached it and reported 0 notes found a vault that is empty or has moved.
+  PC_LOG="$STATE_DIR/pointer_check.log"
+  if [ -f "$PC_LOG" ]; then
+    PC_START_LINE="$(grep -n 'starting pointer check run' "$PC_LOG" 2>/dev/null | tail -1 | cut -d: -f1)"
+    if [ -n "$PC_START_LINE" ]; then
+      PC_SCANNED="$(tail -n "+${PC_START_LINE}" "$PC_LOG" 2>/dev/null | sed -n 's/.*vault_health.py: \([0-9][0-9]*\) notes scanned.*/\1/p' | tail -1)"
+      if [ -z "$PC_SCANNED" ]; then
+        add_finding "pointer-check's most recent run never reached its vault_health.py scan line - it started and died partway; check ~/.mbs_automation/pointer_check.log"
+      elif [ "$PC_SCANNED" -eq 0 ]; then
+        add_finding "pointer-check scanned 0 notes on its most recent run (healthy runs scan ~9,500) - the vault path is wrong or unreadable from the job; check ~/.mbs_automation/pointer_check.log"
+      fi
+    fi
+  fi
 fi
 
 # --- check 7: bulk-sync ran today, tolerant of dry-run mode (once activated)
@@ -304,6 +325,35 @@ if [ -f "$HOME/Library/LaunchAgents/com.mbs.bulk-sync.plist" ]; then
   LAST_BULK_SYNC="$(cat "$BULK_SYNC_STAMP" 2>/dev/null || echo none)"
   if [ "$LAST_BULK_SYNC" != "$TODAY" ]; then
     add_finding "bulk-sync has not completed since ${LAST_BULK_SYNC} (its stamp is stale) - check com.mbs.bulk-sync"
+  else
+    # --- check 7b: the stamp means LIVE, and no pillar was skipped ----------
+    # 2026-08-15, and this deliberately REVERSES the "tolerant of dry-run mode"
+    # reasoning in the comment above. That tolerance was right while bulk-sync
+    # was hardwired to LIVE=0 during Phase 1 build-out: a healthy dry-run was
+    # then the expected healthy state. bulk-sync has run LIVE since 2026-08-08,
+    # so from here a DRY-RUN that stamps success is a silent regression in the
+    # job that holds the only offsite copy of P's assets, and the stamp alone
+    # cannot see it. bulk_sync.sh writes the mode into its own success line.
+    #
+    # Second assertion: copy_pillar() returns 0 and logs "not present locally,
+    # skipped" for a missing source dir, which does NOT block the stamp. A
+    # pillar that quietly stops existing therefore reads as a clean backup of
+    # everything while that pillar has no backup at all.
+    BS_LOG="$STATE_DIR/bulk_sync.log"
+    if [ -f "$BS_LOG" ]; then
+      BS_TODAY="$(grep "^${TODAY} " "$BS_LOG" 2>/dev/null)"
+      if ! printf '%s\n' "$BS_TODAY" | grep -q 'OK (mode=LIVE): all pillars copied'; then
+        if printf '%s\n' "$BS_TODAY" | grep -q 'mode=DRY-RUN'; then
+          add_finding "bulk-sync stamped success for ${TODAY} but ran in DRY-RUN mode - nothing reached S3; check the LIVE setting in bulk_sync.sh"
+        else
+          add_finding "bulk-sync stamped success for ${TODAY} with no 'OK (mode=LIVE): all pillars copied' line in today's log - check ~/.mbs_automation/bulk_sync.log"
+        fi
+      fi
+      BS_SKIPPED="$(printf '%s\n' "$BS_TODAY" | sed -n 's/.* \([a-z_][a-z_]*\): not present locally, skipped.*/\1/p' | tr '\n' ' ')"
+      if [ -n "$BS_SKIPPED" ]; then
+        add_finding "bulk-sync reported success while skipping pillar(s) missing from the local asset mirror: ${BS_SKIPPED}- those have no offsite copy"
+      fi
+    fi
   fi
 fi
 
@@ -322,6 +372,26 @@ else
   MUSIC_RECENT="$(find "$MUSIC_DIR" -maxdepth 1 -name 'dispatch_*.md' -mtime -8 2>/dev/null | head -1)"
   if [ -z "$MUSIC_RECENT" ]; then
     add_finding "music-discovery: no dispatch file modified in the last 8 days ($MUSIC_DIR) - check com.mbs.music-discovery"
+  else
+    # --- check 8b: the fresh dispatch has releases in it (2026-08-15) -------
+    # Every dispatch opens with a summary line:
+    #   _144 release(s) across 3 store(s), parsed from 6 email(s). ..._
+    # Threshold is zero, and that is grounded rather than guessed: all 21
+    # dispatches from 2026-03-16 to 2026-08-10 carry the line, and the
+    # smallest week on record is 80 releases across 2 stores from 5 emails.
+    # A zero has never happened, so one means the Gmail label, the parser or
+    # the store emails broke, not a quiet week. A dispatch written with zero
+    # releases is otherwise indistinguishable from a healthy one by mtime,
+    # which is the same blind spot check 5b was added to close for oura.
+    MUSIC_NEWEST="$(ls -t "$MUSIC_DIR"/dispatch_*.md 2>/dev/null | head -1)"
+    if [ -n "$MUSIC_NEWEST" ]; then
+      MUSIC_RELEASES="$(sed -n 's/^_\([0-9][0-9]*\) release(s) across.*/\1/p' "$MUSIC_NEWEST" 2>/dev/null | head -1)"
+      if [ -z "$MUSIC_RELEASES" ]; then
+        add_finding "music-discovery: $(basename "$MUSIC_NEWEST") has no '_N release(s) across ...' summary line - the dispatch is fresh but malformed; check com.mbs.music-discovery"
+      elif [ "$MUSIC_RELEASES" -eq 0 ]; then
+        add_finding "music-discovery: $(basename "$MUSIC_NEWEST") reports 0 releases (smallest week on record is 80) - the Gmail label or the parser is broken, not a quiet week"
+      fi
+    fi
   fi
 fi
 

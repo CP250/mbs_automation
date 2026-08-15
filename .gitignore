@@ -22,3 +22,10 @@ __pycache__/
 
 # Build output (regenerate with `bash scripts/build.sh`)
 dist/
+
+# Timestamped script backups. Git already versions these files; a .bak beside
+# one is local scratch, not repo history. Added 2026-08-15 after
+# scripts/mbs_heartbeat.sh.bak-20260808T000640 was committed by a "commit
+# everything" sweep and then removed with `git rm --cached`.
+scripts/*.bak-*
+*.bak-*
