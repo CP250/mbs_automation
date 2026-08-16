@@ -28,14 +28,15 @@
 #      fire plus its full five-attempt retry ladder (~1.75 hr of awake time).
 #   2. RunAtLoad at login - so a Mac powered off all morning still gets checked.
 #
-# Roster as of 2026-08-15: seventeen checks (5b widened to three oura slugs
+# Roster as of 2026-08-15: eighteen checks (5b widened to three oura slugs
 # and 14b added; both are sub-checks, not new roster entries). 14 (oura-watch ran) and 15
 # (oura-trends artifact) were added alongside the Oura analysis layer; see
 # SETUP.md 'Heartbeat update (2026-08-07)'. 16 (bulk-sync refused to classify
 # an asset dir) was added when bulk_sync.sh was rewritten onto the encrypted
 # S3 estate; 17 (the vault itself has a working offsite backup) was added when
-# that gap was found and closed. Checks 6, 7, 10, 11, 13, 14, 15, 16 and 17
-# self-arm on plist presence.
+# that gap was found and closed; 18 (the mbs_aws IaC repo has one too) was added
+# 2026-08-15 when the same gap was found one layer down. Checks 6, 7, 10, 11,
+# 13, 14, 15, 16, 17 and 18 self-arm on plist presence.
 #
 # Idempotence: per-day stamp, written ONLY on a healthy check. A failing check
 # deliberately leaves no stamp, so every later trigger re-checks and re-nudges
@@ -682,6 +683,80 @@ if [ -f "$HOME/Library/LaunchAgents/com.mbs.vault-backup.plist" ]; then
       add_finding "vault-backup last succeeded ${VB_AGE}h ago (threshold 30h) - the vault's offsite copy is going stale; check com.mbs.vault-backup"
     fi
   fi
+fi
+
+# --- check 18: the mbs_aws repo is being backed up offsite (2026-08-15) ------
+# Sibling of check 17, one layer down. The vault is P's second brain; ~/dev/mbs_aws
+# is the infrastructure-as-code for the five-account AWS estate the vault's
+# offsite copy LANDS IN. HANDOFF.md section 10b, 2026-08-14: that repo had no
+# offsite copy at all - no git remote (18 commits on one disk), touched by
+# neither bulk_sync.sh nor vault_backup.sh, and Time Machine still off. Closed
+# 2026-08-15 by com.mbs.aws-repo-backup, which copies it encrypted to
+# sensitive:_infra/mbs_aws/ daily at 03:45.
+#
+# Age-based on the stamp's MTIME rather than stamp==TODAY, copied from check 17
+# for the same two reasons: the stamp holds a timestamp rather than a date, and
+# 30 hours tolerates a Mac closed overnight plus one missed window without
+# crying wolf. It is a daily job, not four-times-daily like vault-backup, so 30
+# hours is a tighter margin here (one missed fire plus six hours) - deliberately,
+# because a single-copy IaC repo going quiet is worth hearing about early.
+#
+# Artifact-shaped and cause-free, per ADR 2026-07-26: this asks only whether a
+# successful run happened recently. It does NOT ask S3 whether the objects are
+# there, because that would be a network call the watchdog is forbidden to make,
+# and it must not share fate with what it checks. The script's own post-copy
+# `rclone size` sanity check is what verifies the destination; the stamp is
+# written only when that check passes and only in LIVE mode, so a stale stamp
+# here means either the job stopped running or it ran and refused to call itself
+# healthy. Both are worth the same nudge.
+#
+# Self-arming on plist presence, same pattern as checks 6, 7, 10, 11, 13, 14,
+# 15, 16 and 17.
+if [ -f "$HOME/Library/LaunchAgents/com.mbs.aws-repo-backup.plist" ]; then
+  ARB_STAMP="$STATE_DIR/last_aws_repo_backup_run"
+  if [ ! -f "$ARB_STAMP" ]; then
+    add_finding "aws-repo-backup has never completed - ~/dev/mbs_aws (Terraform state for five live AWS accounts, and it has no git remote) has NO offsite copy; check ~/.mbs_automation/aws_repo_backup.log"
+  else
+    ARB_MTIME="$(stat -f %m "$ARB_STAMP" 2>/dev/null || echo 0)"
+    ARB_AGE=$(( ( $(date +%s) - ARB_MTIME ) / 3600 ))
+    if [ "$ARB_MTIME" -eq 0 ]; then
+      add_finding "aws-repo-backup stamp at ${ARB_STAMP} is unreadable"
+    elif [ "$ARB_AGE" -gt 30 ]; then
+      add_finding "aws-repo-backup last succeeded ${ARB_AGE}h ago (threshold 30h) - the mbs_aws repo's offsite copy is going stale; check com.mbs.aws-repo-backup and ~/.mbs_automation/aws_repo_backup.log"
+    fi
+  fi
+fi
+
+# --- check 19: mychart-sync actually ran (stamp-based) + no stuck reauth -----
+# com.mbs.mychart-sync (added 2026-08-16) pulls new MSK / Weill Cornell
+# encounters into the visits/ ledger daily at 09:00. It is SILENT BY DESIGN on
+# a no-new-encounters day (spec section 7), so like check 14 the only
+# answerable question is whether it RAN: mychart_sync.sh writes its per-day
+# stamp on every success including silent ones. TODAY-or-YESTERDAY tolerance
+# for the same 09:00-vs-11:00 wake pattern as check 14.
+#
+# Second finding: a lingering per-institution reauth sentinel. The job itself
+# surfaces a deduped tasks-note line when a grant dies, but a sentinel that
+# sits for days means P missed it and one hospital's feed is quietly paused;
+# that is exactly the silent-failure family this watchdog exists for. The
+# sentinel files are written by src/mychart_sync.py on refresh failures that
+# look like auth (revoked/expired grant), and cleared on the next successful
+# pull. Fix: cd ~/dev/mbs-mychart-sync && .venv/bin/python \
+# scripts/mychart_consent.py --institution <msk|weillcornell> --tls --verify
+#
+# Self-arming on plist presence, same pattern as checks 6, 7, 10, 11, 13-18.
+if [ -f "$HOME/Library/LaunchAgents/com.mbs.mychart-sync.plist" ]; then
+  MCS_STAMP="$STATE_DIR/last_mychart_sync_run"
+  LAST_MCS="$(cat "$MCS_STAMP" 2>/dev/null || echo none)"
+  MCS_YESTERDAY="$(date -v-1d +%Y-%m-%d)"
+  if [ "$LAST_MCS" != "$TODAY" ] && [ "$LAST_MCS" != "$MCS_YESTERDAY" ]; then
+    add_finding "mychart-sync has not completed since ${LAST_MCS} (expected ${MCS_YESTERDAY} or ${TODAY}, given its 09:00 schedule) - a silent day is normal, a missing stamp is not; check ~/.mbs_automation/mychart_sync.log and com.mbs.mychart-sync"
+  fi
+  for MCS_INST in msk weillcornell; do
+    if [ -f "$STATE_DIR/mychart_needs_reauth_${MCS_INST}" ]; then
+      add_finding "mychart-sync: the ${MCS_INST} grant needs re-authorization (sentinel present since $(cat "$STATE_DIR/mychart_needs_reauth_${MCS_INST}" 2>/dev/null | head -1)) - that hospital's encounter feed is paused; run: cd ~/dev/mbs-mychart-sync && .venv/bin/python scripts/mychart_consent.py --institution ${MCS_INST} --tls --verify"
+    fi
+  done
 fi
 
 # --- verdict ----------------------------------------------------------------
