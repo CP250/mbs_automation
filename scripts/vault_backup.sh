@@ -170,6 +170,13 @@ fi
 # and echo's "0" into the log. The assignment already yields "0" on its own.
 COPIED="$(grep -c ': Copied' "$RUNLOG" 2>/dev/null)"
 [ -n "$COPIED" ] || COPIED=0
-TZ=America/New_York date '+%Y-%m-%d %H:%M:%S' > "$STAMP"
-echo "$(ts) - OK (mode=$MODE): ${COPIED} file(s) uploaded; stamped. Manifest: $MANIFEST" >> "$LOG"
+# The stamp is what heartbeat check 17 trusts, so a DRY-RUN must never write
+# it: a rehearsal that stamps looks like a real backup for the next 30 hours.
+# Same guard as aws_repo_backup.sh, where this defect was caught 2026-08-15.
+if [ "$MODE" = "LIVE" ]; then
+  TZ=America/New_York date '+%Y-%m-%d %H:%M:%S' > "$STAMP"
+  echo "$(ts) - OK (mode=$MODE): ${COPIED} file(s) uploaded; stamped. Manifest: $MANIFEST" >> "$LOG"
+else
+  echo "$(ts) - OK (mode=$MODE): ${COPIED} file(s) would upload; NO stamp written in dry-run. Manifest: $MANIFEST" >> "$LOG"
+fi
 exit 0

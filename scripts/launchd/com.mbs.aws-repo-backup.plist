@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.mbs.aws-repo-backup</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/cpreston/dev/mbs_automation/scripts/aws_repo_backup.sh</string>
+    </array>
+
+    <!-- launchd starts jobs with a minimal PATH. The script exports its own,
+         but setting it here too means `security` and `rclone` resolve even if
+         the script is ever invoked before that export. -->
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/Users/cpreston/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    </dict>
+
+    <!-- 03:45 local, daily. The 03:00 slot belongs to com.mbs.bulk-sync and
+         03:15 to com.mbs.vault-backup, so this stays clear of both rather than
+         contending for bandwidth with a job that moves gigabytes. Once a day is
+         enough where the vault gets four: this repo changes only when P runs an
+         apply or a session edits a runbook, not continuously through the day.
+         The payload is about 2 MB, so a run is seconds once warm. There is
+         deliberately no per-day skip stamp in the script (the vault-backup
+         reasoning: incremental, idempotent, more often is strictly better). -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>3</integer>
+        <key>Minute</key>
+        <integer>45</integer>
+    </dict>
+
+    <!-- Also fire at login/boot, so a Mac that was off through the 03:45 window
+         still backs up promptly. The lock prevents overlap. -->
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>/Users/cpreston/.mbs_automation/aws_repo_backup.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/cpreston/.mbs_automation/aws_repo_backup.err.log</string>
+</dict>
+</plist>
