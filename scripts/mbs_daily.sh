@@ -109,6 +109,28 @@ cd "$VAULT" || { echo "$(ts) - ERROR: cannot cd to $VAULT" >> "$LOG"; exit 1; }
 # NEVER carries forward (stateless-by-design); it is routed into the preserved
 # tail instead, so it stays readable in its own day's note above "## Vault
 # Agent" rather than being destroyed or ratcheting into tomorrow.
+# Machine-written "## " sections (2026-08-19, same principle generalized): any
+# sibling job that appends its own section to the tasks note BEFORE the daily
+# report has written "## Vault Agent" that day (or on a day the report never
+# runs at all: 401, no network) lands its section inside P's region, and every
+# following morning sweeps it forward with his real open items. Observed:
+# "## Oslo - Weekly Stale-Drafts (2026-08-17)" and "## ⚠️ Automation alerts"
+# both rode 08-17 -> 08-18 -> 08-19, the Oslo one twice. Fix: the carry boundary
+# is now ANY level-2 heading, not just "## Vault Agent". Everything from the
+# first "## " onward is preserved in its own day's note, exactly like a
+# work-session block, and nothing machine-written ratchets into tomorrow.
+# This is a structural rule, not a registry of known job headings, so a job
+# added later inherits it. Justification, empirical (2026-08-19, scan of all 97
+# tasks notes): every "## " heading that has ever appeared in this journal is
+# machine-written (Vault Agent + its skipped/car-sweep variants, Oslo weekly and
+# monthly, Automation alerts, Web Watchers, Weekly review, The Record). P's own
+# region is plain lines, bullets and checkboxes, never a heading.
+# Known tradeoff, accepted: a line P types BELOW a banner on a broken morning
+# does not carry. It is preserved in that day's note, not lost, and the log line
+# below names every section left behind, which is where to look for it. Fixing
+# that properly needs each writer to emit a terminator the way
+# /obsidian-work-session emits "<!-- /work-session -->"; not done here because
+# one of the writers (com.mbs.oslo-weekly) lives in ~/dev/oslo, out of scope.
 carry_forward_prior_tasks() {
   local today="$1" tasks_dir="$2" today_file="$3" log="$4"
   local prior_date prior_file
@@ -124,14 +146,20 @@ carry_forward_prior_tasks() {
   # shellcheck disable=SC2064
   trap "rm -rf '$tmp'" RETURN
   # Split prior note: fm (frontmatter) / carry (region, resolved lines dropped) /
-  # tail (first boundary heading onward). Boundary = first "## Vault Agent"; a
-  # "# Archived" also stops carry as a fallback for notes with no agent section.
-  awk -v carryf="$tmp/carry" -v tailf="$tmp/tail" -v fmf="$tmp/fm" '
+  # tail (first boundary heading onward, plus any work-session block above it).
+  # Boundary = the first level-2 heading of any kind, which on a healthy day is
+  # "## Vault Agent"; a "# Archived" also stops carry as a fallback for notes
+  # with no agent section. machf collects the machine headings that sat ABOVE
+  # "## Vault Agent", i.e. the ones this fix stops sweeping forward, for the log.
+  awk -v carryf="$tmp/carry" -v tailf="$tmp/tail" -v fmf="$tmp/fm" -v machf="$tmp/machine" '
     BEGIN{ inbody=0; intail=0; fmc=0; ws=0 }
     { if (NR==1 && $0!="---") inbody=1
       if (!inbody){ print >> fmf; if($0=="---"){fmc++; if(fmc==2)inbody=1} next }
-      if (!intail && ($0 ~ /^## Vault Agent/ || $0 ~ /^# Archived/)) { intail=1; ws=0 }
-      if (intail){ print >> tailf; next }
+      if (!intail && ($0 ~ /^## / || $0 ~ /^# Archived/)) { intail=1; ws=0 }
+      if (intail){
+        if ($0 ~ /^## Vault Agent/) va=1
+        if (!va && $0 ~ /^## / && $0 !~ /^## Vault Agent/) print >> machf
+        print >> tailf; next }
       if (!ws && $0 ~ /^### Work session/) ws=1
       if (ws){ print >> tailf; if ($0 ~ /<!-- \/work-session -->/) ws=0; next }
       if ($0 ~ /^[[:space:]]*- \[[xX-]\][[:space:]]/) next
@@ -151,13 +179,22 @@ carry_forward_prior_tasks() {
   { cat "$tmp/fm"; printf '\n\n\n'; cat "$tmp/tail"; } > "$tmp/prior"
   mv "$tmp/today" "$today_file"; mv "$tmp/prior" "$prior_file"
   echo "$(ts) - carry-forward: moved $prior_date region into $today, blanked source" >> "$log"
+  # Name every machine-written section left behind, so an unexpected one (P
+  # starting a "## " heading of his own) is visible here rather than silent.
+  if [ -s "$tmp/machine" ]; then
+    echo "$(ts) - carry-forward: left $(wc -l < "$tmp/machine" | tr -d ' ') machine-written section(s) in $prior_date: $(tr '\n' '|' < "$tmp/machine")" >> "$log"
+  fi
 }
 
 # --- triage first-seen state (project_task_triage phase 1, 2026-08-01) --------
 # Records the date each open line in P's region was first seen, so the claude
 # triage step (obsidian-daily.md step 3c) can age errands with 14-day staleness
 # flags. Runs AFTER carry-forward, so resolved [x]/[-] lines never enter the
-# state. Format: YYYY-MM-DD<TAB>normalized line text; append-only, deduped on
+# state. It stops at the first level-2 heading, the same boundary the
+# carry-forward splitter uses, so an alert bullet a sibling job wrote into
+# today's note before the report landed is never aged as one of P's errands
+# (2026-08-19; previously it stopped only at "## Vault Agent").
+# Format: YYYY-MM-DD<TAB>normalized line text; append-only, deduped on
 # the exact line text (an edited line is a new identity and restarts its age;
 # accepted). Pure bash/BSD, no network, bash-3.2 safe (no arrays needed).
 update_triage_first_seen() {
@@ -167,7 +204,7 @@ update_triage_first_seen() {
   tmp="$(mktemp)"; tab="$(printf '\t')"
   awk 'NR==1 && $0=="---" {fm=1; next}
        fm==1 {if ($0=="---") fm=0; next}
-       /^## Vault Agent/ || /^# Archived/ {exit}
+       /^## / || /^# Archived/ {exit}
        /^### Work session/ {ws=1}
        ws==1 {if ($0 ~ /<!-- \/work-session -->/) ws=0; next}
        {print}' "$today_file" \
