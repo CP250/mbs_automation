@@ -28,15 +28,42 @@
 #      fire plus its full five-attempt retry ladder (~1.75 hr of awake time).
 #   2. RunAtLoad at login - so a Mac powered off all morning still gets checked.
 #
-# Roster as of 2026-08-15: eighteen checks (5b widened to three oura slugs
+# Roster as of 2026-08-20: twenty-six checks (5b widened to three oura slugs
 # and 14b added; both are sub-checks, not new roster entries). 14 (oura-watch ran) and 15
 # (oura-trends artifact) were added alongside the Oura analysis layer; see
 # SETUP.md 'Heartbeat update (2026-08-07)'. 16 (bulk-sync refused to classify
 # an asset dir) was added when bulk_sync.sh was rewritten onto the encrypted
 # S3 estate; 17 (the vault itself has a working offsite backup) was added when
 # that gap was found and closed; 18 (the mbs_aws IaC repo has one too) was added
-# 2026-08-15 when the same gap was found one layer down. Checks 6, 7, 10, 11,
-# 13, 14, 15, 16, 17 and 18 self-arm on plist presence.
+# 2026-08-15 when the same gap was found one layer down. 19 (mychart-sync ran,
+# no stuck per-institution reauth) came with that job. 20 (web-watchers is
+# actually watching) was added 2026-08-19 after com.mbs.web-watchers was found
+# to have died at parse time on 13 consecutive runs with nothing reporting it;
+# that job had shipped with no heartbeat check at all. 21 to 24 came out of the
+# estate-wide audit the same evening: 21 (the four weekly-cadence jobs ran this
+# ISO week), 22 (oslo-monthly ran this month), 23 (vault-index is keeping
+# vault_file_tree.md fresh), and 24, the one that generalises all of this: no
+# job anywhere wrote to stderr in the last three days. Checks 6, 7, 10, 11,
+# 13, 14, 15, 16, 17, 18, 19, 20 and 23 self-arm on plist presence; 21 and 22
+# self-arm on the presence of the job's stamp file, because their plists are
+# not in this repo and a guessed filename would fail quiet. 25 (the loaded
+# launchd roster matches an expected list) closed the last inference gap the
+# same evening, and immediately found a duplicate music-discovery job that had
+# been double-running for weeks.
+#
+# 2026-08-20, the completeness pass. A third instance of one failure signature
+# turned up that day (see the check_no_shrink comment below), and the audit it
+# prompted found that several checks here still asked only whether an artifact
+# was RECENT, never whether it was as big as it was. Added: 12b (the newest
+# session-awareness report is not a stub), 17b and 18b (neither offsite backup
+# destination shrank, reading a size line vault_backup.sh did not previously
+# write and aws_repo_backup.sh had always written and nobody had ever read),
+# 23b (vault_file_tree.md has a plausible line count, since check 23's `-s`
+# passes on a forty-line stub and forty lines does exactly the damage that
+# check's own comment fears), and 26, the stdout twin of 24: no job ended its
+# most recent run in FAILED. 26 found a live one the hour it was written, a
+# mychart-sync auth failure that both of check 19's purpose-built assertions
+# were structurally unable to see.
 #
 # Idempotence: per-day stamp, written ONLY on a healthy check. A failing check
 # deliberately leaves no stamp, so every later trigger re-checks and re-nudges
@@ -117,6 +144,79 @@ add_finding() {
   [ -z "$FIRST_FINDING" ] && FIRST_FINDING="$1"
   FINDINGS_TEXT="${FINDINGS_TEXT}${1}
 "
+}
+
+# --- the completeness ledger (added 2026-08-20) ------------------------------
+# WHY: on 2026-08-20 a third instance of one failure signature turned up in this
+# estate. All three answer every yes/no question correctly while carrying less
+# than they should:
+#   2026-08-01  oura daily_activity archived a fresh, valid, EMPTY file daily
+#               for two months (exclusive end_date); check 5 read it as healthy.
+#   2026-08-19  two launchd definitions raced behind an flock; the loser exited
+#               0, so the log read healthy while coverage silently halved.
+#   2026-08-20  api.py never followed Oura's next_token, so 33 of 85 heartrate
+#               day-files were archived truncated at exactly 1000 records,
+#               starting four days after the archive was created. HTTP 200,
+#               valid JSON, correct mtime, 14,072 samples missing.
+# A freshness check cannot see any of them. Neither can a stamp. The question
+# that catches this family is not "is it recent" but "is it as big as it was".
+#
+# check_no_shrink NAME VALUE MIN_ABS MAX_DROP_PCT LABEL
+#   NAME          ledger key, one small file per metric under completeness/
+#   VALUE         the measurement (integer)
+#   MIN_ABS       absolute floor; below this is a finding regardless of history
+#   MAX_DROP_PCT  tolerated shrink against the last HEALTHY value, in percent
+#   LABEL         human phrase, used to build the finding
+#
+# The ledger holds a HIGH-WATER MARK, and it is updated only when the check
+# passes. Two separate decisions, both learned the hard way:
+#
+#   1. Not updating on a finding is the direct lesson of the 2026-08-19 flock
+#      incident: a mitigation that quietly accepts the degraded state as the new
+#      normal turns a fault into silence. Keeping the last healthy figure means
+#      this nags every day until the artifact recovers, the same reason this
+#      whole script refuses to stamp on a finding.
+#   2. High-water rather than last-healthy closes a downward ratchet found while
+#      testing this helper on 2026-08-20. Storing the last passing value lets an
+#      artifact bleed away entirely without ever tripping: 3247 to 2900 is inside
+#      a 20% tolerance, and if 2900 becomes the new baseline then 2900 to 2600 is
+#      inside it too, and so on to nothing, one legal step at a time. Every metric
+#      this helper currently guards only grows in normal operation (the vault
+#      gains notes daily and disposal is a move into trash/, which is inside the
+#      backup set), so a mark that never falls costs nothing and closes the hole.
+#
+# The cost is real and deliberate: a legitimate permanent shrink nags until P
+# resets the ledger file by hand, which the finding text tells him to do. For a
+# watchdog guarding the only offsite copy of the vault, that is the right
+# direction to fail in.
+#
+# Non-numeric input returns quietly rather than firing. A measurement that could
+# not be taken is not evidence of shrinkage, and a watchdog that invents a
+# finding out of a parse failure is worse than one that stays quiet.
+COMPLETENESS_DIR="$STATE_DIR/completeness"
+mkdir -p "$COMPLETENESS_DIR"
+check_no_shrink() {
+  local cns_name="$1" cns_val="$2" cns_min="$3" cns_drop="$4" cns_label="$5"
+  local cns_file cns_prev cns_floor
+  case "$cns_val" in ''|*[!0-9]*) return 0 ;; esac
+  cns_file="$COMPLETENESS_DIR/$cns_name"
+  if [ "$cns_val" -lt "$cns_min" ]; then
+    add_finding "${cns_label} is ${cns_val}, below the floor of ${cns_min} - the job reported success, so this is the silent-shrink family (fresh artifact, real timestamp, not enough in it), not an outage"
+    return 0
+  fi
+  if [ -f "$cns_file" ]; then
+    cns_prev="$(cat "$cns_file" 2>/dev/null || echo 0)"
+    case "$cns_prev" in ''|*[!0-9]*) cns_prev=0 ;; esac
+    if [ "$cns_prev" -gt 0 ]; then
+      cns_floor=$(( cns_prev - (cns_prev * cns_drop / 100) ))
+      if [ "$cns_val" -lt "$cns_floor" ]; then
+        add_finding "${cns_label} fell from ${cns_prev} to ${cns_val}, past the ${cns_drop}% tolerance - nothing failed, it just got smaller; the high-water figure is kept in ${cns_file} and this will keep nagging until it recovers or you reset that file by hand"
+        return 0
+      fi
+      [ "$cns_prev" -gt "$cns_val" ] && cns_val="$cns_prev"
+    fi
+  fi
+  printf '%s\n' "$cns_val" > "$cns_file"
 }
 
 # --- check 1: today's tasks note exists -------------------------------------
@@ -488,6 +588,23 @@ if [ -d "$SWEEP_DIR" ] && ls "$SWEEP_DIR"/report_*.md >/dev/null 2>&1; then
   if [ -z "$(find "$SWEEP_DIR" -name 'report_*.md' -mtime -35 -print -quit 2>/dev/null)" ]; then
     add_finding "session-awareness sweep: no report in admin/mbs_system/design/session_awareness/ modified in the last 35 days - the monthly Cowork task (1st, 08:39) may have stopped running or is writing elsewhere; check Cowork sidebar > Scheduled"
   fi
+
+  # --- check 12b: the newest report is a report, not a stub (2026-08-20) -----
+  # Floor only, no shrink ledger, and that asymmetry is the point: a new month's
+  # report legitimately covers fewer sessions than a busy month before it, so a
+  # month-over-month drop is normal here and a ledger would cry wolf every time
+  # P had a quiet month. What is never normal is a report of a few hundred bytes.
+  # Grounded in the real folder: the fourteen reports on disk run 4,597 to 11,984
+  # bytes, so 1,000 sits well clear of the smallest genuine one and still catches
+  # a frontmatter-only stub from a sweep that died after creating its file.
+  SWEEP_NEWEST="$(ls -t "$SWEEP_DIR"/report_*.md 2>/dev/null | head -1)"
+  if [ -n "$SWEEP_NEWEST" ]; then
+    SWEEP_BYTES="$(wc -c < "$SWEEP_NEWEST" 2>/dev/null | tr -d ' ')"
+    case "${SWEEP_BYTES:-0}" in ''|*[!0-9]*) SWEEP_BYTES=0 ;; esac
+    if [ "$SWEEP_BYTES" -lt 1000 ]; then
+      add_finding "session-awareness sweep: $(basename "$SWEEP_NEWEST") is only ${SWEEP_BYTES} bytes (real reports run 4,600 to 12,000) - the sweep created its file and died before writing it; check Cowork sidebar > Scheduled"
+    fi
+  fi
 fi
 
 # --- check 13: the-record has no transcript stuck unprocessed (added 2026-08-07)
@@ -683,6 +800,36 @@ if [ -f "$HOME/Library/LaunchAgents/com.mbs.vault-backup.plist" ]; then
       add_finding "vault-backup last succeeded ${VB_AGE}h ago (threshold 30h) - the vault's offsite copy is going stale; check com.mbs.vault-backup"
     fi
   fi
+
+  # --- check 17b: the destination actually holds the vault (2026-08-20) ------
+  # Check 17 above calls itself the highest-stakes check in this file, and until
+  # today it verified the only offsite copy of P's second brain with an exit code
+  # and a timestamp. vault_backup.sh asked rclone whether it returned 0, then
+  # stamped. A copy that wrote nothing, or into an empty or wrong destination,
+  # stamps success and reads healthy here for the next 30 hours.
+  #
+  # vault_backup.sh now runs the same post-copy `rclone size` that
+  # aws_repo_backup.sh has run since it shipped, and logs "destination now holds
+  # N object(s), M bytes". This reads that line. The network call lives in the
+  # backup job, where it belongs; this check is still a file read, so ADR
+  # 2026-07-26 watchdog independence holds.
+  #
+  # 10% tolerance because the vault only ever grows: notes are added daily and
+  # disposal is a move into trash/, which is inside the backup set, so even a
+  # big cleanup does not shrink the destination. A 10% drop means deletion at the
+  # source or a destination that got partially wiped. Floor of 1 catches the
+  # empty-destination case if the size line is ever read on a run that predates
+  # the FAILED guard in the script.
+  #
+  # Silent until vault_backup.sh has written at least one size line, so it
+  # self-arms on the next run rather than firing once on install.
+  VB_LOG="$STATE_DIR/vault_backup.log"
+  if [ -f "$VB_LOG" ]; then
+    VB_OBJECTS="$(sed -n 's/.*destination now holds \([0-9][0-9]*\) object(s).*/\1/p' "$VB_LOG" 2>/dev/null | tail -1)"
+    if [ -n "$VB_OBJECTS" ]; then
+      check_no_shrink vault_backup_objects "$VB_OBJECTS" 1 10 "vault-backup: the offsite destination's object count"
+    fi
+  fi
 fi
 
 # --- check 18: the mbs_aws repo is being backed up offsite (2026-08-15) ------
@@ -725,6 +872,24 @@ if [ -f "$HOME/Library/LaunchAgents/com.mbs.aws-repo-backup.plist" ]; then
       add_finding "aws-repo-backup last succeeded ${ARB_AGE}h ago (threshold 30h) - the mbs_aws repo's offsite copy is going stale; check com.mbs.aws-repo-backup and ~/.mbs_automation/aws_repo_backup.log"
     fi
   fi
+
+  # --- check 18b: that destination did not shrink either (2026-08-20) --------
+  # aws_repo_backup.sh has always measured its destination and always logged the
+  # number, and nothing has ever read it. The script's own guard is a CEILING,
+  # aimed at the .terraform exclusion breaking and pushing 2.6 GB of provider
+  # binaries into the sensitive bucket. There was no floor and no comparison, so
+  # the opposite failure, a destination quietly losing objects, was invisible.
+  #
+  # Grounded in the log's own history: 199 objects on 2026-08-15 through 08-19,
+  # 217 on 08-20. It only grows. Floor 50 is far below any real value and catches
+  # a collapse; 10% catches a partial wipe without firing on normal churn.
+  ARB_LOG="$STATE_DIR/aws_repo_backup.log"
+  if [ -f "$ARB_LOG" ]; then
+    ARB_OBJECTS="$(sed -n 's/.*destination now holds \([0-9][0-9]*\) object(s).*/\1/p' "$ARB_LOG" 2>/dev/null | tail -1)"
+    if [ -n "$ARB_OBJECTS" ]; then
+      check_no_shrink aws_repo_backup_objects "$ARB_OBJECTS" 50 10 "aws-repo-backup: the offsite destination's object count"
+    fi
+  fi
 fi
 
 # --- check 19: mychart-sync actually ran (stamp-based) + no stuck reauth -----
@@ -745,11 +910,13 @@ fi
 # scripts/mychart_consent.py --institution <msk|weillcornell> --tls --verify
 #
 # Self-arming on plist presence, same pattern as checks 6, 7, 10, 11, 13-18.
+MCS_STALE_REPORTED=0
 if [ -f "$HOME/Library/LaunchAgents/com.mbs.mychart-sync.plist" ]; then
   MCS_STAMP="$STATE_DIR/last_mychart_sync_run"
   LAST_MCS="$(cat "$MCS_STAMP" 2>/dev/null || echo none)"
   MCS_YESTERDAY="$(date -v-1d +%Y-%m-%d)"
   if [ "$LAST_MCS" != "$TODAY" ] && [ "$LAST_MCS" != "$MCS_YESTERDAY" ]; then
+    MCS_STALE_REPORTED=1
     add_finding "mychart-sync has not completed since ${LAST_MCS} (expected ${MCS_YESTERDAY} or ${TODAY}, given its 09:00 schedule) - a silent day is normal, a missing stamp is not; check ~/.mbs_automation/mychart_sync.log and com.mbs.mychart-sync"
   fi
   for MCS_INST in msk weillcornell; do
@@ -757,6 +924,326 @@ if [ -f "$HOME/Library/LaunchAgents/com.mbs.mychart-sync.plist" ]; then
       add_finding "mychart-sync: the ${MCS_INST} grant needs re-authorization (sentinel present since $(cat "$STATE_DIR/mychart_needs_reauth_${MCS_INST}" 2>/dev/null | head -1)) - that hospital's encounter feed is paused; run: cd ~/dev/mbs-mychart-sync && .venv/bin/python scripts/mychart_consent.py --institution ${MCS_INST} --tls --verify"
     fi
   done
+fi
+
+# --- check 20: web-watchers actually watched something (added 2026-08-19) ----
+# WHY: com.mbs.web-watchers died at PARSE time on every run from 2026-08-08 to
+# 2026-08-19. A here-document holding an odd number of apostrophes had been
+# folded into $( ... ) inside web_watchers.sh's ask_claude(); bash 5 parses that
+# file, macOS's /bin/bash 3.2 does not. The script logged "parsed 2 watcher(s)"
+# and bash then aborted before the loop, so web_watchers.log looked almost
+# normal, the real error went only to web_watchers.err.log, and both watchers
+# sat at last_checked 2026-08-07 for twelve days. Nothing reported it, because
+# this roster had no web-watchers entry at all: the job shipped without the
+# matching check the vault manual requires of every job P depends on.
+#
+# Three questions, because the job can fail at three different layers:
+#   20a  did it run to completion?         (outer stamp)
+#   20b  did it actually check the pages?  (state file last_checked)
+#   20c  did it die on the way out?        (non-empty, recent stderr log)
+# 20b is the load-bearing one: a future failure that still manages to write the
+# stamp passes 20a and is caught here. 20c is the one that would have caught
+# THIS outage on day one, for free, without knowing anything about its cause.
+#
+# Pure filesystem reads. No jq, no python, no network, no claude, so the
+# watchdog-independence rule (ADR 2026-07-26) still holds.
+#
+# Self-arming on plist presence, same pattern as checks 6, 7, 10, 11, 13-19.
+if [ -f "$HOME/Library/LaunchAgents/com.mbs.web-watchers.plist" ]; then
+  WW_YESTERDAY="$(date -v-1d +%Y-%m-%d)"
+
+  # 20a: the outer run stamp, written only on a completed pass.
+  WW_STAMP="$STATE_DIR/last_web_watchers_run"
+  LAST_WW="$(cat "$WW_STAMP" 2>/dev/null || echo none)"
+  if [ "$LAST_WW" != "$TODAY" ] && [ "$LAST_WW" != "$WW_YESTERDAY" ]; then
+    add_finding "web-watchers has not completed a run since ${LAST_WW} (expected ${WW_YESTERDAY} or ${TODAY}, given its 08:30 schedule) - the watched pages are not being checked at all; read ~/.mbs_automation/web_watchers.err.log first, not web_watchers.log, then run: bash ~/dev/mbs_automation/scripts/check_syntax.sh"
+  fi
+
+  # 20b: the state file is where a check actually lands. A run that stamps
+  # success without moving any last_checked has watched nothing.
+  WW_STATE="$STATE_DIR/web_watchers_state.json"
+  if [ -f "$WW_STATE" ]; then
+    WW_NEWEST="$(grep -o '"last_checked": *"[0-9][0-9-]*' "$WW_STATE" 2>/dev/null | sed 's/.*"//' | sort | tail -1)"
+    if [ -z "$WW_NEWEST" ]; then
+      add_finding "web-watchers state file holds no last_checked for any watcher - no page has ever been checked successfully; see ~/.mbs_automation/web_watchers_state.json"
+    elif [ "$WW_NEWEST" != "$TODAY" ] && [ "$WW_NEWEST" != "$WW_YESTERDAY" ]; then
+      add_finding "web-watchers last actually reached a page on ${WW_NEWEST} - the newest last_checked in web_watchers_state.json is stale, so however the job is exiting, no watcher is getting through; see ~/.mbs_automation/web_watchers.err.log"
+    fi
+  fi
+
+  # 20c: stderr. On a healthy day this file stays empty. Anything in it dated
+  # today or yesterday means bash itself objected, which no amount of in-script
+  # logging can ever report. Truncate the file once the cause is fixed, or this
+  # keeps nagging (that is deliberate).
+  WW_ERR="$STATE_DIR/web_watchers.err.log"
+  if [ -s "$WW_ERR" ]; then
+    WW_ERR_DAY="$(stat -f %Sm -t %Y-%m-%d "$WW_ERR" 2>/dev/null || echo unknown)"
+    if [ "$WW_ERR_DAY" = "$TODAY" ] || [ "$WW_ERR_DAY" = "$WW_YESTERDAY" ]; then
+      add_finding "web-watchers wrote to stderr on ${WW_ERR_DAY}, last line: $(tail -1 "$WW_ERR" 2>/dev/null | cut -c1-140) - the script is failing outside its own logging; fix the cause, then truncate ~/.mbs_automation/web_watchers.err.log to clear this"
+    fi
+  fi
+fi
+
+# --- check 21: the weekly-cadence jobs actually ran this week (2026-08-19) ---
+# WHY: on Monday 2026-08-17 mbs_weekly and cars_weekly each timed out on their
+# single claude attempt and exited. Both are Weekday=1 launchd jobs, so the next
+# scheduled trigger was the FOLLOWING Monday, and RunAtLoad only fires at login.
+# Both sat a full week stale on W33 stamps. This roster had no entry for either,
+# nor for oslo-weekly or alcohol-stamp, so three days passed with nobody told.
+# Those two scripts now carry a four-attempt retry ladder; this check is the
+# part that speaks when the ladder still loses.
+#
+# ARMED BY THE STAMP FILE, not by a plist. Two of these four jobs do not keep
+# their plist in ~/dev/mbs_automation/scripts/launchd, so the exact filename
+# cannot be verified from here, and a guessed name would fail quiet, which is
+# precisely the failure mode this check exists to end. A stamp file is direct
+# evidence the job has run at least once. Cost: retiring a job means deleting
+# its stamp or this nags. That is the right direction to fail in.
+#
+# Threshold is the CURRENT ISO week, not a tolerance window. Every job here
+# fires Monday morning between 06:00 and 07:45 and this heartbeat runs at 11:00,
+# so by the first heartbeat of any week the stamp should already name this week.
+# A one-week tolerance would have stayed silent through the whole outage above.
+# The only grace is Monday before 10:00, for a RunAtLoad heartbeat that fires on
+# an early login before the weekly jobs have had their turn.
+WK_THIS="$(date +%G-W%V)"
+WK_LAST="$(date -v-7d +%G-W%V)"
+WK_HOUR="$(date +%H)"; WK_HOUR="${WK_HOUR#0}"
+WK_EARLY=0
+if [ "$(date +%u)" = "1" ] && [ "${WK_HOUR:-0}" -lt 10 ]; then WK_EARLY=1; fi
+for WK in "mbs-weekly:last_weekly_run:com.mbs.weekly:mbs_weekly.log" \
+          "cars-weekly:last_cars_weekly_run:com.mbs.cars-weekly:cars_weekly.log" \
+          "oslo-weekly:last_oslo_weekly_run:com.mbs.oslo-weekly:oslo_weekly.log" \
+          "alcohol-stamp:last_alcohol_stamp_run:com.mbs.alcohol-stamp:alcohol_stamp.log"; do
+  WK_NAME="${WK%%:*}"; WK_R="${WK#*:}"
+  WK_FILE="${WK_R%%:*}"; WK_R="${WK_R#*:}"
+  WK_JOB="${WK_R%%:*}"; WK_LOGNAME="${WK_R#*:}"
+  [ -f "$STATE_DIR/$WK_FILE" ] || continue
+  WK_SEEN="$(cat "$STATE_DIR/$WK_FILE" 2>/dev/null || echo none)"
+  WK_OK=0
+  [ "$WK_SEEN" = "$WK_THIS" ] && WK_OK=1
+  [ "$WK_EARLY" -eq 1 ] && [ "$WK_SEEN" = "$WK_LAST" ] && WK_OK=1
+  if [ "$WK_OK" -eq 0 ]; then
+    add_finding "${WK_NAME} has not completed for ${WK_THIS} (its stamp still says ${WK_SEEN}) - a weekly job that loses its Monday fire does not try again until the NEXT Monday, so this is a lost week unless it is kicked by hand: launchctl kickstart -k gui/\$(id -u)/${WK_JOB} ; check ~/.mbs_automation/${WK_LOGNAME}"
+  fi
+done
+
+# --- check 22: oslo-monthly ran for this month (added 2026-08-19) ------------
+# Same family as check 21, month cadence, fires on the 1st. Three days of grace
+# so a Mac that was off over a month boundary is not reported as a failure.
+OM_STAMP="$STATE_DIR/last_oslo_monthly_run"
+if [ -f "$OM_STAMP" ]; then
+  OM_THIS="$(date +%Y-%m)"
+  OM_SEEN="$(cat "$OM_STAMP" 2>/dev/null || echo none)"
+  OM_DAY="$(date +%d)"; OM_DAY="${OM_DAY#0}"
+  if [ "$OM_SEEN" != "$OM_THIS" ] && [ "${OM_DAY:-1}" -ge 4 ]; then
+    add_finding "oslo-monthly has not completed for ${OM_THIS} (its stamp still says ${OM_SEEN}) - kick it by hand with launchctl kickstart -k gui/\$(id -u)/com.mbs.oslo-monthly ; check ~/.mbs_automation/oslo_monthly.log"
+  fi
+fi
+
+# --- check 23: vault-index is keeping vault_file_tree.md fresh (2026-08-19) --
+# This one is load-bearing in a way its size hides. vault_file_tree.md is item 5
+# of the session-start read order in brain/CLAUDE.md, and the rule there is to
+# grep it for existence checks. A stale or missing tree does not fail loudly: it
+# makes every session confidently tell P that a file does not exist. Silent
+# wrongness, which is worse than silent absence.
+#
+# Runs 23:30, this heartbeat runs 11:00, so on a healthy Mac the stamp says
+# YESTERDAY. TODAY is also fine (a wake-coalesced fire after midnight).
+if [ -f "$HOME/Library/LaunchAgents/com.mbs.vault-index.plist" ]; then
+  VI_SEEN="$(cat "$STATE_DIR/last_vault_index_run" 2>/dev/null || echo none)"
+  VI_YESTERDAY="$(date -v-1d +%Y-%m-%d)"
+  if [ "$VI_SEEN" != "$TODAY" ] && [ "$VI_SEEN" != "$VI_YESTERDAY" ]; then
+    add_finding "vault-index has not completed since ${VI_SEEN} (expected ${VI_YESTERDAY} or ${TODAY}, given its 23:30 schedule) - vault_file_tree.md is going stale, and sessions grep it to decide whether a file exists, so the failure mode is a session telling you something is not there when it is; check ~/.mbs_automation/vault_index.log and com.mbs.vault-index"
+  fi
+  VI_TREE="$VAULT/admin/mbs_system/brain/vault_file_tree.md"
+  if [ ! -s "$VI_TREE" ]; then
+    add_finding "vault_file_tree.md is missing or empty at ${VI_TREE} - every session's existence checks are reading nothing; re-run com.mbs.vault-index"
+  else
+    # --- check 23b: the tree is a tree, not a stub (2026-08-20) -------------
+    # `-s` above only asks whether the file has any bytes at all. Check 23's own
+    # comment names the failure mode it fears: "silent wrongness, which is worse
+    # than silent absence", because sessions grep this file to decide whether
+    # something exists and a truncated tree makes them confidently say no. A
+    # one-byte file fails `-s`. A forty-line file does not, and does exactly the
+    # damage the comment describes.
+    #
+    # 3,247 lines on 2026-08-20, and it grows with the vault. Floor 500 is far
+    # below any plausible healthy value; 20% tolerance covers a genuine prune
+    # (the tree already excludes _corpora/ and oura/raw/) while catching a run
+    # that indexed one subtree and stopped.
+    VI_LINES="$(wc -l < "$VI_TREE" 2>/dev/null | tr -d ' ')"
+    check_no_shrink vault_file_tree_lines "$VI_LINES" 500 20 "vault_file_tree.md's line count"
+  fi
+fi
+
+# --- check 24: no job is writing to stderr (added 2026-08-19) ----------------
+# The generalisation of check 20c to the whole estate, and the single highest
+# value check on this roster.
+#
+# WHY: a script's own logging cannot report a failure that happens outside it. A
+# bash parse error, a missing binary, a process killed by a signal: all of these
+# land on stderr, which launchd files into the job's StandardErrorPath, and until
+# today nothing ever read those files. Two separate multi-day outages were
+# sitting in them in plain text. web_watchers.err.log held 13 identical parse
+# errors from 2026-08-08 onward. team_brief.err.log held an "unexpected EOF
+# while looking for matching quote" from 2026-08-03. Neither was ever surfaced.
+#
+# This check does not need to know what any job does, or even that it exists. It
+# asks one question of every job at once: did bash have something to say that
+# the job could not say for itself?
+#
+# Prerequisite, done the same day: lib_auth.sh's _la_run_with_timeout used to
+# leak a benign "NNNN Terminated: 15" line into stderr every time it killed a
+# hung claude call, which would have made this check cry wolf on every job that
+# had ever timed out. That message is now suppressed at the source.
+#
+# Three-day window, not one: long enough to survive a weekend of not looking,
+# short enough that a fixed-and-truncated log goes quiet. Truncating the file is
+# the acknowledgement; that is deliberate.
+STDERR_NAMES=""
+STDERR_COUNT=0
+STDERR_NOW="$(date +%s)"
+for EF in "$STATE_DIR"/*.err.log; do
+  [ -f "$EF" ] || continue
+  [ -s "$EF" ] || continue
+  EF_M="$(_la_mtime "$EF")"
+  [ "$EF_M" -gt 0 ] || continue
+  if [ $((STDERR_NOW - EF_M)) -lt 259200 ]; then
+    STDERR_COUNT=$((STDERR_COUNT + 1))
+    STDERR_NAMES="${STDERR_NAMES}${STDERR_NAMES:+, }$(basename "$EF")"
+  fi
+done
+if [ "$STDERR_COUNT" -gt 0 ]; then
+  add_finding "${STDERR_COUNT} job(s) wrote to stderr in the last 3 days: ${STDERR_NAMES} - stderr is where a failure goes when the job cannot log it itself (bash parse errors, missing binaries, killed processes), so read these files FIRST; after fixing the cause, truncate them to clear this finding"
+fi
+
+# --- check 25: the launchd roster is exactly what it should be (2026-08-19) --
+# The last inference gap in the estate, closed.
+#
+# Everything else on this roster asks "did the job produce what it should have".
+# None of it can distinguish a job that ran and failed from a job that is no
+# longer loaded at all, and the second is invisible in a way the first is not:
+# a booted-out job writes no log, no stamp and no stderr, so it leaves exactly
+# the same evidence as a Mac that was asleep.
+#
+# It also catches the opposite, which is what the 2026-08-19 audit actually
+# found: com.mbs.music-discovery and com.cp250.mbs-music-discovery were BOTH
+# loaded, both running `node index.js` from the same repo at Monday 06:00, both
+# appending to the same run.log, both writing the same dispatch file into the
+# vault, and both refreshing the same OAuth token. run.log had been recording
+# the doubled writes for weeks (two "Wrote N release(s)" lines per run, and on
+# one pair two DIFFERENT counts, which is two processes racing on the shared
+# cache). Nothing on this roster could have seen that, because the job's output
+# existed and looked fine.
+#
+# Watchdog independence holds: `launchctl list` is a local command with no
+# network and no claude. If launchd itself is broken this heartbeat is not
+# running either, which is already the design assumption.
+#
+# DELIBERATELY NOT CHECKED: the exit-status column. mbs-heartbeat exits 1 by
+# design whenever it has findings, and mbs-daily exits 2 on an auth failure, so
+# non-zero is normal here and would train P to ignore the line. Outcomes are
+# what the other twenty-four checks are for. This one is about membership.
+#
+# KEEPING THIS LIST HONEST: it is a snapshot of what SHOULD be loaded, taken
+# 2026-08-19 from `launchctl list`. Adding a job means adding it here. Booting
+# one out means removing it here, or this reports it missing forever.
+# com.mbs.weekly-blocks is on the list on purpose: it is paused by zeroing
+# every thread's weekly_minutes, NOT by being booted out, so it is still loaded
+# and still fires Sunday 17:00 (creating nothing). If it is ever really booted
+# out, delete it from this list at the same time.
+LD_EXPECTED="com.mbs.alcohol-stamp com.mbs.aws-repo-backup com.mbs.bulk-sync com.mbs.cars-weekly com.mbs.daily com.mbs.heartbeat com.mbs.music-discovery com.mbs.mychart-sync com.mbs.oslo-monthly com.mbs.oslo-weekly com.mbs.oura-sync com.mbs.oura-trends com.mbs.oura-watch com.mbs.pointer-check com.mbs.review-monthly com.mbs.review-quarterly com.mbs.review-yearly com.mbs.team-brief com.mbs.the-record com.mbs.vault-backup com.mbs.vault-index com.mbs.web-watchers com.mbs.weekly com.mbs.weekly-blocks"
+
+# Label filter: everything in this estate carries "mbs" somewhere in its label
+# (including com.cp250.mbs-music-discovery), and the retired review jobs used
+# "cpreston.vaultreview". A stray job named outside both families would still be
+# invisible here; that is a known and accepted limit.
+LD_LOADED="$(launchctl list 2>/dev/null | awk 'NR>1 {print $3}' | grep -iE 'mbs|vaultreview' | sort)"
+if [ -z "$LD_LOADED" ]; then
+  add_finding "could not read the launchd roster: 'launchctl list' returned no matching jobs at all. Either launchd is not reachable from this context or every job has been booted out; check by hand with: launchctl list | grep mbs"
+else
+  LD_MISSING=""
+  for LD_J in $LD_EXPECTED; do
+    if ! echo "$LD_LOADED" | grep -qx -- "$LD_J"; then
+      LD_MISSING="${LD_MISSING}${LD_MISSING:+, }$LD_J"
+    fi
+  done
+  LD_EXTRA=""
+  for LD_J in $LD_LOADED; do
+    case " $LD_EXPECTED " in
+      *" $LD_J "*) ;;
+      *) LD_EXTRA="${LD_EXTRA}${LD_EXTRA:+, }$LD_J" ;;
+    esac
+  done
+  if [ -n "$LD_MISSING" ]; then
+    add_finding "launchd job(s) expected but NOT loaded: ${LD_MISSING} - a booted-out job leaves no log, no stamp and no stderr, so it looks exactly like a Mac that was asleep; re-bootstrap it (launchctl bootstrap gui/\$(id -u) ~/Library/LaunchAgents/<label>.plist) or remove it from LD_EXPECTED in mbs_heartbeat.sh if it was retired on purpose"
+  fi
+  if [ -n "$LD_EXTRA" ]; then
+    add_finding "launchd job(s) loaded but NOT expected: ${LD_EXTRA} - most often a second copy of a job installed under a different label, which means two processes on the same schedule racing on the same output, log, cache and OAuth token; boot out the duplicate (launchctl bootout gui/\$(id -u)/<label>) or add it to LD_EXPECTED in mbs_heartbeat.sh if it is legitimate"
+  fi
+fi
+
+# --- check 26: no job's own last word was a failure (added 2026-08-20) -------
+# The stdout twin of check 24, and the same move: ask one question of every job
+# at once instead of teaching this file about each job in turn.
+#
+# Check 24 reads stderr, which catches what a job could not say for itself (a
+# bash parse error, a missing binary, a killed process). This reads stdout and
+# catches the opposite: a job that worked perfectly, knew it had failed, wrote so
+# in plain language, and had nobody read it.
+#
+# That is not hypothetical. It was true when this check was written. At 09:15 on
+# 2026-08-20 mychart_sync.log ended "FAILED (rc=1); not stamping day, next
+# trigger retries" after four attempts against a dead Weill Cornell keychain
+# grant. Check 19 was silent because it tolerates a one-day-old stamp and the
+# stamp still read 2026-08-19; check 19's reauth sentinel was silent because the
+# job classifies "Keychain is missing credentials" as transient rather than as an
+# auth failure. Two purpose-built checks for that exact job, both quiet, while
+# the job's own last line said FAILED in English.
+#
+# The vocabulary is shared estate-wide, which is what makes one rule possible:
+# every wrapper here ends a run with "completed successfully; stamped ...",
+# "OK (mode=...): ...", or "FAILED ...". Verified 2026-08-20 by reading the last
+# terminal line of all 21 non-empty logs in STATE_DIR: twenty ended in a success
+# form, one (mychart_sync) in FAILED. So the rule is "the most recent terminal
+# line, whichever it is" - a later success supersedes an earlier failure with no
+# state to keep and nothing to clear by hand.
+#
+# EXCLUDES ITS OWN LOG, and that is load-bearing rather than tidy: this script
+# writes findings verbatim into mbs_heartbeat.log, findings quote other jobs
+# ("mbs_daily has not completed successfully since ..."), so an unfiltered sweep
+# would read its own past complaints as fresh evidence and never go quiet.
+#
+# Three-day window on the line's own date, matching check 24, so a failure that
+# has since been superseded or a job that was retired stops nagging on its own.
+#
+# Suppressed for mychart-sync when check 19 already reported a stale stamp: one
+# root cause, one line. Same discipline as 14b's suppression behind 5b.
+STDOUT_FAIL_NAMES=""
+STDOUT_FAIL_COUNT=0
+TC_D1="$TODAY"
+TC_D2="$(date -v-1d +%Y-%m-%d)"
+TC_D3="$(date -v-2d +%Y-%m-%d)"
+for TF in "$STATE_DIR"/*.log; do
+  [ -f "$TF" ] || continue
+  [ -s "$TF" ] || continue
+  TC_BASE="$(basename "$TF")"
+  case "$TC_BASE" in
+    *.err.log|*.out.log|*manifest*|mbs_heartbeat.log) continue ;;
+    mychart_sync.log) [ "$MCS_STALE_REPORTED" -eq 1 ] && continue ;;
+  esac
+  TC_LINE="$(grep -E 'completed successfully|OK \(mode=|FAILED' "$TF" 2>/dev/null | tail -1)"
+  [ -n "$TC_LINE" ] || continue
+  case "$TC_LINE" in *FAILED*) ;; *) continue ;; esac
+  TC_DAY="${TC_LINE%% *}"
+  if [ "$TC_DAY" = "$TC_D1" ] || [ "$TC_DAY" = "$TC_D2" ] || [ "$TC_DAY" = "$TC_D3" ]; then
+    STDOUT_FAIL_COUNT=$((STDOUT_FAIL_COUNT + 1))
+    STDOUT_FAIL_NAMES="${STDOUT_FAIL_NAMES}${STDOUT_FAIL_NAMES:+, }${TC_BASE} (${TC_DAY})"
+  fi
+done
+if [ "$STDOUT_FAIL_COUNT" -gt 0 ]; then
+  add_finding "${STDOUT_FAIL_COUNT} job(s) ended their most recent run in FAILED and said so in their own log: ${STDOUT_FAIL_NAMES} - the job knew; nothing was reading. Open each file in ~/.mbs_automation/ and read its last terminal line; this clears itself as soon as that job's next run succeeds"
 fi
 
 # --- verdict ----------------------------------------------------------------

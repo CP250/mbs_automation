@@ -170,6 +170,41 @@ fi
 # and echo's "0" into the log. The assignment already yields "0" on its own.
 COPIED="$(grep -c ': Copied' "$RUNLOG" 2>/dev/null)"
 [ -n "$COPIED" ] || COPIED=0
+
+# --- post-copy destination size check (added 2026-08-20) --------------------
+# Until today this script asked rclone whether it exited 0 and nothing else,
+# then stamped. That stamp is the ONLY thing heartbeat check 17 reads, and
+# check 17 calls itself "the highest-stakes check in this file" because it
+# guards the only offsite copy of the vault. So the highest-stakes artifact in
+# the estate was verified by an exit code and a timestamp: a copy that wrote
+# nothing at all, or into an empty or wrong destination, stamps success and
+# reads healthy for the next 30 hours.
+#
+# aws_repo_backup.sh has done this since it shipped on 2026-08-15 and its log
+# has the numbers to prove the copy landed. This block is that block, minus the
+# size ceiling: mbs_aws is a fixed-size IaC tree where growth means a broken
+# exclusion, while the vault grows every day by design, so a ceiling here would
+# only ever cry wolf. The floor and the shrink comparison live in heartbeat
+# check 17b, which reads the line this writes.
+#
+# Warning rather than failure when the size cannot be read: the copy itself
+# already succeeded, and a size check that quietly stopped working must not read
+# as a size check that passed.
+SIZE_OUT="$("$RCLONE_BIN" size "$DEST" --password-command "$PWCMD" --s3-no-check-bucket 2>/dev/null)"
+DEST_OBJECTS="$(printf '%s\n' "$SIZE_OUT" | sed -n 's/^Total objects: *\([0-9][0-9]*\).*/\1/p' | head -1)"
+DEST_BYTES="$(printf '%s\n' "$SIZE_OUT" | sed -n 's/.*(\([0-9][0-9]*\) Byte).*/\1/p' | head -1)"
+
+if [ -z "$DEST_BYTES" ] || [ -z "$DEST_OBJECTS" ]; then
+  echo "$(ts) - WARNING: could not read destination size from ${DEST}; copy succeeded, sanity check skipped" >> "$LOG"
+else
+  DEST_MB=$(( DEST_BYTES / 1048576 ))
+  if [ "$MODE" = "LIVE" ] && [ "$DEST_OBJECTS" -eq 0 ]; then
+    echo "$(ts) - FAILED: destination ${DEST} holds 0 objects after a LIVE copy; the vault has NO offsite copy. No stamp written. Manifest: $MANIFEST" >> "$LOG"
+    exit 1
+  fi
+  echo "$(ts) - destination now holds ${DEST_OBJECTS} object(s), ${DEST_BYTES} bytes (${DEST_MB} MB)" >> "$LOG"
+fi
+
 # The stamp is what heartbeat check 17 trusts, so a DRY-RUN must never write
 # it: a rehearsal that stamps looks like a real backup for the next 30 hours.
 # Same guard as aws_repo_backup.sh, where this defect was caught 2026-08-15.
