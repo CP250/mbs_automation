@@ -217,7 +217,25 @@ COPIED="$(grep -c ': Copied' "$RUNLOG" 2>/dev/null)"
 #   2. is it the RIGHT ORDER OF MAGNITUDE (the .terraform exclusion still works)
 # A dry run is exempt from the empty check, since by definition it wrote nothing.
 SIZE_OUT="$("$RCLONE_BIN" size "$DEST" --password-command "$PWCMD" --s3-no-check-bucket 2>/dev/null)"
-DEST_OBJECTS="$(printf '%s\n' "$SIZE_OUT" | sed -n 's/^Total objects: *\([0-9][0-9]*\).*/\1/p' | head -1)"
+# Prefer the EXACT count rclone prints in parentheses, and fall back to a bare
+# integer only for older rclone builds that print no parenthesised form.
+#
+# WHY (found 2026-08-20, in production, by heartbeat check 17b): current rclone
+# humanises this field, so a vault of 14,512 objects prints
+#   Total objects: 14.512k (14512)
+# and a sed anchored on the first run of digits captures "14". The vault backup
+# logged "destination now holds 14 object(s), 166608032 bytes", which is 11.9 MB
+# per object and obviously wrong the moment anyone divides. Nothing failed: the
+# size read succeeded, the number was plausible, the log looked healthy. Same
+# family as everything else this file guards against.
+#
+# aws_repo_backup.sh carried the identical sed and was never wrong only because
+# its destination holds 217 objects and rclone prints counts under 1000 without
+# a suffix. It would have silently started under-reporting at 1,000.
+DEST_OBJECTS="$(printf '%s\n' "$SIZE_OUT" | sed -n 's/^Total objects:.*(\([0-9][0-9]*\)).*/\1/p' | head -1)"
+if [ -z "$DEST_OBJECTS" ]; then
+  DEST_OBJECTS="$(printf '%s\n' "$SIZE_OUT" | sed -n 's/^Total objects: *\([0-9][0-9]*\) *$/\1/p' | head -1)"
+fi
 DEST_BYTES="$(printf '%s\n' "$SIZE_OUT" | sed -n 's/.*(\([0-9][0-9]*\) Byte).*/\1/p' | head -1)"
 
 if [ -z "$DEST_BYTES" ] || [ -z "$DEST_OBJECTS" ]; then
