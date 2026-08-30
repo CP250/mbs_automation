@@ -2,22 +2,61 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>Label</key><string>com.mbs.music-discovery</string>
-  <key>ProgramArguments</key>
-  <array>
-    <string>/opt/homebrew/bin/node</string>
-    <string>/Users/cpreston/dev/mbs-music-discovery/index.js</string>
-  </array>
-  <key>WorkingDirectory</key><string>/Users/cpreston/dev/mbs-music-discovery</string>
-  <key>StartCalendarInterval</key>
-  <dict>
-    <key>Weekday</key><integer>1</integer>
-    <key>Hour</key><integer>6</integer>
-    <key>Minute</key><integer>0</integer>
-  </dict>
-  <key>StandardOutPath</key><string>/Users/cpreston/dev/mbs-music-discovery/run.log</string>
-  <key>StandardErrorPath</key><string>/Users/cpreston/dev/mbs-music-discovery/run.log</string>
-  <key>EnvironmentVariables</key>
-  <dict><key>PATH</key><string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string></dict>
+    <key>Label</key>
+    <string>com.mbs.music-discovery</string>
+
+    <!-- Rewritten 2026-08-30. This used to invoke /opt/homebrew/bin/node on
+         index.js directly, which made this the only scheduled job in the estate
+         outside the CLAUDE.md contract (every recurring task is a
+         scripts/<name>.sh modeled on mbs_daily.sh). Sitting outside meant it
+         never inherited wait_for_network, a retry ladder, a stamp, or the
+         STATE_DIR log convention, and on 2026-08-24 a DNS blip at the 06:00
+         fire cost a whole week of dispatches with nothing able to say so.
+         The wrapper carries all four. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/cpreston/dev/mbs_automation/scripts/music_discovery.sh</string>
+    </array>
+
+    <!-- Monday grid, 06:00 through 18:00 local. 06:00 is still the on-time fire
+         and a healthy Monday is unchanged; the later slots exist so a Monday
+         that fails early is retried the same day instead of waiting a week,
+         which is what a single Weekday=1 entry cost on 2026-08-24.
+
+         StartCalendarInterval, not StartInterval, and for the reason spelled
+         out in com.mbs.daily.plist: launchd coalesces missed calendar fires
+         into exactly one fire on wake, which is the run-on-wake behavior this
+         job wants. Safe to fire this often because the per-ISO-week stamp is
+         checked before any work, so every fire after the week succeeds exits in
+         milliseconds. -->
+    <key>StartCalendarInterval</key>
+    <array>
+        <dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>6</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>9</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>12</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>15</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>18</integer><key>Minute</key><integer>0</integer></dict>
+    </array>
+
+    <!-- Also run at login/boot; the per-week stamp prevents any double run.
+         Same pattern as com.mbs.cars-weekly and com.mbs.weekly. Covers a Mac
+         that was powered off all Monday. -->
+    <key>RunAtLoad</key>
+    <true/>
+
+    <!-- Estate convention: the wrapper writes its own structured log to
+         ~/.mbs_automation/music_discovery.log, which is what heartbeat checks
+         24 and 26 sweep. These two files catch anything the wrapper could not
+         say for itself (a bash parse error, a missing binary, a killed
+         process). Node's verbose per-source output still appends to
+         ~/dev/mbs-music-discovery/run.log, where its history lives. -->
+    <key>StandardOutPath</key>
+    <string>/Users/cpreston/.mbs_automation/music_discovery.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/cpreston/.mbs_automation/music_discovery.err.log</string>
+
+    <key>EnvironmentVariables</key>
+    <dict><key>PATH</key><string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string></dict>
 </dict>
 </plist>

@@ -104,14 +104,56 @@ if [ -f "$STAMP" ] && [ "$(cat "$STAMP" 2>/dev/null)" = "$TODAY" ]; then
   exit 0
 fi
 
+_ymd_or_empty() {
+  case "${1:-}" in
+    [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]) echo "$1" ;;
+    *) echo "" ;;
+  esac
+}
+
+# Day a lock directory was claimed for (2026-08-25). Prefers the explicit "day"
+# file mbs_daily.sh now writes; falls back to the directory's own mtime for locks
+# that do not write one (team_brief, and any mbs_daily lock predating the change).
+# BSD stat first because this only ever runs on macOS; the GNU form follows so
+# the function stays testable on a Linux host. Empty return means "cannot tell",
+# and every caller below treats that as "defer", preserving the old behavior.
+lock_claimed_day() {
+  local d="$1" day
+  # Every source is shape-checked before it is accepted. Reason: GNU stat reads
+  # -f as "filesystem status" and exits 0 with garbage, so on a non-macOS host
+  # the BSD branch would never fall through and the caller would compare a date
+  # against a block-count. Production is macOS-only and could not hit that, but
+  # an unvalidated date is exactly how a guard silently inverts.
+  day="$(_ymd_or_empty "$(cat "$d/day" 2>/dev/null)")"
+  [ -n "$day" ] || day="$(_ymd_or_empty "$(stat -f '%Sm' -t '%Y-%m-%d' "$d" 2>/dev/null)")"
+  [ -n "$day" ] || day="$(_ymd_or_empty "$(stat -c '%y' "$d" 2>/dev/null | cut -d' ' -f1)")"
+  echo "$day"
+}
+
 # If mbs_daily is still working (live PID in its lock), it is not late yet.
 # Exit without stamping so the next trigger checks again.
+#
+# BUT only when the lock was claimed TODAY (2026-08-25). This guard used to
+# defer on ANY live PID, and that is precisely how 2026-08-24 passed without a
+# word: mbs_daily's 08-23 ladder was still alive (its retry sleeps pause across
+# Mac sleep, so attempt 5 did not fire until 20:12 the next day), launchd would
+# not start a second copy of a running job so none of 08-24's triggers fired,
+# and this guard read the live PID as "not late yet" and exited 0 without
+# stamping or reporting. The watchdog was silenced by the exact condition it
+# exists to catch. A lock held by a live process from an EARLIER day is not
+# patience, it is the finding.
 DAILY_LOCK="$STATE_DIR/mbs_daily.lock"
+STALE_DAILY_LOCK=""
 if [ -d "$DAILY_LOCK" ]; then
   HOLDER_PID="$(cat "$DAILY_LOCK/pid" 2>/dev/null)"
   if [ -n "${HOLDER_PID:-}" ] && kill -0 "$HOLDER_PID" 2>/dev/null; then
-    echo "$(ts) - mbs_daily still running (PID $HOLDER_PID); not late yet, will re-check on next trigger." >> "$LOG"
-    exit 0
+    DAILY_LOCK_DAY="$(lock_claimed_day "$DAILY_LOCK")"
+    if [ "${DAILY_LOCK_DAY:-$TODAY}" = "$TODAY" ]; then
+      echo "$(ts) - mbs_daily still running (PID $HOLDER_PID, lock claimed ${DAILY_LOCK_DAY:-unknown}); not late yet, will re-check on next trigger." >> "$LOG"
+      exit 0
+    fi
+    STALE_DAILY_LOCK="PID $HOLDER_PID, lock claimed ${DAILY_LOCK_DAY:-unknown}"
+    echo "$(ts) - mbs_daily lock held by a LIVE process from ${DAILY_LOCK_DAY:-an earlier day} (PID $HOLDER_PID); not deferring, continuing checks." >> "$LOG"
   fi
 fi
 
@@ -119,12 +161,22 @@ fi
 # ladder (~35 min) is normally long done by 11:00, but a wake-coalesced fire
 # can still be mid-run when a login triggers this heartbeat. Live PID in its
 # lock = not late yet; exit without stamping so the next trigger re-checks.
+# Same day-scoping as the mbs_daily guard above: team_brief's ladder is much
+# shorter (~35 min) so spanning a day is unlikely, but the failure shape is
+# identical and the guard costs nothing. team_brief.sh writes no "day" file, so
+# this resolves via the lock directory's mtime.
 TEAM_BRIEF_LOCK="$STATE_DIR/team_brief.lock"
+STALE_TEAM_BRIEF_LOCK=""
 if [ -f "$HOME/Library/LaunchAgents/com.mbs.team-brief.plist" ] && [ -d "$TEAM_BRIEF_LOCK" ]; then
   HOLDER_PID="$(cat "$TEAM_BRIEF_LOCK/pid" 2>/dev/null)"
   if [ -n "${HOLDER_PID:-}" ] && kill -0 "$HOLDER_PID" 2>/dev/null; then
-    echo "$(ts) - team_brief still running (PID $HOLDER_PID); not late yet, will re-check on next trigger." >> "$LOG"
-    exit 0
+    TB_LOCK_DAY="$(lock_claimed_day "$TEAM_BRIEF_LOCK")"
+    if [ "${TB_LOCK_DAY:-$TODAY}" = "$TODAY" ]; then
+      echo "$(ts) - team_brief still running (PID $HOLDER_PID, lock claimed ${TB_LOCK_DAY:-unknown}); not late yet, will re-check on next trigger." >> "$LOG"
+      exit 0
+    fi
+    STALE_TEAM_BRIEF_LOCK="PID $HOLDER_PID, lock claimed ${TB_LOCK_DAY:-unknown}"
+    echo "$(ts) - team_brief lock held by a LIVE process from ${TB_LOCK_DAY:-an earlier day} (PID $HOLDER_PID); not deferring, continuing checks." >> "$LOG"
   fi
 fi
 
@@ -145,6 +197,18 @@ add_finding() {
   FINDINGS_TEXT="${FINDINGS_TEXT}${1}
 "
 }
+
+# --- check 0: stale locks held by a live process from an earlier day ----------
+# Deliberately the first finding emitted, and deliberately raised here rather
+# than up at the guards themselves: add_finding is not defined until this point,
+# so the guards record a flag and this block converts it. This is the condition
+# that made 2026-08-24 invisible; it must never be silent again.
+if [ -n "$STALE_DAILY_LOCK" ]; then
+  add_finding "mbs_daily's lock is held by a LIVE process from an earlier day (${STALE_DAILY_LOCK}). Its retry sleeps pause while the Mac sleeps, so a ladder can outlive its own day. While it holds the lock, launchd will not start a second copy of the job, so today's triggers are swallowed and today gets no report, no carry-forward and no banner. Inspect with 'ps -p <pid>' and 'tail ~/.mbs_automation/mbs_daily.log'; killing that PID releases the lock and the next trigger starts a clean run. mbs_daily.sh gained a day bound on 2026-08-25 that should make this self-clearing, so seeing this finding at all means the bound did not fire and is worth investigating."
+fi
+if [ -n "$STALE_TEAM_BRIEF_LOCK" ]; then
+  add_finding "team_brief's lock is held by a LIVE process from an earlier day (${STALE_TEAM_BRIEF_LOCK}). Same failure shape as the mbs_daily stale lock: launchd will not start a second copy while it runs, so team-brief is silently skipped until that process exits."
+fi
 
 # --- the completeness ledger (added 2026-08-20) ------------------------------
 # WHY: on 2026-08-20 a third instance of one failure signature turned up in this
@@ -472,7 +536,8 @@ if [ ! -d "$MUSIC_DIR" ]; then
 else
   MUSIC_RECENT="$(find "$MUSIC_DIR" -maxdepth 1 -name 'dispatch_*.md' -mtime -8 2>/dev/null | head -1)"
   if [ -z "$MUSIC_RECENT" ]; then
-    add_finding "music-discovery: no dispatch file modified in the last 8 days ($MUSIC_DIR) - check com.mbs.music-discovery"
+    MUSIC_MON="$(date -v-$(( $(date +%u) - 1 ))d +%Y-%m-%d 2>/dev/null)"
+    add_finding "music-discovery: no dispatch file modified in the last 8 days ($MUSIC_DIR) - the job either never fired or fired and produced nothing; read ~/.mbs_automation/music_discovery.log for the wrapper verdict and ~/dev/mbs-music-discovery/run.log for the source errors, kick it with launchctl kickstart -k gui/\$(id -u)/com.mbs.music-discovery, and backfill any week already missed with: cd ~/dev/mbs-music-discovery && node index.js --week=${MUSIC_MON:-YYYY-MM-DD}"
   else
     # --- check 8b: the fresh dispatch has releases in it (2026-08-15) -------
     # Every dispatch opens with a summary line:
@@ -1014,7 +1079,8 @@ if [ "$(date +%u)" = "1" ] && [ "${WK_HOUR:-0}" -lt 10 ]; then WK_EARLY=1; fi
 for WK in "mbs-weekly:last_weekly_run:com.mbs.weekly:mbs_weekly.log" \
           "cars-weekly:last_cars_weekly_run:com.mbs.cars-weekly:cars_weekly.log" \
           "oslo-weekly:last_oslo_weekly_run:com.mbs.oslo-weekly:oslo_weekly.log" \
-          "alcohol-stamp:last_alcohol_stamp_run:com.mbs.alcohol-stamp:alcohol_stamp.log"; do
+          "alcohol-stamp:last_alcohol_stamp_run:com.mbs.alcohol-stamp:alcohol_stamp.log" \
+          "music-discovery:last_music_discovery_run:com.mbs.music-discovery:music_discovery.log"; do
   WK_NAME="${WK%%:*}"; WK_R="${WK#*:}"
   WK_FILE="${WK_R%%:*}"; WK_R="${WK_R#*:}"
   WK_JOB="${WK_R%%:*}"; WK_LOGNAME="${WK_R#*:}"
