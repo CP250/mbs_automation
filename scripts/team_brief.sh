@@ -441,25 +441,18 @@ Recency discipline: feed items carry dates; ignore anything older than 3 days un
 Hard rules: no em-dashes anywhere, use comma, colon, parentheses, or hyphen instead. No tables. No links other than plain source names. Plain markdown that reads well as a plain-text email. Output ONLY the brief body, starting directly with "## Blue Jays": no subject line, no greeting, no signature, no preamble, no code fences.
 PROMPT_EOF
 
+# 2026-09-09: this used to be a private copy of the claude -p supervisor (hard
+# cap only, no trace, no idle watchdog), which is the "job outside the wrapper
+# contract silently opts out of every later hardening" shape from the 08-30
+# music-discovery entry, one job over. It now delegates to lib_auth.sh's
+# run_claude_p, using its two optional arguments: the brief body goes to $out
+# (result text only, stderr to $LOG), and $DATA is fed on stdin. The idle
+# watchdog, per-attempt trace and debug log, and the forensic log line on a
+# kill all come with it. Return codes: 0, 2 auth, 3 credits, 124 killed, other.
 generate_brief() {
   local out="$1"
   cd "$WORK" || return 1
-  "$CLAUDE_BIN" -p "$(cat "$INSTRUCTIONS_FILE")" --model "$CLAUDE_MODEL" --dangerously-skip-permissions \
-    < "$DATA" > "$out" 2>>"$LOG" &
-  local pid=$! elapsed=0
-  while kill -0 "$pid" 2>/dev/null; do
-    sleep 5
-    elapsed=$((elapsed + 5))
-    if [ "$elapsed" -ge "$CLAUDE_TIMEOUT_SECONDS" ]; then
-      kill -TERM "$pid" 2>/dev/null
-      sleep 3
-      kill -KILL "$pid" 2>/dev/null
-      wait "$pid" 2>/dev/null
-      return 124
-    fi
-  done
-  wait "$pid"
-  return $?
+  run_claude_p "$(cat "$INSTRUCTIONS_FILE")" "$LOG" "$out" "$DATA"
 }
 
 OUT="$WORK/brief_body.md"
@@ -470,19 +463,19 @@ for attempt in $(seq 1 "$MAX_ATTEMPTS"); do
   echo "$(ts) - generation attempt $attempt/$MAX_ATTEMPTS (mode: $MODE, model: $CLAUDE_MODEL)" >> "$LOG"
   generate_brief "$OUT"
   rc=$?
-  if la_is_credit_failure "$OUT"; then
-    alert_tasks_note "team-brief: run failed, Claude CLI is out of usage credits (model: $CLAUDE_MODEL). No brief today - top up (/usage-credits) or switch model (/model); it recovers on the next run."
-    echo "$(ts) - out of usage credits; not retrying" >> "$LOG"
+  # run_claude_p already classified auth (2) and credits (3) from the result
+  # text plus stderr, and for credits already wrote the vault alert line, so a
+  # second alert here would only add a differently worded duplicate.
+  if [ "$rc" -eq 3 ] || la_is_credit_failure "$OUT"; then
+    echo "$(ts) - out of usage credits; alert written by run_claude_p; not retrying" >> "$LOG"
     exit 3
   fi
-  if la_is_auth_failure "$OUT"; then
+  if [ "$rc" -eq 2 ] || la_is_auth_failure "$OUT"; then
     mark_reauth_needed "$LOG"
     echo "$(ts) - auth failure; not retrying" >> "$LOG"
     exit 2
   fi
-  if [ "$rc" -eq 124 ]; then
-    echo "$(ts) - claude -p timed out after ${CLAUDE_TIMEOUT_SECONDS}s; treating as transient" >> "$LOG"
-  fi
+  # A 124 is already logged by run_claude_p with the reason and the forensics.
   if [ "$rc" -eq 0 ] && grep -q '^DATA_MISSING$' "$OUT"; then
     echo "$(ts) - ERROR: claude reported no data on stdin (DATA_MISSING); treating as failure" >> "$LOG"
     rc=1

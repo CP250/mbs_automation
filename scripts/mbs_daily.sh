@@ -2,11 +2,22 @@
 # mbs_daily.sh - run the /obsidian-daily morning report at most once per day.
 #
 # Triggered by launchd three ways (see scripts/com.mbs.daily.plist):
-#   1. StartCalendarInterval at 06:00 local - runs on time if the Mac is awake.
-#   2. Wake from sleep - launchd coalesces the missed 06:00 fire and runs it
-#      when you open the lid. (Native launchd behavior; not cron.)
+#   1. StartCalendarInterval, a 30-minute grid from 06:00 to 21:30 local (P
+#      decision 2026-08-22; it was a single 06:00 fire before that). 06:00 is
+#      still the on-time fire; the rest of the grid exists so a day that fails
+#      early gets retried later instead of being lost.
+#   2. Wake from sleep - launchd coalesces every grid entry missed while asleep
+#      into exactly ONE fire on wake. (Native launchd behavior; not cron. The
+#      man page is explicit that StartInterval does NOT do this, which is why
+#      the grid is a calendar array and not an interval.)
 #   3. RunAtLoad at login - covers the case where the Mac was fully powered off
-#      at 06:00, so the report runs shortly after you log back in.
+#      all morning, so the report runs shortly after you log back in.
+#
+# Firing this often is safe because the per-day stamp check below is the third
+# thing this script does, before the lock and before the vault scan: on a day
+# that already succeeded, every later grid fire exits in milliseconds. Fires
+# that land mid-ladder hit the live PID lock and exit cleanly, so the grid only
+# takes over once a ladder has actually given up.
 #
 # Idempotence + retry (2026-06-06 hardening):
 # - A per-day stamp file ($STAMP) records the last successful day. Any trigger
@@ -20,8 +31,18 @@
 #   macOS sleep pauses the sleep timer (CLOCK_MONOTONIC), so retries effectively
 #   wait for "Mac awake" time rather than wall-clock time. This is the right
 #   behavior - retrying while the network is asleep has no value.
+# - The ladder is bound to its own calendar day (2026-08-25). Before each
+#   attempt, if the date no longer matches the day the run started for, the
+#   ladder is abandoned (exit 4) and the lock released. Without this a ladder
+#   whose sleeps paused across Mac sleep could squat the lock into the next day
+#   and silently swallow it whole, because launchd will not start a second copy
+#   of a running job and the heartbeat deferred on the live PID. That is exactly
+#   what happened to 2026-08-24.
 # - If all in-script retries fail, the script exits non-zero with no stamp, so
-#   the next launchd trigger (next wake event or tomorrow's 06:00) will retry.
+#   the next launchd trigger (the next 30-minute grid entry, the next wake, or
+#   tomorrow's 06:00) will retry with a fresh ladder. Before the grid existed
+#   this was the hole that lost 2026-08-21 entirely: the ladder died at 12:00
+#   and nothing fired again that day.
 #
 # Why this matters: on 2026-06-05 a 06:00 FailedToOpenSocket killed that day's
 # report because the script exited after one attempt and launchd's wake-coalesce
@@ -43,6 +64,16 @@ ts() { date '+%Y-%m-%d %H:%M:%S'; }
 # out of the legacy admin/obsidian_optimize/session_awareness/ landing dir. That
 # dir is gone (disposed to trash/) and the Cowork task's report path was verified
 # canonical, so the loop was dead code. History: design/session_awareness/CLAUDE.md.
+
+# Per-attempt budget for this job (2026-09-09). lib_auth.sh's estate default
+# is 1500s; the morning report normally takes 6 to 12 minutes but on 09-09
+# three attempts in a row were killed at 1500s and the fourth needed 24m47s.
+# Since the same change, a HUNG attempt is killed by the idle watchdog
+# (CLAUDE_IDLE_SECONDS, default 600s of no output) rather than by this cap, so
+# raising the cap costs nothing on a hang and stops a working run from being
+# thrown away. Both are overridable from the environment (the plist).
+export CLAUDE_TIMEOUT_SECONDS="${CLAUDE_TIMEOUT_SECONDS:-3600}"
+export CLAUDE_IDLE_SECONDS="${CLAUDE_IDLE_SECONDS:-600}"
 
 # Source the auth-failure detection helpers (lib_auth.sh).
 # shellcheck source=./lib_auth.sh
@@ -78,6 +109,12 @@ if ! mkdir "$LOCK_DIR" 2>/dev/null; then
   fi
 fi
 echo $$ > "$LOCK_DIR/pid"
+# Stamp the lock with the day it was claimed FOR (2026-08-25). mbs_heartbeat.sh
+# reads this to tell "mbs_daily is still working, not late yet" apart from "a
+# ladder from an earlier day is still squatting here". Before this existed the
+# watchdog deferred on any live PID, which is how 2026-08-24 passed in total
+# silence: see the day bound in the retry loop below.
+echo "$TODAY" > "$LOCK_DIR/day"
 # Release the lock on any exit path (success, error, SIGTERM from `launchctl bootout`).
 trap 'rm -rf "$LOCK_DIR" 2>/dev/null' EXIT INT TERM
 
@@ -269,6 +306,89 @@ ensure_open_tasks_field() {
   echo "$(ts) - open_tasks: stamped $count into $(basename "$file")" >> "$log"
 }
 
+# --- skip-banner self-heal (2026-08-22) --------------------------------------
+# Strikes a "## Vault Agent (skipped...)" banner that an EARLIER ladder wrote
+# into today's note, so a later grid fire that succeeds does not append a real
+# "## Vault Agent" report underneath a banner announcing that no report was
+# generated. Before the 30-minute grid there could only be one ladder per day,
+# so the banner was always the last word and this could not happen.
+#
+# Same self-healing principle as lib_auth.sh's unalert_tasks_note (2026-08-19),
+# and the same lesson behind it: an alert with no way to un-fire outlives the
+# condition it describes and then rides the carry-forward for days.
+#
+# Called once per run, AFTER carry-forward (so yesterday's note keeps its own
+# banner in its own day, which is accurate history) and BEFORE the claude
+# ladder (so the claude step never sees a "(skipped" heading it might try to
+# refresh instead of appending a clean one). If this run also fails, the ladder
+# rewrites the banner at the end, which is again accurate.
+#
+# Matching is anchored on the "(skipped" suffix, so the real "## Vault Agent"
+# section is never touched. Removes the heading, the blank line above it, and
+# every line down to the next "## " heading or EOF. Best-effort: any implausible
+# rewrite is discarded and logged rather than moved into place. bash 3.2 / BSD safe.
+clear_skip_banner() {
+  local note="$1" log="$2"
+  [ -f "$note" ] || return 0
+  grep -qE '^## Vault Agent \(skipped' "$note" 2>/dev/null || return 0
+  local tmp
+  tmp="$(mktemp "${note%.md}.skipbannerXXXXXX" 2>/dev/null)" || return 0
+  awk '
+    { lines[NR] = $0 }
+    END {
+      for (i = 1; i <= NR; i++) drop[i] = 0
+      for (i = 1; i <= NR; i++) {
+        if (lines[i] ~ /^## Vault Agent \(skipped/) {
+          drop[i] = 1
+          # Take the blank line above the heading too. The banner heredoc opens
+          # with a blank, so that line is the banner\047s own. Leaving it behind
+          # would add one blank line per write-then-strike cycle and, on a day
+          # that fails a dozen ladders, ratchet the note full of them. Same trap
+          # unalert_tasks_note documents.
+          if (i > 1 && lines[i-1] == "") drop[i-1] = 1
+          # Boundary is the next heading at ANY level, not just "## ". Found
+          # the hard way on the real 2026-08-21 note: com.mbs.pointer-check
+          # appends a "### Pointer check" section, so a "## "-only boundary ran
+          # to EOF and swallowed it. The sanity check below caught the rewrite
+          # and refused it, which would have made this function a silent no-op
+          # in exactly the case it exists for.
+          for (j = i + 1; j <= NR; j++) {
+            if (substr(lines[j], 1, 1) == "#") break
+            drop[j] = 1
+          }
+        }
+      }
+      # Re-separate on the way out: taking the blank above the heading can glue
+      # the line before the banner onto the heading that followed it. Repair
+      # ONLY at that seam, i.e. where the line we are about to print follows a
+      # line we dropped. Reformatting headings elsewhere is not this function\047s
+      # business and would touch sections it has no reason to rewrite.
+      prev = ""; started = 0
+      for (i = 1; i <= NR; i++) {
+        if (drop[i]) continue
+        if (started && substr(lines[i], 1, 1) == "#" && prev != "" && drop[i-1]) print ""
+        print lines[i]
+        prev = lines[i]; started = 1
+      }
+    }' "$note" > "$tmp" 2>/dev/null || { rm -f "$tmp"; return 0; }
+  local before after
+  before="$(wc -l < "$note" 2>/dev/null | tr -d ' ')"
+  after="$(wc -l < "$tmp" 2>/dev/null | tr -d ' ')"
+  case "$before$after" in
+    *[!0-9]*|'') rm -f "$tmp"; return 0 ;;
+  esac
+  # A banner is 6 lines at most (blank, heading, blank, one paragraph, blank).
+  # Anything bigger means the awk matched something it should not have.
+  if [ "$after" -lt 1 ] || [ "$after" -ge "$before" ] || [ $((before - after)) -gt 12 ]; then
+    rm -f "$tmp"
+    echo "$(ts) - skip-banner: implausible rewrite (${before} -> ${after} lines), left as is" >> "$log"
+    return 0
+  fi
+  mv "$tmp" "$note" 2>/dev/null || rm -f "$tmp"
+  echo "$(ts) - skip-banner: struck stale skip banner from $(basename "$note")" >> "$log"
+  return 0
+}
+
 # Pre-flight: guarantee today's tasks file exists on this Mac's local disk
 # BEFORE invoking Claude. Why: the Journals plugin's `tasks.autoCreate` is now
 # intentionally disabled (to prevent phone-Mac sync races - phone Journals would
@@ -304,6 +424,10 @@ carry_forward_prior_tasks "$TODAY" "$VAULT/daily_notes/tasks" "$TODAYS_TASKS" "$
 # source for the claude triage step's errand staleness flags (project_task_triage).
 update_triage_first_seen "$TODAY" "$TODAYS_TASKS" "$STATE_DIR/triage_first_seen" "$LOG"
 
+# Strike any "(skipped" banner an earlier ladder left in today's note, so this
+# run's report does not land underneath a notice saying it was never generated.
+clear_skip_banner "$TODAYS_TASKS" "$LOG"
+
 # Headless run. NOTE: custom slash commands (/obsidian-daily) do NOT expand in
 # `claude -p` non-interactive mode - they only work in an interactive session. So
 # instead of invoking the slash command, we point Claude at the command file and
@@ -314,10 +438,10 @@ update_triage_first_seen "$TODAY" "$TODAYS_TASKS" "$STATE_DIR/triage_first_seen"
 # (skipDangerousModePermissionPrompt:true in ~/.claude/settings.json suppresses the
 # mode warning). The command is hardened to use the filesystem, not the Obsidian
 # MCP, so it does not require Obsidian to be running.
-PROMPT="Read the file $HOME/.claude/commands/obsidian-daily.md and carry out its instructions exactly, using the mbs_automation skill, against the vault at $VAULT. This is the unattended scheduled morning run: append or refresh the bounded ## Vault Agent section in today's tasks note via the filesystem, and do not touch P's own sections."
+PROMPT="Read the file $HOME/.claude/commands/obsidian-daily.md and carry out its instructions exactly, using the mbs_automation skill, against the vault at $VAULT. This is the unattended scheduled morning run: append or refresh the bounded ## Vault Agent section in today's tasks note via the filesystem, and do not touch P's own sections. Budget: the wrapper kills this run after ${CLAUDE_TIMEOUT_SECONDS}s of wall clock, or after ${CLAUDE_IDLE_SECONDS}s with no output, and a killed run loses its report; work steadily and do not spend turns measuring elapsed time. End the section with the single vault-agent-status line the command file specifies: complete when every step ran, partial (naming the skipped steps) only if you truly could not finish."
 
 # Pre-flight network gate (2026-07-06 hardening): the 06:00 fire (or a
-# wake-coalesced fire) can land before Wi-Fi/DNS has reconnected, so the first
+# wake-coalesced grid fire) can land before Wi-Fi/DNS has reconnected, so the first
 # attempt would burn on a ConnectionRefused / could-not-resolve failure that has
 # nothing to do with the API or with auth (this is what silently killed the
 # 2026-07-05 run). Poll the API host for up to ~2 min before starting; proceed
@@ -355,9 +479,76 @@ RETRY_DELAYS=(300 600 1800 3600)
 
 rc=1
 for attempt in $(seq 1 "$MAX_ATTEMPTS"); do
+  # --- day bound (2026-08-25) -------------------------------------------------
+  # The sleeps below use CLOCK_MONOTONIC and pause while the Mac sleeps, so a
+  # ladder can outlive its own calendar day. On 2026-08-23 this loop started at
+  # 06:10 and fired attempt 5 at 20:12 the FOLLOWING day, then wrote its banner
+  # into tasks_2026-08-23.md at 20:49 on 08-24 because $TODAY was fixed at
+  # process start.
+  #
+  # The cost was not that one late banner. It was the whole of 08-24, lost in
+  # total silence, for two compounding reasons:
+  #   1. launchd will not start a second copy of a job that is already running,
+  #      so not one of 08-24's triggers ever fired. Note the corroborating
+  #      evidence: the lock's "another instance is running" branch above has
+  #      never been reached once in the entire life of mbs_daily.log.
+  #   2. mbs_heartbeat.sh deferred on the live PID ("still running, not late
+  #      yet"), so the watchdog was silenced by the very thing it should have
+  #      reported.
+  # Result: 08-24 got no carry-forward, no report, and no banner explaining the
+  # absence. tasks_2026-08-24.md was left holding a single unrelated heading.
+  #
+  # So: once the date no longer matches the day this run was started FOR, stop.
+  # Releasing the lock is the entire point; the next trigger then starts a
+  # fresh, correctly dated ladder for the new day. Exit 4 is this case (0/1/2/3
+  # and run_claude_p's 124 were already taken).
+  NOW_DAY="$(date +%Y-%m-%d)"
+  if [ "$NOW_DAY" != "$TODAY" ]; then
+    echo "$(ts) - abandoning ladder at attempt $attempt/$MAX_ATTEMPTS: started for $TODAY, it is now $NOW_DAY. Releasing the lock so $NOW_DAY gets its own run." >> "$LOG"
+    if [ -f "$TODAYS_TASKS" ] && ! grep -qE '^## Vault Agent' "$TODAYS_TASKS"; then
+      cat >> "$TODAYS_TASKS" <<BANNER
+
+## Vault Agent (skipped, run abandoned)
+
+Daily report not generated for ${TODAY}. The retry ladder was still running when the date rolled over to ${NOW_DAY}, so it was abandoned at attempt ${attempt} of ${MAX_ATTEMPTS} and its lock released. Retry sleeps pause while the Mac sleeps, which is how a run stretches past its own day. ${NOW_DAY} gets its own run on the next trigger. No action needed unless this recurs.
+
+BANNER
+      echo "$(ts) - wrote abandoned-run banner to $TODAYS_TASKS" >> "$LOG"
+    fi
+    exit 4
+  fi
   echo "$(ts) - attempt $attempt/$MAX_ATTEMPTS" >> "$LOG"
   run_claude_p "$PROMPT" "$LOG"
   rc=$?
+  # --- artifact check (2026-09-09) --------------------------------------------
+  # The exit code alone has been shown to lie in both directions (09-03: report
+  # written, exit non-zero, three redundant attempts; 09-04: side effects
+  # written, no report, exit 124). Success now also requires that today's note
+  # carries a real ## Vault Agent section AND that the agent's own last line
+  # says the report is complete. A "partial" marker (the agent ran out of
+  # budget and said so, as on 09-09) is a failed attempt: no stamp, the ladder
+  # continues, and the next attempt refreshes the section in place. A MISSING
+  # marker is logged and tolerated (an agent that forgot the line should not
+  # cost a whole re-run); heartbeat check 2c reports it.
+  if [ "$rc" -eq 0 ]; then
+    if [ ! -f "$TODAYS_TASKS" ] || ! grep -qE '^## Vault Agent' "$TODAYS_TASKS" \
+       || grep -qE '^## Vault Agent \(skipped' "$TODAYS_TASKS"; then
+      echo "$(ts) - claude -p exited 0 but today's note has no real ## Vault Agent section; treating as a failed attempt (exit 5)" >> "$LOG"
+      rc=5
+    else
+      VA_STATUS="$(grep -E '^<!-- vault-agent-status: ' "$TODAYS_TASKS" | tail -1)"
+      case "$VA_STATUS" in
+        *"vault-agent-status: complete"*)
+          echo "$(ts) - report marker: ${VA_STATUS}" >> "$LOG" ;;
+        *"vault-agent-status: partial"*)
+          echo "$(ts) - report is marked PARTIAL by the agent: ${VA_STATUS}" >> "$LOG"
+          echo "$(ts) - not stamping; treating the partial report as a failed attempt (exit 5) so a later attempt refreshes it in place" >> "$LOG"
+          rc=5 ;;
+        *)
+          echo "$(ts) - WARNING: report carries no vault-agent-status marker; stamping on exit code alone (heartbeat check 2c will flag it)" >> "$LOG" ;;
+      esac
+    fi
+  fi
   if [ "$rc" -eq 0 ]; then
     clear_reauth_sentinel
     echo "$TODAY" > "$STAMP"
@@ -376,7 +567,7 @@ for attempt in $(seq 1 "$MAX_ATTEMPTS"); do
 
 ## Vault Agent (skipped)
 
-Claude Code authentication expired (HTTP 401 from Anthropic API). Daily report not generated. Re-authenticate by running `claude` then `/login` in Terminal. Once auth is restored, the next launchd trigger (next wake event or tomorrow's 06:00) will produce the report normally.
+Claude Code authentication expired (HTTP 401 from Anthropic API). Daily report not generated. Re-authenticate by running `claude` then `/login` in Terminal. Once auth is restored, the next launchd trigger produces the report normally and this banner is struck automatically. Triggers run every 30 minutes from 06:00 to 21:30, plus once on each wake from sleep.
 
 BANNER
       echo "$(ts) - wrote auth-skipped banner to $TODAYS_TASKS" >> "$LOG"
@@ -404,14 +595,38 @@ echo "$(ts) - all $MAX_ATTEMPTS attempts failed (final exit $rc); will retry on 
 # silent 2026-07-05 miss), so a missing report looked identical to "nothing
 # ran". Write a one-time banner so P sees why. Idempotent: skip if any Vault
 # Agent skip banner (this one or the 401 one) is already present in today's file.
+# Banner wording follows the final exit code (2026-09-09). This block used to
+# call every all-attempts failure "no network", which is how 2026-08-17 (five
+# 1500s kills with curl reporting the API reachable) went into the estate's
+# own records as a no-network morning. A kill is a kill; say so.
 if [ -f "$TODAYS_TASKS" ] && ! grep -qE '^## Vault Agent' "$TODAYS_TASKS"; then
-  cat >> "$TODAYS_TASKS" <<BANNER
+  if [ "$rc" -eq 124 ]; then
+    cat >> "$TODAYS_TASKS" <<BANNER
+
+## Vault Agent (skipped, timed out)
+
+Daily report not generated: every one of ${MAX_ATTEMPTS} attempts was killed by the wrapper's watchdog (hard cap ${CLAUDE_TIMEOUT_SECONDS}s, or ${CLAUDE_IDLE_SECONDS}s with no output). The network was reachable, so this is the run hanging or running long, not a connection failure. The tail of ~/.mbs_automation/mbs_daily.log names what each attempt was doing when it died, and the per-attempt traces are in ~/.mbs_automation/claude_traces/. A fresh attempt runs on the next trigger. If a later attempt today succeeds, this banner is struck automatically and replaced by the real report.
+
+BANNER
+    echo "$(ts) - wrote timed-out skipped banner to $TODAYS_TASKS" >> "$LOG"
+  elif [ "$rc" -eq 5 ]; then
+    cat >> "$TODAYS_TASKS" <<BANNER
+
+## Vault Agent (skipped, no report written)
+
+Daily report not generated: claude exited cleanly on all ${MAX_ATTEMPTS} attempts but never wrote a ## Vault Agent section into this note (the wrapper checks the artifact, not just the exit code, since 2026-09-09). The network and auth were fine, so this is the agent failing the write step: read the final message of each attempt in ~/.mbs_automation/mbs_daily.log, and the traces in ~/.mbs_automation/claude_traces/. A fresh attempt runs on the next trigger.
+
+BANNER
+    echo "$(ts) - wrote no-report skipped banner to $TODAYS_TASKS" >> "$LOG"
+  else
+    cat >> "$TODAYS_TASKS" <<BANNER
 
 ## Vault Agent (skipped, no network)
 
-Daily report not generated: could not reach the Anthropic API after ${MAX_ATTEMPTS} attempts. This was a connection or DNS failure, not an auth problem, most often the Mac waking for the scheduled run before Wi-Fi/DNS reconnected. The next launchd trigger (next wake event or tomorrow's 06:00) retries automatically. No action needed unless it recurs for several days.
+Daily report not generated: could not reach the Anthropic API after ${MAX_ATTEMPTS} attempts (final exit ${rc}). This was a connection or DNS failure, not an auth problem, most often the Mac waking for the scheduled run before Wi-Fi/DNS reconnected. A fresh attempt runs on the next trigger: every 30 minutes from 06:00 to 21:30, plus once on each wake from sleep. If a later attempt today succeeds, this banner is struck automatically and replaced by the real report. No action needed unless it recurs for several days.
 
 BANNER
-  echo "$(ts) - wrote no-network skipped banner to $TODAYS_TASKS" >> "$LOG"
+    echo "$(ts) - wrote no-network skipped banner to $TODAYS_TASKS" >> "$LOG"
+  fi
 fi
 exit "$rc"

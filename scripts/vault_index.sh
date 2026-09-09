@@ -19,6 +19,11 @@ OUTPUT="$VAULT/admin/mbs_system/brain/vault_file_tree.md"
 
 mkdir -p "$STATE_DIR"
 
+# Sourced for alert_tasks_note() only, so a refusal below is visible in the
+# vault and not just in this job's log. Same reason mbs_heartbeat.sh sources it.
+# shellcheck source=./lib_auth.sh
+source "$(dirname "$0")/lib_auth.sh"
+
 # Always use Eastern time - P's timezone.
 TODAY="$(TZ=America/New_York date +%Y-%m-%d)"
 ts() { TZ=America/New_York date '+%Y-%m-%d %H:%M:%S'; }
@@ -51,6 +56,45 @@ COUNT="$(echo "$TREE" | grep -c . || true)"
 
 # Strip vault prefix so paths are vault-relative (e.g. admin/mbs_system/homelab/homelab.md)
 TREE_DISPLAY="$(echo "$TREE" | sed "s|$VAULT/||")"
+
+# Plausibility guard before the tree is overwritten (added 2026-08-19).
+#
+# WHY: this script used to overwrite $OUTPUT and stamp success unconditionally.
+# If find ever returned little or nothing (a permissions change, a moved or
+# unmounted vault, a full disk mid-write), it would replace a 3,000-line tree
+# with a hollow one and record the run as healthy. The damage is not the
+# missing file, it is what the file then says: vault_file_tree.md is item 5 of
+# the session-start read order in brain/CLAUDE.md, and the rule there is to
+# grep it for existence checks. A hollowed-out tree makes every session
+# confidently tell P that his files do not exist. Silent wrongness, which does
+# more harm than silent absence.
+#
+# Same principle as web_watchers.sh refusing to store a CLI failure message as
+# a watcher answer: a failed run must never be allowed to destroy a good
+# baseline. Refuse, leave the old tree intact, do NOT stamp, let the next
+# trigger retry, and say so where P will see it.
+#
+# Two tests: an absolute floor, and a halving guard against the previous run's
+# own recorded count. If the vault ever legitimately shrinks by more than half
+# (a mass archive), this refuses once and keeps refusing; the escape hatch is
+# to delete vault_file_tree.md, which drops VI_PREV to 0 and leaves only the
+# floor. That is deliberate: a 50% drop should need a human to confirm it.
+VI_FLOOR=500
+VI_PREV=0
+if [ -f "$OUTPUT" ]; then
+  VI_PREV="$(sed -n 's/^\*\*Last run:\*\* .* - \*\*\([0-9][0-9]*\) files\*\* indexed\..*/\1/p' "$OUTPUT" | head -1)"
+  case "$VI_PREV" in
+    ''|*[!0-9]*) VI_PREV=0 ;;
+  esac
+fi
+VI_REFUSE=0
+[ "$COUNT" -lt "$VI_FLOOR" ] && VI_REFUSE=1
+if [ "$VI_PREV" -gt 0 ] && [ "$COUNT" -lt "$((VI_PREV / 2))" ]; then VI_REFUSE=1; fi
+if [ "$VI_REFUSE" -eq 1 ]; then
+  echo "$(ts) - REFUSING to overwrite $OUTPUT: this run found $COUNT markdown file(s) (absolute floor $VI_FLOOR, previous run $VI_PREV). The existing tree is left intact and NO stamp is written, so the next trigger retries. Check the vault path, the mount, and permissions. If the vault really did shrink this much, delete $OUTPUT to reset the baseline." >> "$LOG"
+  alert_tasks_note "vault-index refused to rewrite vault_file_tree.md: this run found only $COUNT markdown file(s) against $VI_PREV last time, so it kept the old tree rather than replacing it with a hollow one. The tree is intact but going stale, and sessions grep it to decide whether a file exists. Check ~/.mbs_automation/vault_index.log."
+  exit 1
+fi
 
 cat > "$OUTPUT" <<EOF
 ---

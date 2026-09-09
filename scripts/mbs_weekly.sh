@@ -54,17 +54,47 @@ cd "$VAULT" || { echo "$(ts) - ERROR: cannot cd to $VAULT" >> "$LOG"; exit 1; }
 
 PROMPT="This is the unattended weekly run for the mbs_automation vault at $VAULT, using the mbs_automation skill. Do two things in order: (1) Read $HOME/.claude/commands/obsidian-health.md and carry out the health audit, but REPORT ONLY - do NOT apply any fixes, do NOT move, archive, or delete anything; surface findings for P to act on. (2) Read $HOME/.claude/commands/obsidian-review.md and produce this week's weekly review note, incorporating the health findings under its open-items section. Write via the filesystem, not the Obsidian MCP."
 
-run_claude_p "$PROMPT" "$LOG"
-rc=$?
-if [ "$rc" -eq 0 ]; then
-  clear_reauth_sentinel
-  echo "$THIS_WEEK" > "$STAMP"
-  echo "$(ts) - completed successfully; stamped $THIS_WEEK" >> "$LOG"
-elif [ "$rc" -eq 2 ]; then
-  mark_reauth_needed "$LOG"
-  echo "$(ts) - weekly run blocked on Claude Code auth; no stamp written. Next trigger after re-auth will retry." >> "$LOG"
-  exit 2
-else
-  echo "$(ts) - ERROR: weekly run exited $rc; will retry on next trigger" >> "$LOG"
-  exit "$rc"
-fi
+# Retry ladder (added 2026-08-19). Modeled on mbs_daily.sh's, deliberately
+# shorter: four attempts with 5/10/30-minute sleeps, so that even with four
+# consecutive 25-minute CLAUDE_TIMEOUT_SECONDS timeouts the ladder finishes
+# well before the 11:00 heartbeat that now checks this job's stamp.
+#
+# WHY: this script used to make ONE run_claude_p call. On Monday 2026-08-17 it
+# timed out once and exited. The next launchd trigger for a Weekday=1 job is
+# the FOLLOWING Monday, and RunAtLoad only fires at login, so one transient
+# cost an entire week. cars_weekly.sh lost the same morning the same way, and
+# neither job had a heartbeat check, so nothing said a word for three days.
+MAX_ATTEMPTS=4
+RETRY_DELAYS=(300 600 1800)
+
+rc=1
+for attempt in $(seq 1 "$MAX_ATTEMPTS"); do
+  echo "$(ts) - attempt $attempt/$MAX_ATTEMPTS" >> "$LOG"
+  run_claude_p "$PROMPT" "$LOG"
+  rc=$?
+  if [ "$rc" -eq 0 ]; then
+    clear_reauth_sentinel
+    echo "$THIS_WEEK" > "$STAMP"
+    echo "$(ts) - completed successfully on attempt $attempt; stamped $THIS_WEEK" >> "$LOG"
+    exit 0
+  fi
+  if [ "$rc" -eq 2 ]; then
+    mark_reauth_needed "$LOG"
+    echo "$(ts) - weekly run blocked on Claude Code auth; no stamp written. Next trigger after re-auth will retry." >> "$LOG"
+    exit 2
+  fi
+  if [ "$rc" -eq 3 ]; then
+    # Out of usage credits. run_claude_p already wrote a visible alert line into
+    # today's tasks note. Retrying inside this run is pointless.
+    echo "$(ts) - weekly run out of usage credits (model ${CLAUDE_MODEL:-opus}); alert written to today's note, not retrying" >> "$LOG"
+    exit 3
+  fi
+  if [ "$attempt" -lt "$MAX_ATTEMPTS" ]; then
+    delay="${RETRY_DELAYS[$((attempt - 1))]}"
+    echo "$(ts) - attempt $attempt failed (exit $rc); sleeping ${delay}s before retry $((attempt + 1))" >> "$LOG"
+    sleep "$delay"
+  fi
+done
+
+echo "$(ts) - ERROR: weekly run failed all $MAX_ATTEMPTS attempts (final exit $rc); no stamp written. Heartbeat check 21 surfaces the missing week; next launchd trigger retries." >> "$LOG"
+exit "$rc"

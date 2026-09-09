@@ -65,6 +65,17 @@
 # mychart-sync auth failure that both of check 19's purpose-built assertions
 # were structurally unable to see.
 #
+# 2026-09-01: check 27, the Obsidian Sync merge-debris detector, and the second
+# one-rule-for-everything check. Obsidian Sync is the vault's real multi-device
+# merge authority and it merges per file, restore-on-conflict; when it garbles,
+# it garbles by DUPLICATING a block (proven 2026-08-17 on nine ledger notes plus
+# two files line-level, and again 2026-09-01 when ref_health_scheduled_tasks.md
+# was found carrying its whole com.mbs.mychart-sync section twice, one copy
+# twelve days stale). The vault's own rule is a manual next-day verification
+# pass after any edit-heavy session, which is a per-session discipline and
+# therefore skipped exactly when a session is busy. Check 27 does not need to
+# know which files a session touched.
+#
 # Idempotence: per-day stamp, written ONLY on a healthy check. A failing check
 # deliberately leaves no stamp, so every later trigger re-checks and re-nudges
 # until the underlying problem is fixed. That nag is the feature.
@@ -142,6 +153,22 @@ lock_claimed_day() {
 # stamping or reporting. The watchdog was silenced by the exact condition it
 # exists to catch. A lock held by a live process from an EARLIER day is not
 # patience, it is the finding.
+# 2026-09-01: the deferral below is PER-CHECK, not whole-script. It used to be
+# `exit 0`, which made the watchdog blind in exactly the shape of the condition
+# that triggered it: on 2026-08-24, 08-27 and 08-28 mbs_daily held a same-day
+# lock at 11:00, this script exited before any of its 26 checks, and nothing was
+# ever said about com.mbs.mychart-sync failing outright on four separate days.
+# Checks 19 and 26 both held the evidence; neither one ran. A lock held by
+# mbs_daily says nothing about oura, the backups, the launchd roster or any
+# other job, so only the checks that actually READ mbs_daily's output are
+# skipped: 1, 2, 2b, 2c, 3 and 9 for mbs_daily, 11 for team_brief, plus that job's
+# own line in check 26 (a run still in flight has not written its verdict yet).
+# The healthy stamp is still withheld whenever anything was deferred, so the
+# next trigger re-checks. Partial coverage must never look like a clean day.
+DEFER_DAILY=0
+DEFER_TEAM_BRIEF=0
+DEFER_NAMES=""
+
 DAILY_LOCK="$STATE_DIR/mbs_daily.lock"
 STALE_DAILY_LOCK=""
 if [ -d "$DAILY_LOCK" ]; then
@@ -149,11 +176,17 @@ if [ -d "$DAILY_LOCK" ]; then
   if [ -n "${HOLDER_PID:-}" ] && kill -0 "$HOLDER_PID" 2>/dev/null; then
     DAILY_LOCK_DAY="$(lock_claimed_day "$DAILY_LOCK")"
     if [ "${DAILY_LOCK_DAY:-$TODAY}" = "$TODAY" ]; then
-      echo "$(ts) - mbs_daily still running (PID $HOLDER_PID, lock claimed ${DAILY_LOCK_DAY:-unknown}); not late yet, will re-check on next trigger." >> "$LOG"
-      exit 0
+      DEFER_DAILY=1
+      DEFER_NAMES="${DEFER_NAMES}${DEFER_NAMES:+, }mbs_daily"
+      echo "$(ts) - mbs_daily still running (PID $HOLDER_PID, lock claimed ${DAILY_LOCK_DAY:-unknown}); deferring checks 1, 2, 2b, 2c, 3 and 9 only, running every other check." >> "$LOG"
+    else
+      # The same-day branch used to `exit 0`, so these two lines were only ever
+      # reached on an earlier-day lock. With the exit gone they need an explicit
+      # else, or a normal long-running mbs_daily would both defer AND be
+      # reported as a stale lock by check 0 every single day.
+      STALE_DAILY_LOCK="PID $HOLDER_PID, lock claimed ${DAILY_LOCK_DAY:-unknown}"
+      echo "$(ts) - mbs_daily lock held by a LIVE process from ${DAILY_LOCK_DAY:-an earlier day} (PID $HOLDER_PID); not deferring, continuing checks." >> "$LOG"
     fi
-    STALE_DAILY_LOCK="PID $HOLDER_PID, lock claimed ${DAILY_LOCK_DAY:-unknown}"
-    echo "$(ts) - mbs_daily lock held by a LIVE process from ${DAILY_LOCK_DAY:-an earlier day} (PID $HOLDER_PID); not deferring, continuing checks." >> "$LOG"
   fi
 fi
 
@@ -172,11 +205,14 @@ if [ -f "$HOME/Library/LaunchAgents/com.mbs.team-brief.plist" ] && [ -d "$TEAM_B
   if [ -n "${HOLDER_PID:-}" ] && kill -0 "$HOLDER_PID" 2>/dev/null; then
     TB_LOCK_DAY="$(lock_claimed_day "$TEAM_BRIEF_LOCK")"
     if [ "${TB_LOCK_DAY:-$TODAY}" = "$TODAY" ]; then
-      echo "$(ts) - team_brief still running (PID $HOLDER_PID, lock claimed ${TB_LOCK_DAY:-unknown}); not late yet, will re-check on next trigger." >> "$LOG"
-      exit 0
+      DEFER_TEAM_BRIEF=1
+      DEFER_NAMES="${DEFER_NAMES}${DEFER_NAMES:+, }team_brief"
+      echo "$(ts) - team_brief still running (PID $HOLDER_PID, lock claimed ${TB_LOCK_DAY:-unknown}); deferring check 11 only, running every other check." >> "$LOG"
+    else
+      # Same reason as the mbs_daily else above.
+      STALE_TEAM_BRIEF_LOCK="PID $HOLDER_PID, lock claimed ${TB_LOCK_DAY:-unknown}"
+      echo "$(ts) - team_brief lock held by a LIVE process from ${TB_LOCK_DAY:-an earlier day} (PID $HOLDER_PID); not deferring, continuing checks." >> "$LOG"
     fi
-    STALE_TEAM_BRIEF_LOCK="PID $HOLDER_PID, lock claimed ${TB_LOCK_DAY:-unknown}"
-    echo "$(ts) - team_brief lock held by a LIVE process from ${TB_LOCK_DAY:-an earlier day} (PID $HOLDER_PID); not deferring, continuing checks." >> "$LOG"
   fi
 fi
 
@@ -283,6 +319,11 @@ check_no_shrink() {
   printf '%s\n' "$cns_val" > "$cns_file"
 }
 
+# --- (guard) checks 1, 2, 2b, 2c and 3 all read mbs_daily's output ----------
+# Skipped while mbs_daily holds a live same-day lock: its report is not written
+# yet, so these would fire on a run that is still in flight.
+if [ "$DEFER_DAILY" -eq 0 ]; then
+
 # --- check 1: today's tasks note exists -------------------------------------
 if [ ! -f "$TASKS_NOTE" ]; then
   add_finding "today's tasks note does not exist at all (tasks_${TODAY}.md)"
@@ -305,6 +346,31 @@ else
   if ! awk 'NR==1{next} /^---[[:space:]]*$/{exit} {print}' "$TASKS_NOTE" | grep -q '^open_tasks:'; then
     add_finding "today's tasks note has no open_tasks property - the morning stamp did not run"
   fi
+
+  # --- check 2c: the report says of itself that it is complete (2026-09-09) --
+  # Check 2 asks whether a ## Vault Agent section exists. On 2026-09-09 one
+  # did: attempt 4 of the ladder, with a minute left before the 1500s kill,
+  # wrote a section that named six steps it had not run (overdue, missing
+  # next step, calendar, captured/, normalization, triage classification),
+  # exited 0, and the day was stamped. Check 2 and check 9 both passed, since
+  # the heading and the ### Triage marker were present. The artifact existed;
+  # the substance did not. The HTTP-200 family, one layer up.
+  # obsidian-daily.md step 8 now makes the agent end the section with a
+  # machine-readable status line, and mbs_daily.sh refuses to stamp on
+  # "partial". This check reads the same line: partial is a finding, and a
+  # missing line is a finding too (the wrapper stamps on exit code alone in
+  # that case, so this is the only place it gets said). Presence and value
+  # only; the watchdog never recounts anything.
+  if grep -qE '^## Vault Agent' "$TASKS_NOTE" && ! grep -qE '^## Vault Agent \(skipped' "$TASKS_NOTE"; then
+    VA_STATUS="$(grep -E '^<!-- vault-agent-status: ' "$TASKS_NOTE" 2>/dev/null | tail -1)"
+    case "$VA_STATUS" in
+      *"vault-agent-status: complete"*) ;;
+      *"vault-agent-status: partial"*)
+        add_finding "today's morning report is marked PARTIAL by the agent itself ($(printf '%s' "$VA_STATUS" | cut -c1-160)) - the ## Vault Agent section landed but names steps it did not run; read it, then re-run with: echo \"$(date -v-1d +%Y-%m-%d 2>/dev/null || echo yesterday)\" > ~/.mbs_automation/last_daily_run && launchctl kickstart -k gui/\$(id -u)/com.mbs.daily" ;;
+      *)
+        add_finding "today's morning report carries no vault-agent-status marker (required since 2026-09-09, obsidian-daily.md step 8) - the note cannot say whether every step ran; read the tail of ~/.mbs_automation/mbs_daily.log and the report itself" ;;
+    esac
+  fi
 fi
 
 # --- check 3: the daily job's own stamp agrees ------------------------------
@@ -313,6 +379,8 @@ LAST_DAILY="$(cat "$DAILY_STAMP" 2>/dev/null || echo none)"
 if [ "$LAST_DAILY" != "$TODAY" ]; then
   add_finding "mbs_daily has not completed successfully since ${LAST_DAILY} (its stamp is stale)"
 fi
+
+fi  # end DEFER_DAILY guard over checks 1, 2, 2b, 2c, 3
 
 # --- check 4: is Claude Code sitting in a known-broken auth state? ----------
 if [ -f "$REAUTH_SENTINEL" ]; then
@@ -581,7 +649,8 @@ fi
 # all are already covered by checks 2/3; re-flagging here would double the
 # noise. First expected live morning: 2026-08-02 (2026-08-01's report predates
 # the feature, and that day's heartbeat had already stamped healthy).
-if [ -f "$TASKS_NOTE" ] && grep -qE '^## Vault Agent' "$TASKS_NOTE" \
+if [ "$DEFER_DAILY" -eq 0 ] \
+   && [ -f "$TASKS_NOTE" ] && grep -qE '^## Vault Agent' "$TASKS_NOTE" \
    && ! grep -qE '^## Vault Agent \(skipped' "$TASKS_NOTE" \
    && ! grep -qE '^### Triage' "$TASKS_NOTE"; then
   add_finding "morning report landed without its ### Triage subsection - the capture-triage step did not run; check ~/dev/mbs_automation/commands/obsidian-daily.md step 3c and ~/.mbs_automation/mbs_daily.log"
@@ -623,7 +692,7 @@ fi
 # finding distinguishes the delivery-failed case: team_brief.sh archives the
 # brief BEFORE emailing and stamps only after the send, so file-present with
 # stamp-stale means generation landed but the email did not.
-if [ -f "$HOME/Library/LaunchAgents/com.mbs.team-brief.plist" ]; then
+if [ "$DEFER_TEAM_BRIEF" -eq 0 ] && [ -f "$HOME/Library/LaunchAgents/com.mbs.team-brief.plist" ]; then
   TEAM_BRIEF_FILE="$VAULT/social/project_team_brief/briefs/brief_${TODAY}.md"
   TEAM_BRIEF_STAMP="$STATE_DIR/last_team_brief_run"
   LAST_TEAM_BRIEF="$(cat "$TEAM_BRIEF_STAMP" 2>/dev/null || echo none)"
@@ -988,6 +1057,17 @@ if [ -f "$HOME/Library/LaunchAgents/com.mbs.mychart-sync.plist" ]; then
     if [ -f "$STATE_DIR/mychart_needs_reauth_${MCS_INST}" ]; then
       add_finding "mychart-sync: the ${MCS_INST} grant needs re-authorization (sentinel present since $(cat "$STATE_DIR/mychart_needs_reauth_${MCS_INST}" 2>/dev/null | head -1)) - that hospital's encounter feed is paused; run: cd ~/dev/mbs-mychart-sync && .venv/bin/python scripts/mychart_consent.py --institution ${MCS_INST} --tls --verify"
     fi
+    # Added 2026-09-01. Third marker this job writes, and until now the only one
+    # nothing read. src/mychart_sync.py writes it when EVERY attachment fetch at
+    # an institution returns 403, then skips attachment fetching silently on
+    # every later run. That quiet degrade is deliberate and it is invisible:
+    # encounters keep arriving and stamping the day, so the stale-stamp check
+    # above and check 26 both stay green while the clinical note TEXT (what the
+    # 2026-08-19 successor app 59370 was registered to unlock, and the source of
+    # the 895-file attachment archive) silently stops. Clears on next success.
+    if [ -f "$STATE_DIR/mychart_attachments_unauthorized_${MCS_INST}" ]; then
+      add_finding "mychart-sync: ${MCS_INST} clinical-document text is NOT being fetched (every attachment request returned 403; marker present since $(cat "$STATE_DIR/mychart_attachments_unauthorized_${MCS_INST}" 2>/dev/null | head -1)) - encounters still arrive, note text does not, so nothing else will report this; consent or the Epic app's Binary scope regressed. Re-consent: cd ~/dev/mbs-mychart-sync && .venv/bin/python scripts/mychart_consent.py --institution ${MCS_INST} --tls --verify, then rm the marker and run src/mychart_sync.py --backfill-attachments"
+    fi
   done
 fi
 
@@ -1298,6 +1378,8 @@ for TF in "$STATE_DIR"/*.log; do
   case "$TC_BASE" in
     *.err.log|*.out.log|*manifest*|mbs_heartbeat.log) continue ;;
     mychart_sync.log) [ "$MCS_STALE_REPORTED" -eq 1 ] && continue ;;
+    mbs_daily.log) [ "$DEFER_DAILY" -eq 1 ] && continue ;;
+    team_brief.log) [ "$DEFER_TEAM_BRIEF" -eq 1 ] && continue ;;
   esac
   TC_LINE="$(grep -E 'completed successfully|OK \(mode=|FAILED' "$TF" 2>/dev/null | tail -1)"
   [ -n "$TC_LINE" ] || continue
@@ -1312,11 +1394,168 @@ if [ "$STDOUT_FAIL_COUNT" -gt 0 ]; then
   add_finding "${STDOUT_FAIL_COUNT} job(s) ended their most recent run in FAILED and said so in their own log: ${STDOUT_FAIL_NAMES} - the job knew; nothing was reading. Open each file in ~/.mbs_automation/ and read its last terminal line; this clears itself as soon as that job's next run succeeds"
 fi
 
+# --- check 28: oura heartrate agrees with oura sleep (added 2026-09-01) -----
+# WHY: on 2026-09-01 the daily summary endpoints backfilled cleanly for
+# 08-30, 08-31 and 09-01 (sleep score 94/92/86, HRV 78/119/60) while
+# heartrate/ stayed at zero samples for every one of those days. Those two
+# facts cannot both be right: average_hrv and average_heart_rate are DERIVED
+# from the heart-rate series, so a sleep record proves the samples exist.
+# Verified live against the API that Oura itself was serving no heartrate
+# past 2026-08-28, so this is an upstream lag, not a client bug. It will
+# very likely arrive late, the way the 2026-08-17 ring-backlog flush did.
+#
+# Nothing else can see it. Check 5 canaries daily_activity, and 5b samples
+# daily_activity, daily_sleep and daily_readiness: all three were healthy
+# while the heart-rate archive had a four-day hole, so the heartbeat was
+# about to go green over it. That is the estate rule from 2026-08-20 in its
+# purest form: a freshness check needs a completeness sibling.
+#
+# This is a CROSS-ENDPOINT INVARIANT rather than a per-endpoint threshold,
+# which is why it cannot go stale: a day with a sleep session must have
+# heart-rate samples. No knowledge of any endpoint list, nothing to tune.
+#
+# Window: 2 to 10 days back. Today and yesterday are excluded deliberately,
+# because Oura publishes the timeseries later than the daily summaries and
+# a same-day or overnight empty read is normal rather than a fault. Empty is
+# detected by the literal `"data": []` line that archive.py pretty-prints,
+# the same tell check 5b uses.
+OURA_RAW="$VAULT/health/health_physical/oura/raw"
+if [ -d "$OURA_RAW/sleep" ] && [ -d "$OURA_RAW/heartrate" ]; then
+  HR_GAP_N=0
+  HR_GAP_DAYS=""
+  # The loop walks newest to oldest, so the LAST gap day it sees is the
+  # earliest one, which is what --backfill needs as its start. Carried so the
+  # finding can ship a command that runs as-is: an operator-facing message with
+  # a placeholder in it is a message that has to be edited at 11am by whoever
+  # is least equipped to edit it.
+  HR_GAP_FIRST=""
+  HR_BACK=2
+  while [ "$HR_BACK" -le 10 ]; do
+    HR_DAY="$(date -v-${HR_BACK}d +%Y-%m-%d 2>/dev/null)"
+    HR_BACK=$((HR_BACK + 1))
+    [ -n "$HR_DAY" ] || continue
+    HR_SLEEP_F="$OURA_RAW/sleep/${HR_DAY}.json"
+    HR_HR_F="$OURA_RAW/heartrate/${HR_DAY}.json"
+    # A sleep session must exist for the invariant to say anything at all.
+    [ -f "$HR_SLEEP_F" ] || continue
+    grep -q '"data": \[\]' "$HR_SLEEP_F" 2>/dev/null && continue
+    # ...and then heart rate must be there. Missing file counts as missing data.
+    if [ ! -f "$HR_HR_F" ] || grep -q '"data": \[\]' "$HR_HR_F" 2>/dev/null; then
+      HR_GAP_N=$((HR_GAP_N + 1))
+      HR_GAP_FIRST="$HR_DAY"
+      [ "$HR_GAP_N" -le 5 ] && HR_GAP_DAYS="${HR_GAP_DAYS}${HR_GAP_DAYS:+, }${HR_DAY}"
+    fi
+  done
+  if [ "$HR_GAP_N" -gt 0 ]; then
+    [ "$HR_GAP_N" -gt 5 ] && HR_GAP_DAYS="${HR_GAP_DAYS}, and $((HR_GAP_N - 5)) more"
+    add_finding "oura: ${HR_GAP_N} day(s) have a sleep session but ZERO heartrate samples (${HR_GAP_DAYS}) - those cannot both be true, since the sleep record's average_hrv and average_heart_rate are derived from the series, so the samples exist upstream and the archive is incomplete. Usually Oura publishing the timeseries later than the daily summaries; it self-heals only while the day is still inside the sync job's --lookback window. Confirm with a direct query, then repair with: cd ~/dev/mbs-oura-sync && .venv/bin/python src/oura_sync.py --backfill ${HR_GAP_FIRST}:today"
+  fi
+fi
+
+# --- check 27: no vault file gained a duplicated block (added 2026-09-01) ----
+# WHY: see the 2026-09-01 note in the header. Obsidian Sync garbles by
+# duplicating, so a file that GAINS a repeated identical heading overnight is
+# the signature.
+#
+# DELTA, not state, and that distinction is the whole check. A vault-wide scan
+# on 2026-09-01 found 50 of 4571 markdown files already carrying a repeated
+# heading, essentially all of them legitimate (per-item reference notes, chat
+# imports, book summaries with a "### Core Concept" per chapter). A check on
+# the raw state would have opened with 50 findings and been ignored by the
+# second day. So the baseline ledger records what each file already had, and
+# only an INCREASE speaks.
+#
+# Ledger policy, deliberately asymmetric: a count that FALLS lowers the
+# baseline automatically (someone fixed it); a count that RISES fires and the
+# baseline is NOT raised, so the nag persists until the file is fixed or P
+# raises it by hand. That keeps the heartbeat's "the nag is the feature" rule
+# rather than self-clearing after one mention. A file with no baseline entry
+# counts as 0, so a newly created file with a duplicate block also fires.
+#
+# First run writes the ledger and reports nothing, same self-baselining shape
+# as check_no_shrink's high-water marks.
+#
+# Portability: macOS /usr/bin/awk is BWK awk, so no brace-interval regexes, no
+# gawk builtins. Headings are matched by literal prefix alternation for that
+# reason. Fenced code blocks are skipped so a markdown sample of a heading is
+# not counted. Runtime measured at 2.3s over a Cowork FUSE mount, well under a
+# second natively.
+DUP_BASE="$STATE_DIR/dupblock_baseline.txt"
+DUP_NOW="$STATE_DIR/.dupblock_now.$$"
+if [ -d "$VAULT" ]; then
+  find "$VAULT" \( -path "$VAULT/trash" -o -path "$VAULT/.obsidian" \
+       -o -path "$VAULT/.git" -o -path "$VAULT/attachments" \
+       -o -path "$VAULT/create/oslo/_corpora" \
+       -o -path "$VAULT/health/health_physical/oura/raw" \
+       -o -path "$VAULT/admin/mbs_system/brain/backup" \) -prune -o \
+       -name '*.md' ! -name 'pn.md' -print0 2>/dev/null \
+  | xargs -0 awk '
+      FNR==1 { fence = 0 }
+      /^```/  { fence = !fence; next }
+      fence   { next }
+      /^## [^ ]/ || /^### [^ ]/ || /^#### [^ ]/ { print FILENAME "\t" $0 }
+    ' 2>/dev/null \
+  | awk -F'\t' '
+      { cnt[$1 FS $2]++ }
+      END {
+        # EXCESS repetitions, not distinct duplicated headings. Counting
+        # distinct headings goes blind exactly where it matters most: debris
+        # that duplicates a block whose heading the file ALREADY repeats does
+        # not change the distinct count. Summing cnt-1 catches the second copy,
+        # the third, and a garble that duplicates several headings at once.
+        # Found by this checks own harness, 2026-09-01. NOTE: no
+        # apostrophes in this awk block, it lives inside single quotes and one
+        # stray apostrophe is the 2026-08-08 web-watchers parse bug verbatim.
+        for (k in cnt) if (cnt[k] > 1) { split(k, a, FS); d[a[1]] += cnt[k] - 1 }
+        for (f in d) print f "\t" d[f]
+      }' 2>/dev/null | sort > "$DUP_NOW"
+
+  if [ ! -s "$DUP_NOW" ] && [ -s "$DUP_BASE" ]; then
+    # Negative control. An empty scan against a non-empty ledger means the scan
+    # broke, not that the vault healed overnight. Report it and, above all, do
+    # NOT overwrite the ledger with nothing, which would re-fire all 50 known
+    # files tomorrow.
+    add_finding "duplicate-block scan (check 27) returned nothing while its ledger holds $(wc -l < "$DUP_BASE" | tr -d " ") file(s) - the scan itself is broken, not the vault; check the find/awk pipeline in mbs_heartbeat.sh and do not delete $DUP_BASE"
+  elif [ ! -f "$DUP_BASE" ]; then
+    cp "$DUP_NOW" "$DUP_BASE" 2>/dev/null
+    echo "$(ts) - check 27: duplicate-block ledger created with $(wc -l < "$DUP_BASE" | tr -d " ") pre-existing file(s); reporting starts on the next run." >> "$LOG"
+  else
+    DUP_RISEN="$(awk -F'\t' '
+        NR==FNR { b[$1] = $2; next }
+        { o = ($1 in b) ? b[$1] : 0; if ($2 > o) print $1 "\t" o "\t" $2 }
+      ' "$DUP_BASE" "$DUP_NOW")"
+    if [ -n "$DUP_RISEN" ]; then
+      DUP_N="$(printf '%s\n' "$DUP_RISEN" | grep -c .)"
+      DUP_NAMES="$(printf '%s\n' "$DUP_RISEN" | head -5 | awk -F'\t' -v v="$VAULT/" '{ p=$1; sub("^" v, "", p); printf "%s%s (%s to %s)", (NR>1 ? ", " : ""), p, $2, $3 }')"
+      [ "$DUP_N" -gt 5 ] && DUP_NAMES="${DUP_NAMES}, and $((DUP_N - 5)) more"
+      add_finding "${DUP_N} vault file(s) gained duplicated heading block(s) since the last check: ${DUP_NAMES} - this is the Obsidian Sync merge-debris signature (it merges per file, restore-on-conflict, and garbles by duplicating). Open each and compare the twin blocks; the newer one is usually a stale copy from a device that had not synced. If a duplicate is legitimate, accept it by raising that file's count in ~/.mbs_automation/dupblock_baseline.txt, which is the only way this clears"
+    fi
+    # Falls automatically, never rises automatically: see the policy note above.
+    awk -F'\t' '
+        NR==FNR { b[$1] = $2; next }
+        ($1 in b) { print $1 "\t" (b[$1] < $2 ? b[$1] : $2) }
+      ' "$DUP_BASE" "$DUP_NOW" > "${DUP_BASE}.tmp" 2>/dev/null \
+      && mv "${DUP_BASE}.tmp" "$DUP_BASE"
+  fi
+  rm -f "$DUP_NOW"
+fi
+
 # --- verdict ----------------------------------------------------------------
 if [ "$FINDING_COUNT" -eq 0 ]; then
+  # Partial coverage is not a clean day. If anything was deferred, the checks
+  # that read that job's output never ran, so no stamp: the next trigger
+  # re-checks once the lock clears.
+  if [ -n "$DEFER_NAMES" ]; then
+    echo "$(ts) - no findings among the checks that ran, but ${DEFER_NAMES} was mid-run so its dependent checks did not evaluate; no stamp, will re-check on next trigger." >> "$LOG"
+    exit 0
+  fi
   echo "$TODAY" > "$STAMP"
   echo "$(ts) - healthy: report present in tasks_${TODAY}.md, daily stamp current, no reauth sentinel. Stamped $TODAY." >> "$LOG"
   exit 0
+fi
+
+if [ -n "$DEFER_NAMES" ]; then
+  echo "$(ts) - NOTE: ${DEFER_NAMES} was mid-run, so its dependent checks did not evaluate; the findings below are partial coverage." >> "$LOG"
 fi
 
 echo "$(ts) - UNHEALTHY ($FINDING_COUNT finding(s)); no stamp written, will re-check and re-nudge on next trigger:" >> "$LOG"

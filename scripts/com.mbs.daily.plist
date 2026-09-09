@@ -11,17 +11,72 @@
         <string>/Users/cpreston/dev/mbs_automation/scripts/mbs_daily.sh</string>
     </array>
 
-    <!-- Fire at 06:00 local time. If asleep at 06:00, launchd coalesces and runs on wake. -->
-    <key>StartCalendarInterval</key>
-    <dict>
-        <key>Hour</key>
-        <integer>6</integer>
-        <key>Minute</key>
-        <integer>0</integer>
-    </dict>
+    <!-- 30-minute grid, 06:00 through 21:30 local (P decision 2026-08-22).
+         06:00 is still the on-time fire and the morning is unchanged; the rest
+         of the grid exists so a day that fails early gets retried later instead
+         of being lost.
 
-    <!-- Also run when the agent loads (login/boot) so a powered-off-overnight Mac still catches up.
-         The script's per-day stamp prevents any double run. -->
+         Why a StartCalendarInterval ARRAY and not StartInterval: launchd(5) says
+         a StartInterval firing that lands while the system is asleep "will be
+         missed due to shortcomings in kqueue(3)", and a firing that lands while
+         the job is already running is missed too, which this script's ~1.75 hr
+         retry ladder would trip constantly. StartCalendarInterval has the
+         opposite behavior: "launchd will start the job the next time the
+         computer wakes up. If multiple intervals transpire before the computer
+         is woken, those events will be coalesced into one event upon wake from
+         sleep." So a Mac asleep 09:00 to 14:20 produces exactly ONE fire on
+         wake, not eleven. That coalescing IS the run-on-wake behavior.
+
+         Safe to fire this often because the per-day stamp check ($STAMP) is the
+         third thing mbs_daily.sh does, before the lock and before the vault
+         scan: on a day that already succeeded every later fire exits in
+         milliseconds. Mid-ladder fires hit the live PID lock and exit cleanly,
+         so the grid only takes over once a ladder has actually given up.
+
+         Deliberate exception to the one-job-per-slot stagger convention: this
+         grid overlaps every other job's slot by design. The stamp is why that
+         is harmless. Do not "fix" the overlap by thinning the grid.
+
+         Ends at 21:30: com.mbs.vault-index runs 23:30 and com.mbs.pointer-check
+         23:45, and a report landing after those is worth less than the noise. -->
+    <key>StartCalendarInterval</key>
+    <array>
+        <dict><key>Hour</key><integer>6</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>6</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Hour</key><integer>7</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>7</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Hour</key><integer>8</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>8</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Hour</key><integer>9</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>9</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Hour</key><integer>10</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>10</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Hour</key><integer>11</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>11</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Hour</key><integer>12</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>12</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Hour</key><integer>13</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>13</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Hour</key><integer>14</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>14</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Hour</key><integer>15</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>15</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Hour</key><integer>16</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>16</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Hour</key><integer>17</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>17</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Hour</key><integer>18</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>18</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Hour</key><integer>19</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>19</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Hour</key><integer>20</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>20</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Hour</key><integer>21</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>21</integer><key>Minute</key><integer>30</integer></dict>
+    </array>
+
+    <!-- Also run when the agent loads (login/boot) so a powered-off-overnight Mac
+         still catches up. The script's per-day stamp prevents any double run. -->
     <key>RunAtLoad</key>
     <true/>
 

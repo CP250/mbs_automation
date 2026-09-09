@@ -363,8 +363,24 @@ notify_email() {
 ask_claude() {
   local what_to_watch="$1"
   local page_text_file="$2"
-  local prompt
-  prompt="$(cat <<PROMPT_EOF
+  local prompt prompt_file
+  # The prompt here-document must NOT sit inside $( ... ).
+  #
+  # macOS ships /bin/bash 3.2, whose command-substitution parser does not exempt
+  # here-document bodies from quote matching. Between 2026-08-07 and 2026-08-19
+  # this prompt held an odd number of apostrophes ("tomorrow's", "that's",
+  # "you're"); bash 3.2 read the third one as opening a single-quoted string,
+  # which stayed open for the rest of the file and blew up ~200 lines later on
+  # the parenthesis in "(baseline preserved)". Every run died at parse time for
+  # 12 days: "syntax error near unexpected token `('". Nothing caught it,
+  # because a modern bash (4+, 5) parses the same file fine, so `bash -n` in a
+  # Homebrew shell passed.
+  #
+  # Building the prompt in a temp file keeps the here-document at top level,
+  # where apostrophes are harmless. Do NOT fold this back into $(cat <<EOF ...).
+  # scripts/check_syntax.sh gates this with the real /bin/bash 3.2.
+  prompt_file="$(mktemp -t web_watchers_prompt.XXXXXX)"
+  cat > "$prompt_file" <<PROMPT_EOF
 You are extracting a CANONICAL, DETERMINISTIC snapshot of specific facts from a web page, for exact-string comparison against tomorrow's snapshot of the same page. Two runs of you, given byte-identical page text, must produce byte-identical output. You will be given:
 1. A question describing exactly what facts to extract.
 2. The page text (visible text only; HTML tags and scripts are already stripped by the caller).
@@ -383,7 +399,8 @@ $what_to_watch
 PAGE TEXT:
 $(cat "$page_text_file")
 PROMPT_EOF
-  )"
+  prompt="$(cat "$prompt_file")"
+  rm -f "$prompt_file"
   # Wrap with auth detection. Because this function is called inside command
   # substitution ($(ask_claude ...)), `exit` from here would only exit the
   # subshell. Instead, on 401, touch a flag file the main loop polls between
