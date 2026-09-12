@@ -1611,6 +1611,159 @@ if [ -d "$VAULT" ]; then
   rm -f "$DUP_NOW"
 fi
 
+# --- check 30: no watched job went silent mid-run (added 2026-09-12) ---------
+# The gap every other check on this roster leaves open: DURATION. Checks 24 and
+# 26 ask whether a job said something bad, 19 and its siblings ask whether the
+# output exists. None of them can see a job that ran, produced everything it
+# should, and took forty minutes to do a ninety-second job because it was
+# blocked on something.
+#
+# That is not hypothetical either. On 2026-09-11 com.mbs.mychart-sync sat 39.7
+# minutes behind a macOS Keychain authorization dialog (the ACL had been
+# invalidated by the 09-08 Homebrew python bump; see the 2026-09-12 entry in
+# LEARNINGS.md), finished cleanly, stamped the day, and stayed silent in the
+# tasks note. Check 19 was green because the stamp was today's. P found out by
+# noticing the dialog on his screen, on the third day.
+#
+# WHY THIS IS NOT A ONE-RULE-FOR-EVERYTHING SWEEP, unlike checks 24, 25 and 26.
+# It was written as one first, and the history said no. Run over every log in
+# STATE_DIR at a 600s idle threshold, with retry-ladder and skip lines excused,
+# it fired about forty times across six weeks, nearly all of them legitimate:
+# rclone moving gigabytes, `claude -p` thinking for 1229 seconds, web-watchers
+# waiting out a dead network for hours. One threshold cannot guard both shapes
+# (digest, 09-09), so this is table-driven and DEFAULTS TO NOT WATCHING. A job
+# earns a budget when someone can name the number and defend it against that
+# job's own history.
+#
+# Who is deliberately absent, and why, so the next session does not "fix" it:
+#   - bulk-sync, vault-backup, aws-repo-backup: their Keychain read happens
+#     BEFORE their first log line, so a block there is invisible to an idle
+#     measure. It is bounded instead by the 20s canary probe added to those
+#     scripts on 2026-09-12, which fails loudly with the FAILED vocabulary that
+#     check 26 already reads.
+#   - mbs_daily, team_brief, cars_weekly, mbs_weekly: `run_claude_p` already
+#     carries its own idle watchdog (CLAUDE_IDLE_SECONDS, 600s, added 09-09).
+#     A second one here would double-report the same event.
+#   - everything with a retry ladder: an attempt sleep that crosses a sleeping
+#     Mac is hours long and perfectly healthy.
+#
+# THE DISCRIMINATOR, which is the part worth keeping. A long silent gap has two
+# causes that look identical in one log: the job was blocked, or the Mac was
+# asleep. They are trivially separable by asking whether ANY OTHER job wrote a
+# line during the same window. On 2026-09-11 vault-backup logged at 09:15,
+# inside mychart's silence, so the Mac was demonstrably awake. This is the same
+# move as check 28: an invariant BETWEEN two artifacts, which cannot go stale
+# the way a per-artifact threshold does.
+#
+# Retry and skip lines are excused by the message that ENDS the gap, and a run
+# whose most recent line is itself excused is not tested live, because a job
+# mid-retry-sleep has not failed yet.
+IDLE_WATCH="mychart_sync.log:600:com.mbs.mychart-sync"
+
+# Local-time epoch without awk's mktime(), which is a gawk extension and absent
+# from the Mac's /usr/bin/awk. Days-from-civil, integer arithmetic only. A gap
+# spanning a DST change is off by an hour twice a year; budgets here are far
+# too coarse for that to matter.
+IDLE_AWK_FN='
+function dfc(y, m, d,   yy, era, yoe, doy, doe) {
+  yy = y - (m <= 2)
+  era = int((yy >= 0 ? yy : yy - 399) / 400)
+  yoe = yy - era * 400
+  doy = int((153 * (m + (m > 2 ? -3 : 9)) + 2) / 5) + d - 1
+  doe = yoe * 365 + int(yoe / 4) - int(yoe / 100) + doy
+  return era * 146097 + doe - 719468
+}
+function epoch_of(line,   D, T) {
+  if (line !~ /^[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9] [0-9][0-9]:[0-9][0-9]:[0-9][0-9] - /) return -1
+  split(substr(line, 1, 10), D, "-")
+  split(substr(line, 12, 8), T, ":")
+  return dfc(D[1] + 0, D[2] + 0, D[3] + 0) * 86400 + T[1] * 3600 + T[2] * 60 + T[3]
+}
+'
+IDLE_EXCUSE="attempt |network not ready|network reachable|already ran for|skipping|waiting "
+IDLE_NOW="$(date +%s)"
+
+for IW in $IDLE_WATCH; do
+  IW_LOG="${IW%%:*}"
+  IW_REST="${IW#*:}"
+  IW_BUDGET="${IW_REST%%:*}"
+  IW_LABEL="${IW_REST##*:}"
+  IW_PATH="$STATE_DIR/$IW_LOG"
+
+  # Self-arming on both sides: no log or no installed plist means nothing to say.
+  [ -f "$IW_PATH" ] || continue
+  [ -s "$IW_PATH" ] || continue
+  [ -f "$HOME/Library/LaunchAgents/${IW_LABEL}.plist" ] || continue
+
+  # One root cause, one line: if check 19 already reported this job's stamp as
+  # stale, the run did not finish and a duration line adds nothing. Same
+  # discipline as check 26's suppression.
+  case "$IW_LOG" in
+    mychart_sync.log) [ "$MCS_STALE_REPORTED" -eq 1 ] && continue ;;
+  esac
+
+  IW_RESULT="$(awk "$IDLE_AWK_FN"'
+    {
+      e = epoch_of($0)
+      if (e < 0) next
+      msg = substr($0, 23)
+      if (msg ~ /starting/) { inrun = 1; prev = e; lastex = 0; next }
+      if (!inrun) next
+      gap = e - prev
+      # Worst unexcused gap across every run in the window, not just the last
+      # run: a bad Wednesday must still be visible on Thursday morning, and it
+      # ages itself out three days later with no state to clear.
+      if (gap > maxgap && e >= cutoff && msg !~ excuse) { maxgap = gap; gs = prev; ge = e }
+      prev = e
+      lastex = (msg ~ excuse) ? 1 : 0
+      if (msg ~ /completed successfully|OK \(mode=|FAILED/) inrun = 0
+    }
+    END {
+      # A run still in flight and silent right now is the live form of the same
+      # failure, and the one that matters at 11:00 for a 09:00 job. Not tested
+      # when the last line was a retry or skip: that job is sleeping on purpose.
+      if (inrun && !lastex && (now - prev) > maxgap) { maxgap = now - prev; gs = prev; ge = now }
+      print maxgap "\t" gs "\t" ge "\t" (inrun ? "inflight" : "finished")
+    }
+  ' excuse="$IDLE_EXCUSE" now="$IDLE_NOW" cutoff="$((IDLE_NOW - 259200))" "$IW_PATH")"
+
+  IW_GAP="$(printf '%s' "$IW_RESULT" | cut -f1)"
+  IW_GS="$(printf '%s' "$IW_RESULT" | cut -f2)"
+  IW_GE="$(printf '%s' "$IW_RESULT" | cut -f3)"
+  IW_STATE="$(printf '%s' "$IW_RESULT" | cut -f4)"
+  [ -n "${IW_GAP:-}" ] || continue
+  [ "$IW_GAP" -gt "$IW_BUDGET" ] 2>/dev/null || continue
+
+  # Three-day window on the gap itself, matching checks 24 and 26, so an old
+  # event stops nagging once it has aged out.
+  [ $((IDLE_NOW - IW_GE)) -lt 259200 ] || continue
+
+  # The discriminator: was anything else in the estate writing during the gap?
+  IW_OTHERS=""
+  for OF in "$STATE_DIR"/*.log; do
+    [ -f "$OF" ] || continue
+    [ -s "$OF" ] || continue
+    OB="$(basename "$OF")"
+    case "$OB" in
+      *.err.log|*.out.log|*manifest*|mbs_heartbeat.log) continue ;;
+      "$IW_LOG") continue ;;
+    esac
+    IW_OTHERS="${IW_OTHERS} $OF"
+  done
+  IW_AWAKE=0
+  if [ -n "$IW_OTHERS" ]; then
+    IW_AWAKE="$(awk "$IDLE_AWK_FN"'
+      { e = epoch_of($0); if (e > a && e < b) { print "1"; exit } }
+    ' a="$IW_GS" b="$IW_GE" $IW_OTHERS | head -1)"
+    [ -n "${IW_AWAKE:-}" ] || IW_AWAKE=0
+  fi
+  [ "$IW_AWAKE" = "1" ] || continue
+
+  IW_MIN=$((IW_GAP / 60))
+  IW_WHEN="$(date -r "$IW_GS" '+%Y-%m-%d %H:%M' 2>/dev/null)"
+  add_finding "${IW_LABEL} went silent for ${IW_MIN} minute(s) mid-run from ${IW_WHEN} (budget $((IW_BUDGET / 60)) min, run ${IW_STATE}), while other jobs were still logging, so the Mac was awake and this job alone was blocked - the known cause is a macOS Keychain authorization dialog waiting on the desktop (see LEARNINGS.md 2026-09-12); check for a dialog, then read ${IW_LOG} around that timestamp. A job can stamp a clean day and still have been broken for the whole morning, which is why this check exists"
+done
+
 # --- verdict ----------------------------------------------------------------
 if [ "$FINDING_COUNT" -eq 0 ]; then
   # Partial coverage is not a clean day. If anything was deferred, the checks
