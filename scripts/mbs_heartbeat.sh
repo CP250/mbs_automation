@@ -76,6 +76,18 @@
 # therefore skipped exactly when a session is busy. Check 27 does not need to
 # know which files a session touched.
 #
+# 2026-09-10: check 29, the Obsidian secret-store watchdog, and the first check
+# whose probe lives inside another application. Obsidian holds every plugin
+# secret for a vault in ONE safeStorage-encrypted blob in local storage, and its
+# loader DELETES that blob after a single failed decrypt (save({}) writes null
+# over it), so one bad startup loses every credential in the vault and says so
+# only in the developer console. It is invisible on disk because the consuming
+# plugin keeps the secret's NAME in its own data.json and merely starts calling
+# unauthenticated: BRAT sat on five private-repo GitHub 404s per launch while its
+# data.json still named the token correctly. Nothing outside Obsidian can read
+# that store, so MBS Companion 0.3.4 writes a reading into $STATE_DIR and this
+# check asserts against it. Silent until that file first appears.
+#
 # Idempotence: per-day stamp, written ONLY on a healthy check. A failing check
 # deliberately leaves no stamp, so every later trigger re-checks and re-nudges
 # until the underlying problem is fixed. That nag is the feature.
@@ -1450,6 +1462,65 @@ if [ -d "$OURA_RAW/sleep" ] && [ -d "$OURA_RAW/heartrate" ]; then
     [ "$HR_GAP_N" -gt 5 ] && HR_GAP_DAYS="${HR_GAP_DAYS}, and $((HR_GAP_N - 5)) more"
     add_finding "oura: ${HR_GAP_N} day(s) have a sleep session but ZERO heartrate samples (${HR_GAP_DAYS}) - those cannot both be true, since the sleep record's average_hrv and average_heart_rate are derived from the series, so the samples exist upstream and the archive is incomplete. Usually Oura publishing the timeseries later than the daily summaries; it self-heals only while the day is still inside the sync job's --lookback window. Confirm with a direct query, then repair with: cd ~/dev/mbs-oura-sync && .venv/bin/python src/oura_sync.py --backfill ${HR_GAP_FIRST}:today"
   fi
+fi
+
+# --- check 29: Obsidian's secret store is still intact (added 2026-09-10) ----
+# WHY: Obsidian keeps every plugin secret for a vault in ONE blob in local
+# storage, encrypted through Electron safeStorage. Read out of the running app
+# on 2026-09-10, the desktop adapter's load() does this:
+#
+#   if (blob) { try { assign(out, JSON.parse(decrypt(blob))) }
+#               catch (e) { console.error("Failed to decrypt secrets:", e) } }
+#   if (blob && keys(out).length === 0) await save(out)
+#
+# and save({}) writes null over the stored blob. One failed decrypt at startup
+# therefore DELETES every secret in the vault rather than degrading for a single
+# session, and the only thing that says so is a console line nobody reads.
+#
+# The symptom is silent by construction. A plugin keeps the secret's NAME in its
+# own data.json, so nothing on disk looks wrong; it just starts making
+# unauthenticated requests. That is how this was found: BRAT turned five private
+# CP250 repos into GitHub 404s at launch while its data.json still named the
+# token correctly. A check asserting the NAME is present could never have fired,
+# which is why this one asserts the VALUE still resolves.
+#
+# Nothing outside Obsidian can read that store, so this check does not try.
+# MBS Companion 0.3.4 writes a reading into $STATE_DIR on load and every 30
+# minutes; this asserts against that. Two artifacts whose contents are
+# derivationally linked, per the 2026-09-01 rule, rather than a threshold on one.
+#
+# SILENT UNTIL THE FILE FIRST APPEARS, deliberately: Companion 0.3.4 ships
+# through the tag / Action / BRAT loop, and a check that nags for a week about
+# its own rollout teaches P to ignore it. A missing file is logged, never raised.
+# Once it HAS appeared, staleness IS a finding, because from then on absence
+# means the probe stopped rather than never started.
+SECRET_STATE="$STATE_DIR/obsidian_secret_store.json"
+if [ -f "$SECRET_STATE" ]; then
+  SS_TS="$(sed -n 's/.*"ts"[ ]*:[ ]*\([0-9][0-9]*\).*/\1/p' "$SECRET_STATE" | head -1)"
+  SS_COUNT="$(sed -n 's/.*"secretCount"[ ]*:[ ]*\([0-9][0-9]*\).*/\1/p' "$SECRET_STATE" | head -1)"
+  SS_ISO="$(sed -n 's/.*"iso"[ ]*:[ ]*"\([^"]*\)".*/\1/p' "$SECRET_STATE" | head -1)"
+  SS_ENC="$(sed -n 's/.*"encryptionAvailable"[ ]*:[ ]*\([a-z][a-z]*\).*/\1/p' "$SECRET_STATE" | head -1)"
+  SS_BRAT="$(sed -n 's/.*"bratTokenResolves"[ ]*:[ ]*\([a-z][a-z]*\).*/\1/p' "$SECRET_STATE" | head -1)"
+  SS_NAME="$(sed -n 's/.*"bratTokenName"[ ]*:[ ]*"\([^"]*\)".*/\1/p' "$SECRET_STATE" | head -1)"
+  if [ -z "$SS_TS" ] || [ -z "$SS_COUNT" ]; then
+    # The file exists but does not parse. Never read that as healthy: it means
+    # the probe and this reader have drifted apart, which is precisely the state
+    # in which a green heartbeat is a lie.
+    add_finding "obsidian secret store (check 29): $SECRET_STATE exists but carries no readable ts/secretCount - the MBS Companion probe and this check have drifted apart, so this check is currently proving nothing; reconcile the field names in writeSecretStoreState (src/main.ts) and here before trusting either"
+  else
+    SS_AGE_D=$(( ( $(date +%s) - (SS_TS / 1000) ) / 86400 ))
+    if [ "$SS_COUNT" -eq 0 ]; then
+      add_finding "obsidian secret store (check 29): ZERO secrets in the store as of ${SS_ISO} - Obsidian's encrypted secret blob has been emptied, which its loader does by DELETING it after a failed decrypt, so every plugin credential in this vault is gone and each will silently fall back to unauthenticated calls. Re-add them in Settings (the BRAT one is the GitHub PAT, kept in 1Password) and check the Obsidian console for 'Failed to decrypt secrets:' to catch the cause"
+    elif [ -n "$SS_NAME" ] && [ "$SS_BRAT" = "false" ]; then
+      add_finding "obsidian secret store (check 29): BRAT points at secret '${SS_NAME}' but it no longer resolves (reading from ${SS_ISO}; ${SS_COUNT} other secret(s) still present) - the name in BRAT's data.json survived and the value did not, so BRAT is calling GitHub unauthenticated and every private CP250 repo will 404. Re-link it in Settings, BRAT, from the PAT in 1Password"
+    elif [ "$SS_ENC" = "false" ]; then
+      add_finding "obsidian secret store (check 29): Electron safeStorage reports encryption UNAVAILABLE as of ${SS_ISO} - Obsidian is holding secrets without OS encryption, and its loader deletes the whole blob the first time a decrypt fails, so this is the state immediately before losing all of them. Investigate the login keychain before trusting any stored secret"
+    elif [ "$SS_AGE_D" -gt 7 ]; then
+      add_finding "obsidian secret store (check 29): the Companion probe last wrote ${SECRET_STATE} on ${SS_ISO}, ${SS_AGE_D} days ago - either Obsidian has not been opened since, or MBS Companion stopped loading; until it writes again this check is asserting nothing about the secret store"
+    fi
+  fi
+else
+  echo "$(ts) - check 29: $SECRET_STATE absent; MBS Companion 0.3.4 (the probe) has not run yet, so the secret-store check is inactive by design and raises nothing." >> "$LOG"
 fi
 
 # --- check 27: no vault file gained a duplicated block (added 2026-09-01) ----
