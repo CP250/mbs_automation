@@ -145,9 +145,41 @@ fi
 # password comes from the login Keychain. Never echoed: rclone consumes the
 # command's stdout directly. Note this is required even for LOCAL paths, because
 # rclone loads the encrypted config before it looks at the arguments.
-PWCMD="security find-generic-password -w -s ${KEYCHAIN_ITEM}"
-if ! $PWCMD >/dev/null 2>&1; then
-  echo "$(ts) - ERROR: keychain item '${KEYCHAIN_ITEM}' unreadable; cannot unlock rclone config" >> "$LOG"
+SECURITY_BIN="/usr/bin/security"
+KEYCHAIN_TIMEOUT_S="${MBS_KEYCHAIN_TIMEOUT_S:-20}"
+PWCMD="$SECURITY_BIN find-generic-password -w -s ${KEYCHAIN_ITEM}"
+
+# Bounded canary read (added 2026-09-12). A Keychain item whose ACL no longer
+# trusts the reader does not fail, it raises a desktop dialog and waits
+# forever, which under launchd is an invisible hang: com.mbs.mychart-sync lost
+# 39.7 minutes that way on 2026-09-11 and still stamped clean, so no watchdog
+# saw it. rclone runs this exact command through --password-command, so a fast
+# clean read here proves the real one. The status goes through a file rather
+# than `kill -0` because bash may not reap the child promptly and a zombie
+# answers signal 0, which would burn the whole timeout on every healthy run.
+# The password itself never leaves the pipe between security and rclone.
+# Both failure branches below say FAILED, not ERROR: heartbeat check 26 only
+# reads lines matching "completed successfully", "OK (mode=" or "FAILED", and
+# check 24 reads stderr, so the pre-2026-09-12 ERROR wording made a keychain
+# failure in this job invisible to every watchdog in the estate.
+KC_STATUS="${TMPDIR:-/tmp}/mbs_keychain_probe_$$"
+rm -f "$KC_STATUS"
+( $PWCMD >/dev/null 2>&1; echo $? > "$KC_STATUS" ) &
+KC_PID=$!
+KC_WAITED=0
+while [ ! -f "$KC_STATUS" ] && [ "$KC_WAITED" -lt "$KEYCHAIN_TIMEOUT_S" ]; do
+  sleep 1
+  KC_WAITED=$((KC_WAITED + 1))
+done
+if [ ! -f "$KC_STATUS" ]; then
+  kill -TERM "$KC_PID" 2>/dev/null
+  echo "$(ts) - FAILED: keychain item '${KEYCHAIN_ITEM}' did not answer within ${KEYCHAIN_TIMEOUT_S}s; an authorization dialog is probably waiting on the desktop. Aborting rather than hanging." >> "$LOG"
+  exit 1
+fi
+KC_RC="$(cat "$KC_STATUS" 2>/dev/null || echo 1)"
+rm -f "$KC_STATUS"
+if [ "$KC_RC" -ne 0 ]; then
+  echo "$(ts) - FAILED: keychain item '${KEYCHAIN_ITEM}' unreadable; cannot unlock rclone config" >> "$LOG"
   exit 1
 fi
 
