@@ -45,7 +45,9 @@ esac
 # estate audit found that only this repo was ever being checked). Missing
 # directories are skipped silently so this still works on a machine that does
 # not have them all checked out.
-EXTRA_DIRS="$HOME/dev/oslo/scripts $HOME/dev/mbs-oura-sync/scripts $HOME/dev/mbs-mychart-sync/scripts $HOME/dev/mbs-music-discovery/scripts"
+# 2026-09-30: the instagram-download skill's scripts dir, because
+# com.mbs.instagram-refresh runs ig_download.sh from there under /bin/bash.
+EXTRA_DIRS="$HOME/dev/oslo/scripts $HOME/dev/mbs-oura-sync/scripts $HOME/dev/mbs-mychart-sync/scripts $HOME/dev/mbs-music-discovery/scripts $HOME/dev/claude_mbs/plugins/media-tools/skills/instagram-download/scripts"
 
 fail=0
 checked=0

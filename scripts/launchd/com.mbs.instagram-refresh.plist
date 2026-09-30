@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.mbs.instagram-refresh</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/cpreston/dev/mbs_automation/scripts/instagram_refresh.sh</string>
+    </array>
+
+    <!-- Daily 05:40 local. Backups finish by 03:45 and mbs-daily starts at 06:00,
+         so nothing else is running. Which accounts refresh, and how often, is
+         the refresh: field of each note in the vault's instagram_download/accounts/,
+         not this file. -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>5</integer>
+        <key>Minute</key>
+        <integer>40</integer>
+    </dict>
+
+    <!-- Also run at login/boot; the per-day stamp prevents any double run. -->
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>/Users/cpreston/.mbs_automation/instagram_refresh.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/cpreston/.mbs_automation/instagram_refresh.err.log</string>
+</dict>
+</plist>

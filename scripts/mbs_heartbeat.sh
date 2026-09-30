@@ -88,6 +88,12 @@
 # that store, so MBS Companion 0.3.4 writes a reading into $STATE_DIR and this
 # check asserts against it. Silent until that file first appears.
 #
+# 2026-09-30: check 31, archived Instagram accounts are actually refreshing
+# (com.mbs.instagram-refresh, media-tools plugin). Same two-layer split as 20:
+# the job's own stamp, and a per-account date the job cannot move without
+# reaching Instagram. Self-arming on plist presence; silent while no account
+# has a refresh cadence.
+#
 # Idempotence: per-day stamp, written ONLY on a healthy check. A failing check
 # deliberately leaves no stamp, so every later trigger re-checks and re-nudges
 # until the underlying problem is fixed. That nag is the feature.
@@ -1311,7 +1317,7 @@ fi
 # every thread's weekly_minutes, NOT by being booted out, so it is still loaded
 # and still fires Sunday 17:00 (creating nothing). If it is ever really booted
 # out, delete it from this list at the same time.
-LD_EXPECTED="com.mbs.alcohol-stamp com.mbs.aws-repo-backup com.mbs.bulk-sync com.mbs.cars-weekly com.mbs.daily com.mbs.heartbeat com.mbs.music-discovery com.mbs.mychart-sync com.mbs.oslo-monthly com.mbs.oslo-weekly com.mbs.oura-sync com.mbs.oura-trends com.mbs.oura-watch com.mbs.pointer-check com.mbs.review-monthly com.mbs.review-quarterly com.mbs.review-yearly com.mbs.team-brief com.mbs.the-record com.mbs.vault-backup com.mbs.vault-index com.mbs.web-watchers com.mbs.weekly com.mbs.weekly-blocks"
+LD_EXPECTED="com.mbs.alcohol-stamp com.mbs.aws-repo-backup com.mbs.bulk-sync com.mbs.cars-weekly com.mbs.daily com.mbs.heartbeat com.mbs.instagram-refresh com.mbs.music-discovery com.mbs.mychart-sync com.mbs.oslo-monthly com.mbs.oslo-weekly com.mbs.oura-sync com.mbs.oura-trends com.mbs.oura-watch com.mbs.pointer-check com.mbs.review-monthly com.mbs.review-quarterly com.mbs.review-yearly com.mbs.team-brief com.mbs.the-record com.mbs.vault-backup com.mbs.vault-index com.mbs.web-watchers com.mbs.weekly com.mbs.weekly-blocks"
 
 # Label filter: everything in this estate carries "mbs" somewhere in its label
 # (including com.cp250.mbs-music-discovery), and the retired review jobs used
@@ -1763,6 +1769,60 @@ for IW in $IDLE_WATCH; do
   IW_WHEN="$(date -r "$IW_GS" '+%Y-%m-%d %H:%M' 2>/dev/null)"
   add_finding "${IW_LABEL} went silent for ${IW_MIN} minute(s) mid-run from ${IW_WHEN} (budget $((IW_BUDGET / 60)) min, run ${IW_STATE}), while other jobs were still logging, so the Mac was awake and this job alone was blocked - the known cause is a macOS Keychain authorization dialog waiting on the desktop (see LEARNINGS.md 2026-09-12); check for a dialog, then read ${IW_LOG} around that timestamp. A job can stamp a clean day and still have been broken for the whole morning, which is why this check exists"
 done
+
+# --- check 31: archived Instagram accounts are actually refreshing (2026-09-30)
+# com.mbs.instagram-refresh (~/dev/mbs_automation/scripts/instagram_refresh.sh,
+# body in the media-tools plugin's ig_download.py) runs daily at 05:40 and
+# refreshes every archived Instagram account whose `refresh:` cadence is due.
+# Which accounts, and how often, is frontmatter in the vault's
+# admin/mbs_system/applications/instagram_download/accounts/ notes.
+#
+# Two questions, the same split as check 20:
+#   31a  did the job complete a run today or yesterday?        (outer stamp)
+#   31b  did every account on a cadence actually reach Instagram in time?
+# 31b is the load-bearing one. The job stamps a clean day whenever refresh-due
+# exits 0, which it does when nothing is due; an account that has since gone
+# private, been renamed, or been refused keeps FAILING only on the days it is
+# due, and between those days nothing looks wrong. ig_download.py refresh-due
+# writes $STATE_DIR/instagram_refresh_state.tsv on every run: one row per
+# account on a cadence, holding the ISO date after which that account counts as
+# overdue (its last successful contact, plus its cadence, plus two days grace).
+# This check only compares that date with today.
+#
+# Checks 24 and 26 already read this job's stderr and its FAILED line, so a
+# failed run is reported there; this check does not repeat them.
+#
+# Pure filesystem reads and a string comparison of ISO dates (they sort as
+# text), so no date arithmetic, no network, no python, no claude: the
+# watchdog-independence rule (ADR 2026-07-26) holds. Self-arming on plist
+# presence, like 20. An account with refresh: off is never written to the state
+# file, so a job with nothing on a cadence can never raise 31b.
+if [ -f "$HOME/Library/LaunchAgents/com.mbs.instagram-refresh.plist" ]; then
+  IR_YESTERDAY="$(date -v-1d +%Y-%m-%d)"
+
+  # 31a: the outer run stamp, written only when refresh-due exited 0.
+  IR_STAMP="$STATE_DIR/last_instagram_refresh_run"
+  LAST_IR="$(cat "$IR_STAMP" 2>/dev/null || echo none)"
+  if [ "$LAST_IR" != "$TODAY" ] && [ "$LAST_IR" != "$IR_YESTERDAY" ]; then
+    add_finding "instagram-refresh has not completed a run since ${LAST_IR} (expected ${IR_YESTERDAY} or ${TODAY}, given its daily 05:40 schedule) - read the tail of ~/.mbs_automation/instagram_refresh.log; the usual cause is an expired Instagram session, fixed by logging in to instagram.com as cprepo in Brave and then running the instagram-download skill's login step"
+  fi
+
+  # 31b: per-account overdue dates.
+  IR_STATE="$STATE_DIR/instagram_refresh_state.tsv"
+  if [ -f "$IR_STATE" ]; then
+    IR_LATE=""
+    while IFS=$'\t' read -r IR_USER IR_CAD IR_LAST IR_DUE IR_RES; do
+      case "$IR_USER" in ''|'#'*) continue ;; esac
+      case "$IR_DUE" in [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]) ;; *) continue ;; esac
+      if [[ "$IR_DUE" < "$TODAY" ]]; then
+        IR_LATE="${IR_LATE}${IR_LATE:+, }${IR_USER} (${IR_CAD}, last reached ${IR_LAST}, last result ${IR_RES:-unknown})"
+      fi
+    done < "$IR_STATE"
+    if [ -n "$IR_LATE" ]; then
+      add_finding "Instagram archive(s) overdue for their refresh: ${IR_LATE} - each has gone longer than its cadence plus two days without a successful fetch; read that account's newest run log in its archive folder under _meta/logs/ (the folder is the asset_path in its note under admin/mbs_system/applications/instagram_download/accounts/). If an account is gone or private for good, set its refresh to off rather than letting this nag"
+    fi
+  fi
+fi
 
 # --- verdict ----------------------------------------------------------------
 if [ "$FINDING_COUNT" -eq 0 ]; then
