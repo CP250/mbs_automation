@@ -81,11 +81,49 @@ _la_mtime() {
   echo "$m"
 }
 
-# Fire a macOS notification. Best-effort; never fails the caller.
+# Email alert address and throttle (2026-10-06, garm has no screen, so a macOS
+# notification alone reaches nobody there). One email per incident, then a
+# reminder every LA_EMAIL_REMIND_SECONDS while it stays blocked. The stamp is
+# per title and lives beside the sentinel; clear_reauth_sentinel removes it so
+# the next incident emails at once.
+LA_EMAIL_TO="${LA_EMAIL_TO:-chris.preston@gmail.com}"
+LA_EMAIL_REMIND_SECONDS="${LA_EMAIL_REMIND_SECONDS:-21600}"
+# shellcheck source=./lib_email.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib_email.sh"
+
+_la_email_stamp() {
+  echo "$(dirname "$REAUTH_SENTINEL")/notify_email_$(printf '%s' "$1" | cksum | cut -d' ' -f1)"
+}
+
+# Best-effort; never fails the caller. A send failure writes to stderr, which
+# heartbeat check 24 sweeps, so a dead SMTP path does not stay silent.
+_la_email() {
+  local title="$1"
+  local message="$2"
+  local stamp now stamp_mtime body
+  stamp="$(_la_email_stamp "$title")"
+  now="$(date +%s)"
+  if [ -f "$stamp" ]; then
+    stamp_mtime="$(_la_mtime "$stamp")"
+    if [ "$stamp_mtime" -gt 0 ] && [ $((now - stamp_mtime)) -lt "$LA_EMAIL_REMIND_SECONDS" ]; then
+      return 0
+    fi
+  fi
+  body="$(mktemp "${TMPDIR:-/tmp}/la_email.XXXXXX")" || return 0
+  printf '%s\n\nHost: %s\nTime: %s\n' "$message" "$(hostname -s)" "$(date '+%Y-%m-%d %H:%M:%S')" > "$body"
+  if send_email "$LA_EMAIL_TO" "[mbs] $title" "$body"; then
+    : > "$stamp"
+  fi
+  rm -f "$body"
+  return 0
+}
+
+# Fire a macOS notification and an email. Best-effort; never fails the caller.
 _la_notify() {
   local title="$1"
   local message="$2"
   /usr/bin/osascript -e "display notification \"$message\" with title \"$title\" sound name \"Sosumi\"" 2>/dev/null || true
+  _la_email "$title" "$message"
 }
 
 # Returns 0 (true) if a fresh sentinel exists. Caller should exit 0 in that case.
@@ -192,6 +230,7 @@ clear_reauth_sentinel() {
   if [ -f "$REAUTH_STRIKES" ]; then
     rm -f "$REAUTH_STRIKES"
   fi
+  rm -f "$(_la_email_stamp "Claude Code needs re-auth")"
   unalert_tasks_note "$REAUTH_ALERT_PREFIX"
 }
 
