@@ -50,8 +50,8 @@
 
 set -uo pipefail
 
-VAULT="/Users/cpreston/Vaults/storage_mbs"
-STATE_DIR="$HOME/.mbs_automation"
+VAULT="${VAULT:-/Users/cpreston/Vaults/storage_mbs}"
+STATE_DIR="${STATE_DIR:-$HOME/.mbs_automation}"
 STAMP="$STATE_DIR/last_daily_run"
 LOG="$STATE_DIR/mbs_daily.log"
 

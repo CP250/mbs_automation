@@ -25,7 +25,7 @@
 
 set -uo pipefail
 
-VAULT="/Users/cpreston/Vaults/storage_mbs"
+VAULT="${VAULT:-/Users/cpreston/Vaults/storage_mbs}"
 REPO="/Users/cpreston/dev/mbs_automation"
 PY="$REPO/scripts/weekly_blocks.py"
 STATE_DIR="$HOME/.mbs_automation"

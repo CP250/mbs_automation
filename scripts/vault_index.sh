@@ -11,8 +11,8 @@
 
 set -uo pipefail
 
-VAULT="/Users/cpreston/Vaults/storage_mbs"
-STATE_DIR="$HOME/.mbs_automation"
+VAULT="${VAULT:-/Users/cpreston/Vaults/storage_mbs}"
+STATE_DIR="${STATE_DIR:-$HOME/.mbs_automation}"
 STAMP="$STATE_DIR/last_vault_index_run"
 LOG="$STATE_DIR/vault_index.log"
 OUTPUT="$VAULT/admin/mbs_system/brain/vault_file_tree.md"

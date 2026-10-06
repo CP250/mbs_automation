@@ -26,7 +26,7 @@
 
 set -uo pipefail
 
-VAULT="/Users/cpreston/Vaults/storage_mbs"
+VAULT="${VAULT:-/Users/cpreston/Vaults/storage_mbs}"
 RECORD_DIR="$VAULT/money/project_the_record"
 RAW_DIR="$RECORD_DIR/raw"
 STATE_DIR="$HOME/.mbs_automation"

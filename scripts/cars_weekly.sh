@@ -23,7 +23,7 @@
 
 set -uo pipefail
 
-VAULT="/Users/cpreston/Vaults/storage_mbs"
+VAULT="${VAULT:-/Users/cpreston/Vaults/storage_mbs}"
 STATE_DIR="$HOME/.mbs_automation"
 STAMP="$STATE_DIR/last_cars_weekly_run"
 LOG="$STATE_DIR/cars_weekly.log"

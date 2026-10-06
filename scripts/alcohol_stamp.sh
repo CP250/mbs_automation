@@ -17,7 +17,7 @@ set -uo pipefail
 
 export PATH="/opt/homebrew/bin:/usr/local/bin:$HOME/.local/bin:$HOME/.npm-global/bin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
 
-VAULT="/Users/cpreston/Vaults/storage_mbs"
+VAULT="${VAULT:-/Users/cpreston/Vaults/storage_mbs}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 STATE_DIR="$HOME/.mbs_automation"
 STAMP="$STATE_DIR/last_alcohol_stamp_run"

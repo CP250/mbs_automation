@@ -43,7 +43,7 @@
 
 set -uo pipefail
 
-VAULT="/Users/cpreston/Vaults/storage_mbs"
+VAULT="${VAULT:-/Users/cpreston/Vaults/storage_mbs}"
 REPO="$HOME/dev/mbs-music-discovery"
 STATE_DIR="$HOME/.mbs_automation"
 STAMP="$STATE_DIR/last_music_discovery_run"

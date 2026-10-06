@@ -8,7 +8,7 @@
 # Usage: review_reminder.sh {monthly|quarterly|yearly}
 set -euo pipefail
 
-VAULT="/Users/cpreston/Vaults/storage_mbs"
+VAULT="${VAULT:-/Users/cpreston/Vaults/storage_mbs}"
 REVIEWS="$VAULT/admin/reviews"
 KIND="${1:-monthly}"
 DATE_TAG="$(date +%Y-%m-%d)"

@@ -47,7 +47,7 @@ set -uo pipefail
 # Constants and paths
 # ----------------------------------------------------------------------------
 
-VAULT="/Users/cpreston/Vaults/storage_mbs"
+VAULT="${VAULT:-/Users/cpreston/Vaults/storage_mbs}"
 WATCH_LIST="$VAULT/admin/web_watchers.md"
 STATE_DIR="$HOME/.mbs_automation"
 STATE_FILE="$STATE_DIR/web_watchers_state.json"

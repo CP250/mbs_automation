@@ -14,7 +14,7 @@
 
 set -uo pipefail
 
-VAULT="/Users/cpreston/Vaults/storage_mbs"
+VAULT="${VAULT:-/Users/cpreston/Vaults/storage_mbs}"
 STATE_DIR="$HOME/.mbs_automation"
 KIND="${1:-}"
 LOG="$STATE_DIR/mbs_review_prep.log"
