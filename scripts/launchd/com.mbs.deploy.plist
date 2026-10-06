@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.mbs.deploy</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/cpreston/dev/mbs_automation/scripts/deploy.sh</string>
+    </array>
+
+    <!-- garm only. Every 5 minutes: fetch, verify signatures, run gates, fast-forward. -->
+    <key>StartInterval</key>
+    <integer>300</integer>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>/Users/cpreston/.mbs_automation/deploy.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/cpreston/.mbs_automation/deploy.err.log</string>
+</dict>
+</plist>
