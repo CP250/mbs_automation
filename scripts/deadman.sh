@@ -4,7 +4,10 @@
 # Fires every 15 minutes (StartInterval 900). Two independent check-ins, so an
 # outage of either off-box receiver cannot hide the other:
 #   A  POST to the Home Assistant webhook on Svartulv (http://10.99.0.1:8123/api/webhook/<id>).
-#      The id is a secret held in the login Keychain item mbs-deadman-ha-webhook.
+#      The id is a secret held in the file ~/.mbs_automation/deadman_ha_webhook (mode
+#      0600, the id alone on one line). A file, not a Keychain item: garm's login
+#      keychain is locked to ssh sessions, so the item could not be created
+#      remotely (P's decision, 2026-10-06).
 #      HA pushes to P's phone after 30 minutes without a check-in and on recovery.
 #   B  CloudWatch PutMetricData, namespace MBS/Garm, metric DeadmanCheckin, value 1,
 #      dimension Host=<this host>, account mbs-automation, us-east-1, AWS profile
@@ -23,8 +26,8 @@
 # Logs one terminal line per run in the estate vocabulary, so heartbeat check 26
 # reads it: "completed successfully" or "FAILED: <which side>".
 #
-# Test hooks (env): STATE_DIR, DEADMAN_SECURITY, DEADMAN_CURL, DEADMAN_AWS,
-# DEADMAN_HA_BASE, DEADMAN_HOST, MBS_KEYCHAIN_TIMEOUT_S.
+# Test hooks (env): STATE_DIR, DEADMAN_WEBHOOK_FILE, DEADMAN_CURL, DEADMAN_AWS,
+# DEADMAN_HA_BASE, DEADMAN_HOST.
 
 set -uo pipefail
 
@@ -33,13 +36,11 @@ export PATH="/opt/homebrew/bin:/usr/local/bin:$HOME/.local/bin:/usr/bin:/bin:/us
 STATE_DIR="${STATE_DIR:-$HOME/.mbs_automation}"
 LOG="$STATE_DIR/deadman.log"
 STAMP="$STATE_DIR/last_deadman_run"
-KEYCHAIN_ITEM="mbs-deadman-ha-webhook"
-SECURITY_BIN="${DEADMAN_SECURITY:-/usr/bin/security}"
+WEBHOOK_FILE="${DEADMAN_WEBHOOK_FILE:-$HOME/.mbs_automation/deadman_ha_webhook}"
 CURL_BIN="${DEADMAN_CURL:-curl}"
 AWS_BIN="${DEADMAN_AWS:-aws}"
 HA_BASE="${DEADMAN_HA_BASE:-http://10.99.0.1:8123/api/webhook/}"
 HOST_DIM="${DEADMAN_HOST:-$(hostname -s)}"
-KEYCHAIN_TIMEOUT_S="${MBS_KEYCHAIN_TIMEOUT_S:-20}"
 
 mkdir -p "$STATE_DIR"
 ts() { TZ=America/New_York date '+%Y-%m-%d %H:%M:%S'; }
@@ -48,37 +49,30 @@ log() { echo "$(ts) - $*" >> "$LOG"; }
 FAILED_SIDES=""
 
 # --- A: Home Assistant webhook ----------------------------------------------
-# Bounded Keychain read (same reasoning as vault_backup.sh, 2026-09-12): an item
-# whose ACL does not trust the reader raises a desktop dialog and waits forever.
-# The value goes to a 600 temp file, never to the log.
-KC_OUT="${TMPDIR:-/tmp}/deadman_kc_$$"
-KC_STATUS="$KC_OUT.status"
-rm -f "$KC_OUT" "$KC_STATUS"
-( umask 077; "$SECURITY_BIN" find-generic-password -w -s "$KEYCHAIN_ITEM" > "$KC_OUT" 2>/dev/null; echo $? > "$KC_STATUS" ) &
-KC_PID=$!
-KC_WAITED=0
-while [ ! -f "$KC_STATUS" ] && [ "$KC_WAITED" -lt "$KEYCHAIN_TIMEOUT_S" ]; do
-  sleep 1
-  KC_WAITED=$((KC_WAITED + 1))
-done
-if [ ! -f "$KC_STATUS" ]; then
-  kill -TERM "$KC_PID" 2>/dev/null
-  log "A FAILED: keychain item $KEYCHAIN_ITEM did not answer within ${KEYCHAIN_TIMEOUT_S}s (an authorization dialog or a locked keychain)"
+# The id is read from WEBHOOK_FILE into a variable. Missing, unreadable and empty
+# each log FAILED (estate vocabulary, so heartbeat check 26 reads it) and skip
+# the POST; B still runs. Nothing below ever writes the id or the URL to the log.
+CURL_ERR="${TMPDIR:-/tmp}/deadman_curl_$$.err"
+if [ ! -e "$WEBHOOK_FILE" ]; then
+  log "A FAILED: webhook file $WEBHOOK_FILE is missing"
   FAILED_SIDES="${FAILED_SIDES}${FAILED_SIDES:+ }A"
-elif [ "$(cat "$KC_STATUS")" != "0" ] || [ ! -s "$KC_OUT" ]; then
-  log "A FAILED: could not read keychain item $KEYCHAIN_ITEM (status $(cat "$KC_STATUS"))"
+elif [ ! -r "$WEBHOOK_FILE" ]; then
+  log "A FAILED: webhook file $WEBHOOK_FILE is not readable"
   FAILED_SIDES="${FAILED_SIDES}${FAILED_SIDES:+ }A"
 else
-  WEBHOOK_ID="$(tr -d '[:space:]' < "$KC_OUT")"
-  if printf 'url = "%s%s"\n' "$HA_BASE" "$WEBHOOK_ID" | "$CURL_BIN" -sS --fail -m 15 -X POST -o /dev/null -K - 2>"$KC_OUT.err"; then
+  WEBHOOK_ID="$(tr -d '[:space:]' < "$WEBHOOK_FILE")"
+  if [ -z "$WEBHOOK_ID" ]; then
+    log "A FAILED: webhook file $WEBHOOK_FILE is empty"
+    FAILED_SIDES="${FAILED_SIDES}${FAILED_SIDES:+ }A"
+  elif printf 'url = "%s%s"\n' "$HA_BASE" "$WEBHOOK_ID" | "$CURL_BIN" -sS --fail -m 15 -X POST -o /dev/null -K - 2>"$CURL_ERR"; then
     log "A ok: Home Assistant webhook accepted the check-in"
   else
-    log "A FAILED: Home Assistant webhook did not accept the check-in: $(tr -d '\n' < "$KC_OUT.err" | cut -c1-160)"
+    log "A FAILED: Home Assistant webhook did not accept the check-in: $(tr -d '\n' < "$CURL_ERR" | cut -c1-160)"
     FAILED_SIDES="${FAILED_SIDES}${FAILED_SIDES:+ }A"
   fi
   unset WEBHOOK_ID
 fi
-rm -f "$KC_OUT" "$KC_STATUS" "$KC_OUT.err"
+rm -f "$CURL_ERR"
 
 # --- B: CloudWatch -----------------------------------------------------------
 if AWS_PAGER="" "$AWS_BIN" cloudwatch put-metric-data --profile mbs-deadman --region us-east-1 \
