@@ -1317,7 +1317,18 @@ fi
 # every thread's weekly_minutes, NOT by being booted out, so it is still loaded
 # and still fires Sunday 17:00 (creating nothing). If it is ever really booted
 # out, delete it from this list at the same time.
-LD_EXPECTED="com.mbs.alcohol-stamp com.mbs.aws-repo-backup com.mbs.bulk-sync com.mbs.cars-weekly com.mbs.daily com.mbs.heartbeat com.mbs.instagram-refresh com.mbs.music-discovery com.mbs.mychart-sync com.mbs.oslo-monthly com.mbs.oslo-weekly com.mbs.oura-sync com.mbs.oura-trends com.mbs.oura-watch com.mbs.pointer-check com.mbs.review-monthly com.mbs.review-quarterly com.mbs.review-yearly com.mbs.team-brief com.mbs.the-record com.mbs.vault-backup com.mbs.vault-index com.mbs.web-watchers com.mbs.weekly com.mbs.weekly-blocks"
+# PER HOST (2026-10-06, garm). LD_EXPECTED_COMMON is what the laptop (hoest) runs
+# until each job is cut over. LD_EXPECTED_GARM is what garm runs: deploy and
+# deadman live only there, and every cut-over job moves from COMMON to GARM in
+# the SAME commit that boots it out on hoest, so neither machine reports the
+# other's jobs missing. Decided on hostname -s, so a machine that is neither
+# gets the laptop list.
+LD_EXPECTED_COMMON="com.mbs.alcohol-stamp com.mbs.aws-repo-backup com.mbs.bulk-sync com.mbs.cars-weekly com.mbs.daily com.mbs.heartbeat com.mbs.instagram-refresh com.mbs.music-discovery com.mbs.mychart-sync com.mbs.oslo-monthly com.mbs.oslo-weekly com.mbs.oura-sync com.mbs.oura-trends com.mbs.oura-watch com.mbs.pointer-check com.mbs.review-monthly com.mbs.review-quarterly com.mbs.review-yearly com.mbs.team-brief com.mbs.the-record com.mbs.vault-backup com.mbs.vault-index com.mbs.web-watchers com.mbs.weekly com.mbs.weekly-blocks"
+LD_EXPECTED_GARM="com.mbs.deploy com.mbs.deadman"
+case "$(hostname -s)" in
+  garm) LD_EXPECTED="$LD_EXPECTED_GARM" ;;
+  *) LD_EXPECTED="$LD_EXPECTED_COMMON" ;;
+esac
 
 # Label filter: everything in this estate carries "mbs" somewhere in its label
 # (including com.cp250.mbs-music-discovery), and the retired review jobs used
@@ -1822,6 +1833,96 @@ if [ -f "$HOME/Library/LaunchAgents/com.mbs.instagram-refresh.plist" ]; then
       add_finding "Instagram archive(s) overdue for their refresh: ${IR_LATE} - each has gone longer than its cadence plus two days without a successful fetch; read that account's newest run log in its archive folder under _meta/logs/ (the folder is the asset_path in its note under admin/mbs_system/applications/instagram_download/accounts/). If an account is gone or private for good, set its refresh to off rather than letting this nag"
     fi
   fi
+fi
+
+# --- check 32: garm's deploy job is running and garm is not behind (2026-10-06)
+# com.mbs.deploy (scripts/deploy.sh, every 5 minutes, garm only) fast-forwards
+# each runtime repo to origin/main after verifying signatures and running the
+# gates. Two questions, both local (no network, no claude):
+#   32a  did a run complete in the last 30 minutes?   (last_deploy_run, epoch)
+#   32b  is any live checkout more than 30 minutes behind its origin/main?
+# 32b reads the remote-tracking ref the deploy job itself fetched, so it sees a
+# commit that arrived and was REFUSED (unsigned, failing tests, busy repo) as
+# well as one that never arrived at all, which 32a covers. A refusal also says
+# FAILED in deploy.log, so check 26 reports the reason; this check reports the
+# consequence, that garm is running old code. Self-arming on the plist, so it is
+# silent on the laptop, which never installs it.
+if [ -f "$HOME/Library/LaunchAgents/com.mbs.deploy.plist" ]; then
+  DP_NOW="$(date +%s)"
+  DP_LAST="$(cat "$STATE_DIR/last_deploy_run" 2>/dev/null || echo 0)"
+  case "$DP_LAST" in ''|*[!0-9]*) DP_LAST=0 ;; esac
+  if [ $((DP_NOW - DP_LAST)) -gt 1800 ]; then
+    if [ "$DP_LAST" -eq 0 ]; then
+      DP_AGE="never"
+    else
+      DP_AGE="$(( (DP_NOW - DP_LAST) / 60 )) minutes ago"
+    fi
+    add_finding "deploy has not completed a run in the last 30 minutes (last: ${DP_AGE}; it fires every 5) - read the tail of ~/.mbs_automation/deploy.log; a refused repo (unsigned commit, failed gate, dirty checkout) makes the whole run say FAILED, and a never-running job is a fetch or launchd problem"
+  fi
+  DP_BEHIND=""
+  for DP_REPO in mbs_automation mbs-oura-sync mbs-music-discovery mbs-mychart-sync claude_mbs; do
+    DP_DIR="$HOME/dev/$DP_REPO"
+    [ -d "$DP_DIR/.git" ] || continue
+    git -C "$DP_DIR" rev-parse --verify -q origin/main >/dev/null 2>&1 || continue
+    DP_N="$(git -C "$DP_DIR" rev-list --count HEAD..origin/main 2>/dev/null || echo 0)"
+    case "$DP_N" in ''|*[!0-9]*) continue ;; esac
+    [ "$DP_N" -gt 0 ] || continue
+    DP_OLDEST="$(git -C "$DP_DIR" log --format=%ct HEAD..origin/main 2>/dev/null | tail -1)"
+    case "$DP_OLDEST" in ''|*[!0-9]*) continue ;; esac
+    if [ $((DP_NOW - DP_OLDEST)) -gt 1800 ]; then
+      DP_BEHIND="${DP_BEHIND}${DP_BEHIND:+, }${DP_REPO} (${DP_N} commit(s), oldest $(( (DP_NOW - DP_OLDEST) / 60 )) min old)"
+    fi
+  done
+  if [ -n "$DP_BEHIND" ]; then
+    add_finding "garm is more than 30 minutes behind origin/main for: ${DP_BEHIND} - the deploy job has seen these commits and not applied them; read ~/.mbs_automation/deploy.log for the refusal reason (unsigned commit, failed gate or test count below its high-water mark, dirty checkout, or a job that never went idle)"
+  fi
+fi
+
+# --- check 33: the dead-man sender is checking in (2026-10-06) ---------------
+# com.mbs.deadman (scripts/deadman.sh, every 15 minutes, garm only) posts to
+# Home Assistant and CloudWatch. The receivers raise the real alarm off-box;
+# this check is the local half, so a sender that has been failing or has stopped
+# shows up in the morning note as well. last_deadman_run is written only when
+# BOTH sides accepted the check-in, so one side failing for 45 minutes (three
+# missed intervals) reads as stale here. Self-arming on the plist.
+if [ -f "$HOME/Library/LaunchAgents/com.mbs.deadman.plist" ]; then
+  DM_NOW="$(date +%s)"
+  DM_LAST="$(cat "$STATE_DIR/last_deadman_run" 2>/dev/null || echo 0)"
+  case "$DM_LAST" in ''|*[!0-9]*) DM_LAST=0 ;; esac
+  if [ $((DM_NOW - DM_LAST)) -gt 2700 ]; then
+    if [ "$DM_LAST" -eq 0 ]; then
+      DM_AGE="never"
+    else
+      DM_AGE="$(( (DM_NOW - DM_LAST) / 60 )) minutes ago"
+    fi
+    add_finding "the dead-man sender has not completed a check-in on both sides in 45 minutes (last: ${DM_AGE}; it fires every 15) - read ~/.mbs_automation/deadman.log: the lines say whether Home Assistant (A) or CloudWatch (B) is failing; if both receivers also stay silent P is already being alerted off-box"
+  fi
+fi
+
+# --- check 34: the Claude setup-token is not close to expiring (2026-10-06) --
+# garm runs claude -p headless on a token from claude setup-token, valid one
+# year. ~/.mbs_automation/claude_token_created holds its creation date
+# (YYYY-MM-DD), written when the token was made. The 30-day reminder is this
+# finding appearing in the morning note from day 335; a 401 on expiry is already
+# caught by lib_auth.sh (sentinel plus email), this is the warning before it.
+# Self-arming on the file, so silent on the laptop.
+TK_FILE="$STATE_DIR/claude_token_created"
+if [ -f "$TK_FILE" ]; then
+  TK_DATE="$(tr -d '[:space:]' < "$TK_FILE")"
+  TK_EPOCH="$(date -j -f %Y-%m-%d "$TK_DATE" +%s 2>/dev/null)"
+  case "$TK_EPOCH" in
+    ''|*[!0-9]*)
+      add_finding "claude_token_created is not a YYYY-MM-DD date (found: ${TK_DATE:-empty}) - the token-age check cannot run; rewrite ~/.mbs_automation/claude_token_created with the day the setup-token was created"
+      ;;
+    *)
+      TK_AGE_DAYS=$(( ($(date +%s) - TK_EPOCH) / 86400 ))
+      if [ "$TK_AGE_DAYS" -ge 365 ]; then
+        add_finding "the Claude setup-token (created ${TK_DATE}) is ${TK_AGE_DAYS} days old and has passed its one-year life - headless claude -p will answer 401; run: claude setup-token on garm, store it where the jobs read it, then write today's date to ~/.mbs_automation/claude_token_created"
+      elif [ "$TK_AGE_DAYS" -ge 335 ]; then
+        add_finding "the Claude setup-token (created ${TK_DATE}) expires in about $((365 - TK_AGE_DAYS)) days - renew it before then: claude setup-token on garm (interactive), store it where the jobs read it, then write today's date to ~/.mbs_automation/claude_token_created"
+      fi
+      ;;
+  esac
 fi
 
 # --- verdict ----------------------------------------------------------------
