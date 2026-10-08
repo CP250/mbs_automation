@@ -98,6 +98,7 @@ KEYCHAIN_ITEM="${MBS_RCLONE_KEYCHAIN_ITEM:-mbs-rclone-config}"
 SANITY_MAX_MB="${MBS_AWS_REPO_BACKUP_MAX_MB:-100}"
 
 STATE_DIR="$HOME/.mbs_automation"
+VAULT="${VAULT:-/Users/cpreston/Vaults/storage_mbs}"
 STAMP="$STATE_DIR/last_aws_repo_backup_run"
 LOG="$STATE_DIR/aws_repo_backup.log"
 
@@ -303,5 +304,27 @@ if [ "$MODE" != "LIVE" ]; then
 fi
 
 TZ=America/New_York date '+%Y-%m-%d %H:%M:%S' > "$STAMP"
+
+# Relay stamp (2026-10-08). The heartbeat runs on garm now and cannot see this
+# machine's STAMP, so a LIVE success is also written into the vault as a small
+# markdown file (markdown only: the vault forbids .json and .yml). Obsidian Sync
+# carries it to garm, where heartbeat check 36 reads it. Written to a temp name
+# in the same folder and moved into place, so a reader never sees a half file.
+# A failure to write it never fails the backup: it is logged as a WARNING and
+# the check on garm will say the relay is stale. Never written in DRY-RUN
+# (exited above) and never after a FAILED exit (those return earlier).
+RELAY_DIR="$VAULT/admin/mbs_system/homelab"
+RELAY_FILE="$RELAY_DIR/state_hoest_aws_repo_backup.md"
+if [ -d "$RELAY_DIR" ]; then
+  RELAY_TMP="$RELAY_DIR/.state_hoest_aws_repo_backup.md.tmp.$$"
+  {
+    printf -- '---\ntype: state\nhost: hoest\nlast_success_epoch: %s\nlast_success: %s\nobjects: %s\nbytes: %s\n---\n\n' "$(date +%s)" "$(TZ=America/New_York date '+%Y-%m-%d %H:%M:%S')" "${DEST_OBJECTS:-unknown}" "${DEST_BYTES:-unknown}"
+    printf 'Machine-written by scripts/aws_repo_backup.sh on hoest after a LIVE success. Do not edit. Read by garm heartbeat check 36. Brief: [[handoff_aws_repo_backup_watchdog]].\n'
+  } > "$RELAY_TMP" 2>/dev/null && mv -f "$RELAY_TMP" "$RELAY_FILE" 2>/dev/null \
+    || { rm -f "$RELAY_TMP" 2>/dev/null; echo "$(ts) - WARNING: could not write the relay stamp ${RELAY_FILE}; the backup itself succeeded" >> "$LOG"; }
+else
+  echo "$(ts) - WARNING: ${RELAY_DIR} is missing; relay stamp not written; the backup itself succeeded" >> "$LOG"
+fi
+
 echo "$(ts) - OK (mode=$MODE): ${COPIED} file(s) uploaded; stamped. Manifest: $MANIFEST" >> "$LOG"
 exit 0

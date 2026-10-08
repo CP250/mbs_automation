@@ -1,5 +1,5 @@
 #!/bin/bash
-# heartbeat_garm_drill.sh - exercises heartbeat checks 32 to 34 and the per-host
+# heartbeat_garm_drill.sh - exercises heartbeat checks 32 to 36 and the per-host
 # LD_EXPECTED switch by extracting those blocks from mbs_heartbeat.sh and running
 # them against a temp HOME with a stubbed add_finding. Uses macOS date -j, so run
 # it on the Mac. Touches nothing outside the temp dir.
@@ -10,7 +10,7 @@ HB="$HERE/mbs_heartbeat.sh"
 T="$(mktemp -d "${TMPDIR:-/tmp}/hb_drill.XXXXXX")"
 trap 'rm -rf "$T"' EXIT
 export HOME="$T/home"; STATE_DIR="$HOME/.mbs_automation"
-mkdir -p "$STATE_DIR" "$HOME/Library/LaunchAgents" "$HOME/dev"
+mkdir -p "$STATE_DIR" "$HOME/Library/LaunchAgents" "$HOME/dev" "$T/vault/admin/mbs_system/homelab"
 
 S="$(grep -n '^# --- check 32:' "$HB" | cut -d: -f1)"
 E="$(grep -n '^# --- verdict' "$HB" | cut -d: -f1)"
@@ -21,7 +21,7 @@ PASS=0; FAIL=0
 ok()  { PASS=$((PASS + 1)); echo "  ok   $1"; }
 bad() { FAIL=$((FAIL + 1)); echo "  FAIL $1"; }
 findings() {
-  STATE_DIR="$STATE_DIR" HOME="$HOME" /bin/bash -c '
+  STATE_DIR="$STATE_DIR" HOME="$HOME" VAULT="$T/vault" LD_EXPECTED_COMMON="${LD_TEST:-com.mbs.aws-repo-backup com.mbs.weekly-blocks}" /bin/bash -c '
     set -uo pipefail
     add_finding() { echo "FINDING: $1"; }
     source "$1"
@@ -108,6 +108,32 @@ expect_has "95 days: overdue" "past the 90 day rotation limit"
 echo "not a date" > "$STATE_DIR/deadman_key_created"
 expect_has "malformed file" "deadman_key_created is not a YYYY-MM-DD date"
 rm -f "$STATE_DIR/deadman_key_created"
+
+echo "check 36: hoest aws-repo-backup relay"
+RELAY="$T/vault/admin/mbs_system/homelab/state_hoest_aws_repo_backup.md"
+write_relay() { printf -- '---\ntype: state\nhost: hoest\nlast_success_epoch: %s\n---\n\nbody\n' "$1" > "$RELAY"; }
+rm -f "$RELAY"
+export AWS_BACKUP_RELAY_GRACE_START="$(date +%Y-%m-%d)"
+expect_none "relay file missing, inside the 3 day grace"
+export AWS_BACKUP_RELAY_GRACE_START="2026-01-01"
+expect_has "relay file missing, past the grace" "no relay file for hoest"
+write_relay "$(( $(now) - 3600 ))"
+expect_none "relay 1 hour old"
+write_relay "$(( $(now) - 119 * 3600 ))"
+expect_none "relay 119 hours old (under the 120 hour threshold)"
+write_relay "$(( $(now) - 121 * 3600 ))"
+expect_has "relay 121 hours old" "last succeeded 121 hours ago"
+write_relay "$(( $(now) - 2 * 3600 ))"
+export AWS_BACKUP_RELAY_MAX_HOURS=1
+expect_has "threshold override to 1 hour, relay 2 hours old" "threshold 1 hours"
+unset AWS_BACKUP_RELAY_MAX_HOURS
+printf -- '---\ntype: state\n---\nno epoch here\n' > "$RELAY"
+expect_has "relay file without a readable epoch" "no readable last_success_epoch"
+write_relay "$(( $(now) - 500 * 3600 ))"
+LD_TEST="com.mbs.weekly-blocks"
+expect_none "not armed when aws-repo-backup is not in the laptop list, even with a stale relay"
+unset LD_TEST
+rm -f "$RELAY"; unset AWS_BACKUP_RELAY_GRACE_START
 
 echo "per-host LD_EXPECTED"
 LDS="$(grep -n '^case "\$(hostname -s)" in' "$HB" | cut -d: -f1)"

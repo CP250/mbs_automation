@@ -1957,6 +1957,50 @@ if [ -f "$DK_FILE" ]; then
   esac
 fi
 
+# --- check 36: hoest's aws-repo-backup is still succeeding, read through the vault (2026-10-08) --
+# com.mbs.aws-repo-backup stayed on hoest because the Terraform state it protects is
+# local to hoest. Check 18 reads its stamp but self-arms on the job's plist being
+# present on the machine running the heartbeat, which is garm now, so it is silent
+# forever. aws_repo_backup.sh therefore writes a relay file into the vault after
+# every LIVE success (admin/mbs_system/homelab/state_hoest_aws_repo_backup.md, key
+# last_success_epoch) and Obsidian Sync carries it to garm. This check reads that
+# local file: no network call, per ADR 2026-07-26. Armed when the job is in
+# LD_EXPECTED_COMMON (the laptop's list), not on plist presence. Threshold 120 hours
+# (P travels with the laptop; the backup is additive and state changes only when
+# Terraform runs on hoest). Obsidian Sync is app-bound, so a stale relay can also
+# mean hoest's Obsidian is not running; the message says so. A missing file raises
+# a finding only after a 3 day grace from the build date.
+case " ${LD_EXPECTED_COMMON:-} " in
+  *" com.mbs.aws-repo-backup "*)
+    ARX_FILE="$VAULT/admin/mbs_system/homelab/state_hoest_aws_repo_backup.md"
+    ARX_MAX_H="${AWS_BACKUP_RELAY_MAX_HOURS:-120}"
+    if [ ! -f "$ARX_FILE" ]; then
+      ARX_G="$(date -j -f %Y-%m-%d "${AWS_BACKUP_RELAY_GRACE_START:-2026-10-08}" +%s 2>/dev/null)"
+      case "$ARX_G" in
+        ''|*[!0-9]*) ;;
+        *)
+          if [ $(( $(date +%s) - ARX_G )) -gt 259200 ]; then
+            add_finding "no relay file for hoest's aws-repo-backup at ${ARX_FILE} - the Terraform state backup has not reported a LIVE success since the relay was built; check ~/.mbs_automation/aws_repo_backup.log on hoest, com.mbs.aws-repo-backup, and that hoest's Obsidian is running and syncing"
+          fi
+          ;;
+      esac
+    else
+      ARX_E="$(sed -n 's/^last_success_epoch: *\([0-9][0-9]*\).*/\1/p' "$ARX_FILE" 2>/dev/null | head -1)"
+      case "$ARX_E" in
+        ''|*[!0-9]*)
+          add_finding "state_hoest_aws_repo_backup.md has no readable last_success_epoch - the aws-repo-backup relay check cannot run; it is machine-written by aws_repo_backup.sh on hoest, so do not edit it by hand"
+          ;;
+        *)
+          ARX_AGE_H=$(( ($(date +%s) - ARX_E) / 3600 ))
+          if [ "$ARX_AGE_H" -ge "$ARX_MAX_H" ]; then
+            add_finding "aws-repo-backup on hoest last succeeded ${ARX_AGE_H} hours ago (threshold ${ARX_MAX_H} hours) - the Terraform state backup is going stale; check ~/.mbs_automation/aws_repo_backup.log on hoest, com.mbs.aws-repo-backup, or that hoest's Obsidian is running and syncing (the relay reaches garm only through Obsidian Sync)"
+          fi
+          ;;
+      esac
+    fi
+    ;;
+esac
+
 # --- verdict ----------------------------------------------------------------
 if [ "$FINDING_COUNT" -eq 0 ]; then
   # Partial coverage is not a clean day. If anything was deferred, the checks
