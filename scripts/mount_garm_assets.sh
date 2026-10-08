@@ -16,8 +16,11 @@
 #
 # GUARDS, deliberately:
 #   - never forces or unmounts anything. A share that is listed as mounted but does
-#     not answer ls within LS_TIMEOUT seconds is reported (FAILED, rate limited) and
-#     left alone.
+#     not answer a df within PROBE_TIMEOUT seconds is reported (FAILED, rate limited)
+#     and left alone. The probe is df, NOT ls: under launchd a background /bin/bash
+#     is refused a directory read on a network volume ("ls: Operation not permitted",
+#     macOS privacy for network volumes, seen 2026-10-08), while df only asks the
+#     filesystem for statistics and works, and would still block on a hung mount.
 #   - after a FAILED attempt it will not try again for 10 minutes. A rejected login
 #     can raise a password dialog on the screen; once per minute would be a nuisance.
 #   - a healthy minute writes nothing, so the log grows only on events. Terminal
@@ -35,14 +38,14 @@ export PATH=/usr/bin:/bin:/usr/sbin:/sbin
 HOST="${GARM_ASSETS_HOST:-192.168.1.205}"
 SHARE="${GARM_ASSETS_SHARE:-storage_mbs_assets}"
 MOUNTPOINT="${GARM_ASSETS_MOUNTPOINT:-/Volumes/$SHARE}"
-LS_TIMEOUT="${GARM_ASSETS_LS_TIMEOUT:-8}"
+PROBE_TIMEOUT="${GARM_ASSETS_PROBE_TIMEOUT:-8}"
 MOUNT_TIMEOUT="${GARM_ASSETS_MOUNT_TIMEOUT:-45}"
 RETRY_SECONDS="${GARM_ASSETS_RETRY_SECONDS:-600}"
 
 NC_BIN="${NC_BIN:-/usr/bin/nc}"
 OSA_BIN="${OSA_BIN:-/usr/bin/osascript}"
 MOUNT_BIN="${MOUNT_BIN:-/sbin/mount}"
-LS_BIN="${LS_BIN:-/bin/ls}"
+DF_BIN="${DF_BIN:-/bin/df}"
 PERL_BIN="${PERL_BIN:-/usr/bin/perl}"
 
 STATE_DIR="$HOME/.mbs_automation"
@@ -75,11 +78,11 @@ note_failed() { date +%s > "$FAIL_STAMP"; }
 is_mounted() { "$MOUNT_BIN" 2>/dev/null | grep -q " on ${MOUNTPOINT} "; }
 
 if is_mounted; then
-  if with_timeout "$LS_TIMEOUT" "$LS_BIN" "$MOUNTPOINT" >/dev/null 2>&1; then
+  if with_timeout "$PROBE_TIMEOUT" "$DF_BIN" -k "$MOUNTPOINT" >/dev/null 2>&1; then
     exit 0
   fi
   if ! recently_failed; then
-    echo "$(ts) - FAILED: ${MOUNTPOINT} is mounted but did not answer within ${LS_TIMEOUT}s (stale mount); left alone, not forced" >> "$LOG"
+    echo "$(ts) - FAILED: ${MOUNTPOINT} is mounted but did not answer a df within ${PROBE_TIMEOUT}s (stale mount); left alone, not forced" >> "$LOG"
     note_failed
   fi
   exit 0

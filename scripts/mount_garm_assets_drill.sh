@@ -29,9 +29,9 @@ echo call >> "$CALLS"
 [ "\${OSA_MOUNTS:-1}" = "1" ] || echo "execution error: authentication failed (-60008)"
 exit 0
 EOS
-cat > "$T/bin/ls" <<EOS
+cat > "$T/bin/df" <<EOS
 #!/bin/bash
-[ "\${LS_HANG:-0}" = "1" ] && sleep 30
+[ "\${DF_HANG:-0}" = "1" ] && sleep 30
 exit 0
 EOS
 chmod +x "$T/bin/"*
@@ -39,10 +39,10 @@ chmod +x "$T/bin/"*
 PASS=0; FAIL=0
 ok()  { PASS=$((PASS + 1)); echo "  ok   $1"; }
 bad() { FAIL=$((FAIL + 1)); echo "  FAIL $1"; }
-run() { MOUNT_BIN="$T/bin/mount" NC_BIN="$T/bin/nc" OSA_BIN="$T/bin/osascript" LS_BIN="$T/bin/ls" GARM_ASSETS_LS_TIMEOUT=1 /bin/bash "$SCRIPT"; echo $?; }
+run() { MOUNT_BIN="$T/bin/mount" NC_BIN="$T/bin/nc" OSA_BIN="$T/bin/osascript" DF_BIN="$T/bin/df" GARM_ASSETS_PROBE_TIMEOUT=1 /bin/bash "$SCRIPT"; echo $?; }
 calls() { wc -l < "$CALLS" | tr -d ' '; }
 loglines() { [ -f "$LOG" ] && wc -l < "$LOG" | tr -d ' ' || echo 0; }
-reset() { rm -f "$MARK" "$STAMP" "$LOG"; : > "$CALLS"; unset NC_RC OSA_MOUNTS LS_HANG; }
+reset() { rm -f "$MARK" "$STAMP" "$LOG"; : > "$CALLS"; unset NC_RC OSA_MOUNTS DF_HANG; }
 
 echo "mounted and responsive"
 reset; : > "$MARK"
@@ -51,11 +51,11 @@ reset; : > "$MARK"
 [ "$(loglines)" = "0" ] && ok "silent (no log)" || bad "wrote a log line"
 
 echo "mounted but the share hangs"
-reset; : > "$MARK"; export LS_HANG=1
+reset; : > "$MARK"; export DF_HANG=1
 run >/dev/null 2>"$T/err"
 [ ! -s "$T/err" ] && ok "nothing written to stderr (no Alarm clock message)" || bad "stderr: $(head -c 100 "$T/err")"
 [ "$(calls)" = "0" ] && ok "does not touch a stale mount" || bad "tried to remount a stale mount"
-grep -q "FAILED: /Volumes/storage_mbs_assets is mounted but did not answer" "$LOG" && ok "reports it as FAILED" || bad "no FAILED line"
+grep -q "FAILED: /Volumes/storage_mbs_assets is mounted but did not answer a df" "$LOG" && ok "reports it as FAILED" || bad "no FAILED line"
 run >/dev/null
 [ "$(loglines)" = "1" ] && ok "reported once inside the retry window" || bad "reported again"
 
