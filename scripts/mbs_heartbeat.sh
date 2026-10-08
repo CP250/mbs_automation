@@ -1930,6 +1930,33 @@ if [ -f "$TK_FILE" ]; then
   esac
 fi
 
+# --- check 35: the mbs-deadman AWS access key is not overdue for rotation (2026-10-08) --
+# The dead-man's CloudWatch check-in uses a long-lived IAM user key (PutMetricData
+# only) held on garm as AWS profile mbs-deadman. ~/.mbs_automation/deadman_key_created
+# holds the day that key was created (YYYY-MM-DD). The usual limit is 90 days: a
+# reminder from day 80, a louder finding from day 90. Rotation is: create a second
+# key for the IAM user, install it on garm, prove one check-in (deadman.log says
+# "B ok"), then delete the old key (mbs_aws rule: plan gate, never destroy blind).
+# Self-arming on the file, so silent on the laptop.
+DK_FILE="$STATE_DIR/deadman_key_created"
+if [ -f "$DK_FILE" ]; then
+  DK_DATE="$(tr -d '[:space:]' < "$DK_FILE")"
+  DK_EPOCH="$(date -j -f %Y-%m-%d "$DK_DATE" +%s 2>/dev/null)"
+  case "$DK_EPOCH" in
+    ''|*[!0-9]*)
+      add_finding "deadman_key_created is not a YYYY-MM-DD date (found: ${DK_DATE:-empty}) - the access-key age check cannot run; rewrite ~/.mbs_automation/deadman_key_created with the day the mbs-deadman key was created"
+      ;;
+    *)
+      DK_AGE_DAYS=$(( ($(date +%s) - DK_EPOCH) / 86400 ))
+      if [ "$DK_AGE_DAYS" -ge 90 ]; then
+        add_finding "the mbs-deadman AWS access key (created ${DK_DATE}) is ${DK_AGE_DAYS} days old and past the 90 day rotation limit - rotate it: create a second key for IAM user mbs-deadman (account 821579665047), install it as profile mbs-deadman on garm, prove one check-in (deadman.log: B ok), then delete the old key; see homelab/_logs/log_2026-10-05_garm_watchdog.md"
+      elif [ "$DK_AGE_DAYS" -ge 80 ]; then
+        add_finding "the mbs-deadman AWS access key (created ${DK_DATE}) reaches the 90 day rotation limit in about $((90 - DK_AGE_DAYS)) days - rotate it: create a second key for IAM user mbs-deadman (account 821579665047), install it as profile mbs-deadman on garm, prove one check-in (deadman.log: B ok), then delete the old key"
+      fi
+      ;;
+  esac
+fi
+
 # --- verdict ----------------------------------------------------------------
 if [ "$FINDING_COUNT" -eq 0 ]; then
   # Partial coverage is not a clean day. If anything was deferred, the checks
