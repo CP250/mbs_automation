@@ -1323,8 +1323,8 @@ fi
 # the SAME commit that boots it out on hoest, so neither machine reports the
 # other's jobs missing. Decided on hostname -s, so a machine that is neither
 # gets the laptop list.
-LD_EXPECTED_COMMON="com.mbs.aws-repo-backup com.mbs.bulk-sync com.mbs.heartbeat com.mbs.vault-backup com.mbs.weekly-blocks"
-LD_EXPECTED_GARM="com.mbs.deploy com.mbs.deadman com.mbs.vault-index com.mbs.alcohol-stamp com.mbs.pointer-check com.mbs.oslo-weekly com.mbs.oslo-monthly com.mbs.review-monthly com.mbs.review-quarterly com.mbs.review-yearly com.mbs.cars-weekly com.mbs.weekly com.mbs.oura-sync com.mbs.oura-watch com.mbs.oura-trends com.mbs.team-brief com.mbs.web-watchers com.mbs.instagram-refresh com.mbs.the-record com.mbs.music-discovery com.mbs.mychart-sync com.mbs.daily"
+LD_EXPECTED_COMMON="com.mbs.aws-repo-backup com.mbs.heartbeat com.mbs.weekly-blocks"
+LD_EXPECTED_GARM="com.mbs.deploy com.mbs.deadman com.mbs.vault-index com.mbs.alcohol-stamp com.mbs.pointer-check com.mbs.oslo-weekly com.mbs.oslo-monthly com.mbs.review-monthly com.mbs.review-quarterly com.mbs.review-yearly com.mbs.cars-weekly com.mbs.weekly com.mbs.oura-sync com.mbs.oura-watch com.mbs.oura-trends com.mbs.team-brief com.mbs.web-watchers com.mbs.instagram-refresh com.mbs.the-record com.mbs.music-discovery com.mbs.mychart-sync com.mbs.daily com.mbs.vault-backup com.mbs.bulk-sync"
 case "$(hostname -s)" in
   garm) LD_EXPECTED="$LD_EXPECTED_GARM" ;;
   *) LD_EXPECTED="$LD_EXPECTED_COMMON" ;;
