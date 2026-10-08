@@ -1884,23 +1884,23 @@ if [ -f "$HOME/Library/LaunchAgents/com.mbs.deploy.plist" ]; then
 fi
 
 # --- check 33: the dead-man sender is checking in (2026-10-06) ---------------
-# com.mbs.deadman (scripts/deadman.sh, every 15 minutes, garm only) posts to
+# com.mbs.deadman (scripts/deadman.sh, every 5 minutes, garm only) posts to
 # Home Assistant and CloudWatch. The receivers raise the real alarm off-box;
 # this check is the local half, so a sender that has been failing or has stopped
 # shows up in the morning note as well. last_deadman_run is written only when
-# BOTH sides accepted the check-in, so one side failing for 45 minutes (three
+# BOTH sides accepted the check-in, so one side failing for 15 minutes (three
 # missed intervals) reads as stale here. Self-arming on the plist.
 if [ -f "$HOME/Library/LaunchAgents/com.mbs.deadman.plist" ]; then
   DM_NOW="$(date +%s)"
   DM_LAST="$(cat "$STATE_DIR/last_deadman_run" 2>/dev/null || echo 0)"
   case "$DM_LAST" in ''|*[!0-9]*) DM_LAST=0 ;; esac
-  if [ $((DM_NOW - DM_LAST)) -gt 2700 ]; then
+  if [ $((DM_NOW - DM_LAST)) -gt 900 ]; then
     if [ "$DM_LAST" -eq 0 ]; then
       DM_AGE="never"
     else
       DM_AGE="$(( (DM_NOW - DM_LAST) / 60 )) minutes ago"
     fi
-    add_finding "the dead-man sender has not completed a check-in on both sides in 45 minutes (last: ${DM_AGE}; it fires every 15) - read ~/.mbs_automation/deadman.log: the lines say whether Home Assistant (A) or CloudWatch (B) is failing; if both receivers also stay silent P is already being alerted off-box"
+    add_finding "the dead-man sender has not completed a check-in on both sides in 15 minutes (last: ${DM_AGE}; it fires every 5) - read ~/.mbs_automation/deadman.log: the lines say whether Home Assistant (A) or CloudWatch (B) is failing; if both receivers also stay silent P is already being alerted off-box"
   fi
 fi
 

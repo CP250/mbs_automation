@@ -11,9 +11,9 @@
         <string>/Users/cpreston/dev/mbs_automation/scripts/deadman.sh</string>
     </array>
 
-    <!-- garm only. Every 15 minutes: check in to Home Assistant and CloudWatch (dead-man). -->
+    <!-- garm only. Every 5 minutes: check in to Home Assistant and CloudWatch (dead-man). Was 15 until 2026-10-08; 5 minutes lets the CloudWatch alarm use a 5 minute period and fire in about 30 minutes instead of about 60. -->
     <key>StartInterval</key>
-    <integer>900</integer>
+    <integer>300</integer>
 
     <key>EnvironmentVariables</key>
     <dict>

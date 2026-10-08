@@ -1,7 +1,7 @@
 #!/bin/bash
 # deadman.sh - the garm dead-man check-in sender (com.mbs.deadman).
 #
-# Fires every 15 minutes (StartInterval 900). Two independent check-ins, so an
+# Fires every 5 minutes (StartInterval 300; was 15 until 2026-10-08). Two independent check-ins, so an
 # outage of either off-box receiver cannot hide the other:
 #   A  POST to the Home Assistant webhook on Svartulv (http://10.99.0.1:8123/api/webhook/<id>).
 #      The id is a secret held in the file ~/.mbs_automation/deadman_ha_webhook (mode
