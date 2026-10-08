@@ -96,11 +96,33 @@ echo "per-host LD_EXPECTED"
 LDS="$(grep -n '^case "\$(hostname -s)" in' "$HB" | cut -d: -f1)"
 LDB="$(grep -n '^LD_EXPECTED_COMMON=' "$HB" | cut -d: -f1)"
 sed -n "${LDB},$((LDS + 3))p" "$HB" > "$T/ld.sh"
+# Asserts properties, not a fixed roster, so a cutover batch (which moves labels
+# from COMMON to GARM in one commit) needs no drill edit.
+LD_ALL="$(/bin/bash -c 'hostname() { echo garm; }; source "'"$T/ld.sh"'"; echo "$LD_EXPECTED_COMMON|$LD_EXPECTED_GARM"')"
+LD_COMMON="${LD_ALL%%|*}"
+LD_GARMALL="${LD_ALL#*|}"
+OVERLAP=""
+for L in $LD_GARMALL; do
+  case " $LD_COMMON " in *" $L "*) OVERLAP="$OVERLAP $L" ;; esac
+done
+if [ -z "$OVERLAP" ]; then ok "no label is in both the garm list and the laptop list"; else bad "labels in both lists:$OVERLAP"; fi
 for H in garm hoest somethingelse; do
   OUT="$(/bin/bash -c 'hostname() { echo "$H"; }; export H="'"$H"'"; source "'"$T/ld.sh"'"; echo "$LD_EXPECTED"')"
   case "$H" in
-    garm) [ "$OUT" = "com.mbs.deploy com.mbs.deadman" ] && ok "garm gets the garm list" || bad "garm list ($OUT)" ;;
-    *) case "$OUT" in *com.mbs.daily*) case "$OUT" in *com.mbs.deploy*) bad "$H must not expect deploy" ;; *) ok "$H gets the laptop list" ;; esac ;; *) bad "$H list ($OUT)" ;; esac ;;
+    garm)
+      case "$OUT" in
+        "com.mbs.deploy com.mbs.deadman"|"com.mbs.deploy com.mbs.deadman "*) ok "garm gets the garm list (starts with deploy and deadman)" ;;
+        *) bad "garm list ($OUT)" ;;
+      esac ;;
+    *)
+      if [ -z "$OUT" ]; then
+        bad "$H gets an empty list"
+      else
+        case " $OUT " in
+          *" com.mbs.deploy "*|*" com.mbs.deadman "*) bad "$H must not expect deploy or deadman" ;;
+          *) if [ "$OUT" = "$LD_COMMON" ]; then ok "$H gets the laptop list"; else bad "$H list ($OUT)"; fi ;;
+        esac
+      fi ;;
   esac
 done
 
