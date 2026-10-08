@@ -20,6 +20,16 @@
 # Sentinel file path. Existence + freshness => Claude Code needs re-auth.
 REAUTH_SENTINEL="${REAUTH_SENTINEL:-$HOME/.mbs_automation/needs_reauth}"
 
+# Headless auth on garm (2026-10-08). garm has no interactive login: its `claude`
+# runs on a `claude setup-token` token kept in a 0600 file, never in a plist.
+# Exported here, at source time, so every job that sources this library inherits
+# it. On hoest the file does not exist and the interactive login is used, so this
+# does nothing there. An already-exported token wins (tests, manual runs).
+if [ -z "${CLAUDE_CODE_OAUTH_TOKEN:-}" ] && [ -r "$HOME/.mbs_automation/claude_oauth_token" ]; then
+  CLAUDE_CODE_OAUTH_TOKEN="$(cat "$HOME/.mbs_automation/claude_oauth_token" 2>/dev/null)"
+  if [ -n "$CLAUDE_CODE_OAUTH_TOKEN" ]; then export CLAUDE_CODE_OAUTH_TOKEN; else unset CLAUDE_CODE_OAUTH_TOKEN; fi
+fi
+
 # ---------------------------------------------------------------------------
 # Failure-string detection - single source of truth (added 2026-07-26).
 #
