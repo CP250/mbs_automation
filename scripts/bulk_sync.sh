@@ -288,6 +288,13 @@ if [ "$FAILED" -ne 0 ]; then
   exit 1
 fi
 
-echo "$TODAY" > "$STAMP"
-echo "$(ts) - OK (mode=$MODE): all pillars copied; stamped $TODAY. Manifest: $MANIFEST" >> "$LOG"
+# A DRY-RUN must never write the stamp: heartbeat check 7 trusts it, and a
+# rehearsal that stamps reads as a real sync for the rest of the day (found
+# 2026-10-08 on garm; vault_backup.sh and aws_repo_backup.sh already guard this).
+if [ "$MODE" = "LIVE" ]; then
+  echo "$TODAY" > "$STAMP"
+  echo "$(ts) - OK (mode=$MODE): all pillars copied; stamped $TODAY. Manifest: $MANIFEST" >> "$LOG"
+else
+  echo "$(ts) - OK (mode=$MODE): all pillars checked; NO stamp written in dry-run. Manifest: $MANIFEST" >> "$LOG"
+fi
 exit 0

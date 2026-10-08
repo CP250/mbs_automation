@@ -200,7 +200,14 @@ fi
 
 # grep -c exits 1 on zero matches; with `|| echo 0` that printed BOTH grep's "0"
 # and echo's "0" into the log. The assignment already yields "0" on its own.
-COPIED="$(grep -c ': Copied' "$RUNLOG" 2>/dev/null)"
+# A DRY-RUN logs "Skipped copy as --dry-run is set" per file and never ": Copied",
+# so counting ": Copied" reported "0 file(s) would upload" while rclone listed 336
+# (found 2026-10-08). Count the line that mode actually writes.
+if [ "$MODE" = "LIVE" ]; then
+  COPIED="$(grep -c ': Copied' "$RUNLOG" 2>/dev/null)"
+else
+  COPIED="$(grep -c 'Skipped copy as --dry-run' "$RUNLOG" 2>/dev/null)"
+fi
 [ -n "$COPIED" ] || COPIED=0
 
 # --- post-copy destination size check (added 2026-08-20) --------------------
