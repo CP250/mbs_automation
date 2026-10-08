@@ -1840,7 +1840,7 @@ fi
 # each runtime repo to origin/main after verifying signatures and running the
 # gates. Two questions, both local (no network, no claude):
 #   32a  did a run complete in the last 30 minutes?   (last_deploy_run, epoch)
-#   32b  is any live checkout more than 30 minutes behind its origin/main?
+#   32b  is any live checkout more than 30 minutes behind its origin/<branch>?
 # 32b reads the remote-tracking ref the deploy job itself fetched, so it sees a
 # commit that arrived and was REFUSED (unsigned, failing tests, busy repo) as
 # well as one that never arrived at all, which 32a covers. A refusal also says
@@ -1863,18 +1863,23 @@ if [ -f "$HOME/Library/LaunchAgents/com.mbs.deploy.plist" ]; then
   for DP_REPO in mbs_automation mbs-oura-sync mbs-music-discovery mbs-mychart-sync claude_mbs; do
     DP_DIR="$HOME/dev/$DP_REPO"
     [ -d "$DP_DIR/.git" ] || continue
-    git -C "$DP_DIR" rev-parse --verify -q origin/main >/dev/null 2>&1 || continue
-    DP_N="$(git -C "$DP_DIR" rev-list --count HEAD..origin/main 2>/dev/null || echo 0)"
+    # The branch deploy.sh fast-forwards for this repo is the one the checkout is
+    # on (it refuses any other), so read it from HEAD: mbs-oura-sync is master,
+    # the rest main (2026-10-08).
+    DP_BR="$(git -C "$DP_DIR" symbolic-ref --short -q HEAD)"
+    [ -n "$DP_BR" ] || continue
+    git -C "$DP_DIR" rev-parse --verify -q "origin/$DP_BR" >/dev/null 2>&1 || continue
+    DP_N="$(git -C "$DP_DIR" rev-list --count "HEAD..origin/$DP_BR" 2>/dev/null || echo 0)"
     case "$DP_N" in ''|*[!0-9]*) continue ;; esac
     [ "$DP_N" -gt 0 ] || continue
-    DP_OLDEST="$(git -C "$DP_DIR" log --format=%ct HEAD..origin/main 2>/dev/null | tail -1)"
+    DP_OLDEST="$(git -C "$DP_DIR" log --format=%ct "HEAD..origin/$DP_BR" 2>/dev/null | tail -1)"
     case "$DP_OLDEST" in ''|*[!0-9]*) continue ;; esac
     if [ $((DP_NOW - DP_OLDEST)) -gt 1800 ]; then
       DP_BEHIND="${DP_BEHIND}${DP_BEHIND:+, }${DP_REPO} (${DP_N} commit(s), oldest $(( (DP_NOW - DP_OLDEST) / 60 )) min old)"
     fi
   done
   if [ -n "$DP_BEHIND" ]; then
-    add_finding "garm is more than 30 minutes behind origin/main for: ${DP_BEHIND} - the deploy job has seen these commits and not applied them; read ~/.mbs_automation/deploy.log for the refusal reason (unsigned commit, failed gate or test count below its high-water mark, dirty checkout, or a job that never went idle)"
+    add_finding "garm is more than 30 minutes behind its origin branch for: ${DP_BEHIND} - the deploy job has seen these commits and not applied them; read ~/.mbs_automation/deploy.log for the refusal reason (unsigned commit, failed gate or test count below its high-water mark, dirty checkout, or a job that never went idle)"
   fi
 fi
 

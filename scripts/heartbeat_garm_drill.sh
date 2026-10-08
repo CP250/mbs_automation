@@ -52,12 +52,23 @@ git -c user.name=t -c user.email=t@t -c commit.gpgsign=false commit -q --allow-e
 git clone -q "$ORIGIN" "$T/w" 2>/dev/null
 ( cd "$T/w" && GIT_COMMITTER_DATE="$(date -v-2H '+%Y-%m-%dT%H:%M:%S')" GIT_AUTHOR_DATE="$(date -v-2H '+%Y-%m-%dT%H:%M:%S')" git -c user.name=t -c user.email=t@t -c commit.gpgsign=false commit -q --allow-empty -m old && git push -q origin HEAD:main )
 git fetch -q origin main
-expect_has "2-hour-old commit not applied" "behind origin/main for: mbs_automation (1 commit(s)"
+expect_has "2-hour-old commit not applied" "behind its origin branch for: mbs_automation (1 commit(s)"
 git merge -q --ff-only origin/main
 expect_none "caught up"
 ( cd "$T/w" && git -c user.name=t -c user.email=t@t -c commit.gpgsign=false commit -q --allow-empty -m fresh && git push -q origin HEAD:main )
 git fetch -q origin main
 expect_none "fresh commit within 30 min is not drift"
+
+echo "check 32b: a repo on master is compared with origin/master"
+OM="$T/om.git"; git init -q --bare -b master "$OM"
+git clone -q "$OM" "$HOME/dev/mbs-oura-sync" 2>/dev/null
+( cd "$HOME/dev/mbs-oura-sync" && git -c user.name=t -c user.email=t@t -c commit.gpgsign=false commit -q --allow-empty -m base && git push -q origin HEAD:master )
+git clone -q "$OM" "$T/wm" 2>/dev/null
+( cd "$T/wm" && GIT_COMMITTER_DATE="$(date -v-2H '+%Y-%m-%dT%H:%M:%S')" GIT_AUTHOR_DATE="$(date -v-2H '+%Y-%m-%dT%H:%M:%S')" git -c user.name=t -c user.email=t@t -c commit.gpgsign=false commit -q --allow-empty -m old && git push -q origin HEAD:master )
+git -C "$HOME/dev/mbs-oura-sync" fetch -q origin master
+expect_has "master repo behind is reported" "mbs-oura-sync (1 commit(s)"
+git -C "$HOME/dev/mbs-oura-sync" merge -q --ff-only origin/master
+expect_none "master repo caught up"
 cd "$T" || exit 1
 
 echo "check 33: dead-man freshness"
@@ -75,7 +86,7 @@ expect_none "no token file"
 echo "$(date -v-100d +%Y-%m-%d)" > "$STATE_DIR/claude_token_created"
 expect_none "100 days old"
 echo "$(date -v-340d +%Y-%m-%d)" > "$STATE_DIR/claude_token_created"
-expect_has "340 days: reminder" "expires in about 25 days"
+expect_has "340 days: reminder (25 or 26 across a DST boundary)" "expires in about 2"
 echo "$(date -v-370d +%Y-%m-%d)" > "$STATE_DIR/claude_token_created"
 expect_has "370 days: expired" "passed its one-year life"
 echo "not a date" > "$STATE_DIR/claude_token_created"

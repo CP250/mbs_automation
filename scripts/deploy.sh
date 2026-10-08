@@ -27,7 +27,8 @@
 #
 # Never runs on the laptop. "Deploy now": ssh garm 'launchctl kickstart gui/$(id -u)/com.mbs.deploy'
 #
-# Test hooks (env): DEV_ROOT, STATE_DIR, DEPLOY_REPOS, DEPLOY_BRANCH,
+# Test hooks (env): DEV_ROOT, STATE_DIR, DEPLOY_REPOS, DEPLOY_BRANCH (forces one
+# branch for every repo; unset in production),
 # DEPLOY_ALLOWED_SIGNERS, DEPLOY_LA_DIR, LAUNCHCTL, DEPLOY_BUSY_WAIT_SECONDS.
 
 set -uo pipefail
@@ -37,7 +38,7 @@ export PATH="/opt/homebrew/bin:/usr/local/bin:$HOME/.local/bin:$HOME/Library/Pyt
 DEV_ROOT="${DEV_ROOT:-$HOME/dev}"
 STATE_DIR="${STATE_DIR:-$HOME/.mbs_automation}"
 REPOS="${DEPLOY_REPOS:-mbs_automation mbs-oura-sync mbs-music-discovery mbs-mychart-sync claude_mbs}"
-BRANCH="${DEPLOY_BRANCH:-main}"
+FORCE_BRANCH="${DEPLOY_BRANCH:-}"
 ALLOWED="${DEPLOY_ALLOWED_SIGNERS:-$STATE_DIR/allowed_signers}"
 LA_DIR="${DEPLOY_LA_DIR:-$HOME/Library/LaunchAgents}"
 LAUNCHCTL="${LAUNCHCTL:-launchctl}"
@@ -82,6 +83,23 @@ DEPLOYED_ANY=0
 CHECK_REASON=""
 
 short() { echo "$1" | cut -c1-9; }
+
+# The branch each repo deploys from. Per repo since 2026-10-08: mbs-oura-sync's
+# default branch is master, the rest are main, and one global branch made the
+# first live run on garm fail with "couldn't find remote ref main" (10-07). An
+# explicit map, not origin/HEAD detection: it is offline, it cannot change
+# under us when a remote's default branch is renamed, and a new repo has to be
+# added here on purpose, with a drill case.
+branch_for() {
+  if [ -n "$FORCE_BRANCH" ]; then
+    echo "$FORCE_BRANCH"
+    return
+  fi
+  case "$1" in
+    mbs-oura-sync) echo master ;;
+    *) echo main ;;
+  esac
+}
 
 alert_key_stamp() { echo "$STATE_DIR/deploy_alerted_$1"; }
 
@@ -273,7 +291,7 @@ rebuild_deps() {
 process_repo() {
   local repo="$1"
   local live="$DEV_ROOT/$repo"
-  local old new bad scratch waited changed n f
+  local old new bad scratch waited changed n f branch cur
 
   if [ ! -d "$live/.git" ]; then
     log "skip $repo: no checkout at $live"
@@ -283,18 +301,24 @@ process_repo() {
     fail_repo "$repo" "dirty" "the live checkout has uncommitted changes (code on garm is never edited)"
     return 0
   fi
-  if ! git -C "$live" fetch --quiet origin "$BRANCH" 2>>"$LOG"; then
-    fail_repo "$repo" "fetch" "git fetch origin $BRANCH failed (deploy key, network or remote)"
+  branch="$(branch_for "$repo")"
+  cur="$(git -C "$live" symbolic-ref --short -q HEAD)"
+  if [ "$cur" != "$branch" ]; then
+    fail_repo "$repo" "branch" "the live checkout is on '${cur:-a detached HEAD}', not '$branch' (deploy fast-forwards $branch only)"
+    return 0
+  fi
+  if ! git -C "$live" fetch --quiet origin "$branch" 2>>"$LOG"; then
+    fail_repo "$repo" "fetch" "git fetch origin $branch failed (deploy key, network, or the remote has no branch named $branch)"
     return 0
   fi
   old="$(git -C "$live" rev-parse HEAD)"
-  new="$(git -C "$live" rev-parse "origin/$BRANCH")"
+  new="$(git -C "$live" rev-parse "origin/$branch")"
   if [ "$old" = "$new" ]; then
     clear_alerts "$repo"
     return 0
   fi
   if ! git -C "$live" merge-base --is-ancestor "$old" "$new"; then
-    fail_repo "$repo" "$(short "$new")" "origin/$BRANCH is not a fast-forward of garm's HEAD $(short "$old")"
+    fail_repo "$repo" "$(short "$new")" "origin/$branch is not a fast-forward of garm's HEAD $(short "$old")"
     return 0
   fi
   if [ ! -s "$ALLOWED" ]; then
@@ -338,7 +362,7 @@ process_repo() {
   [ -f "$(test_floor_file "$repo").pending" ] && mv "$(test_floor_file "$repo").pending" "$(test_floor_file "$repo")"
   changed="$(git -C "$live" diff --name-only "$old" "$new")"
   n="$(git -C "$live" rev-list --count "$old..$new")"
-  log "deployed $repo $(short "$old")..$(short "$new") ($n commit(s), all signed)"
+  log "deployed $repo ($branch) $(short "$old")..$(short "$new") ($n commit(s), all signed)"
   DEPLOYED_ANY=1
   clear_alerts "$repo"
 

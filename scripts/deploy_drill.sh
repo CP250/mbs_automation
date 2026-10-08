@@ -7,7 +7,7 @@
 #
 #   bash scripts/deploy_drill.sh
 #
-# Cases: no change; signed fast-forward; unsigned commit; alert throttle;
+# Cases: per-repo branch (a master repo and a wrong-branch checkout); no change; signed fast-forward; unsigned commit; alert throttle;
 # non-fast-forward; a script that does not parse; dirty live tree; installed
 # plist (bootout then bootstrap then loaded); busy repo (deferred, not failed);
 # test-count high-water (smaller count, zero count). Exits 1 on any miss.
@@ -149,13 +149,13 @@ grep -q 'deferred: mbs_automation' "$LOG" && ok "log says deferred" || bad "log 
 rm -f "$T/busy"
 run_deploy; expect "deploys once idle" "$(head_of mbs_automation)" "$(git rev-parse HEAD)"
 
-echo "case: test-count high-water (stub venv python prints the count in n_tests)"
+echo "case: per-repo branch (mbs-oura-sync deploys master) and test-count high-water (stub venv python prints the count in n_tests)"
 git clone -q "$ORIGIN" "$T/work/o" 2>/dev/null
 rm -rf "$T/work/o"
 OR="$T/origin_o.git"
-git init -q --bare -b main "$OR"
+git init -q --bare -b master "$OR"
 git clone -q "$OR" "$T/work/o" 2>/dev/null; cd "$T/work/o" || exit 1
-echo 5 > n_tests; gsigned add -A >/dev/null; gsigned commit -q -m t1 && gsigned push -q origin HEAD:main
+echo 5 > n_tests; gsigned add -A >/dev/null; gsigned commit -q -m t1 && gsigned push -q origin HEAD:master
 git clone -q "$OR" "$T/dev/mbs-oura-sync"
 mkdir -p "$T/dev/mbs-oura-sync/.venv/bin"
 cat > "$T/dev/mbs-oura-sync/.venv/bin/python" <<'EOF'
@@ -167,16 +167,39 @@ chmod +x "$T/dev/mbs-oura-sync/.venv/bin/python"
 git -C "$T/dev/mbs-oura-sync" update-index --assume-unchanged .venv 2>/dev/null
 echo ".venv/" > "$T/dev/mbs-oura-sync/.git/info/exclude"
 REPOS_UNDER_TEST="mbs-oura-sync"
-echo 6 > n_tests; gsigned commit -q -am t2 && gsigned push -q origin HEAD:main
-run_deploy; expect "6 tests deploys and records the mark" "$(cat "$STATE/deploy_testcount_mbs-oura-sync" 2>/dev/null)" "6"
-echo 3 > n_tests; gsigned commit -q -am t3 && gsigned push -q origin HEAD:main
+expect "oura checkout is on master" "$(git -C "$T/dev/mbs-oura-sync" symbolic-ref --short HEAD)" "master"
+echo 6 > n_tests; gsigned commit -q -am t2 && gsigned push -q origin HEAD:master
+run_deploy; grep -q "deployed mbs-oura-sync (master)" "$LOG" && ok "log says deployed from master" || bad "log says deployed from master"
+expect "6 tests deploys and records the mark" "$(cat "$STATE/deploy_testcount_mbs-oura-sync" 2>/dev/null)" "6"
+echo 3 > n_tests; gsigned commit -q -am t3 && gsigned push -q origin HEAD:master
 run_deploy; expect "smaller count refused" "$?" "1"
 grep -q 'high-water mark is 6' "$LOG" && ok "reason names the mark" || bad "reason names the mark"
-echo 0 > n_tests; gsigned commit -q -am t4 && gsigned push -q origin HEAD:main
+echo 0 > n_tests; gsigned commit -q -am t4 && gsigned push -q origin HEAD:master
 run_deploy; expect "zero count refused" "$?" "1"
-echo 7 > n_tests; gsigned commit -q -am t5 && gsigned push -q origin HEAD:main
+echo 7 > n_tests; gsigned commit -q -am t5 && gsigned push -q origin HEAD:master
 run_deploy; expect "bigger count deploys again" "$?" "0"
 
+
+echo "case: checkout on the wrong branch is refused"
+cd "$T/work/o" || exit 1
+git -C "$T/dev/mbs-oura-sync" checkout -q -b side
+echo 8 > n_tests; gsigned commit -q -am t6 && gsigned push -q origin HEAD:master
+BEFORE="$(git -C "$T/dev/mbs-oura-sync" rev-parse HEAD)"
+run_deploy; expect "exit 1" "$?" "1"
+grep -q "is on 'side', not 'master'" "$LOG" && ok "reason names both branches" || bad "reason names both branches"
+expect "live HEAD unchanged" "$(git -C "$T/dev/mbs-oura-sync" rev-parse HEAD)" "$BEFORE"
+git -C "$T/dev/mbs-oura-sync" checkout -q master
+run_deploy; expect "deploys again on master" "$?" "0"
+
+echo "case: the old global-main behaviour would fail here (remote has no main)"
+run_deploy_forced_main() {
+  STATE_DIR="$STATE" DEPLOY_BRANCH=main DEPLOY_REPOS="mbs-oura-sync" DEPLOY_LA_DIR="$T/la" LAUNCHCTL="$T/bin/launchctl" \
+  DEPLOY_ALLOWED_SIGNERS="$STATE/allowed_signers" /bin/bash "$T/bin/deploy.sh" >/dev/null 2>&1
+}
+git -C "$T/dev/mbs-oura-sync" checkout -q -b main 2>/dev/null
+run_deploy_forced_main; expect "forcing main on a master remote fails" "$?" "1"
+grep -q "fetch origin main failed" "$LOG" && ok "reason names the missing branch" || bad "reason names the missing branch"
+git -C "$T/dev/mbs-oura-sync" checkout -q master
 echo
 echo "deploy_drill: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]
