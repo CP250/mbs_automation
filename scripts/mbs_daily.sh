@@ -146,6 +146,9 @@ cd "$VAULT" || { echo "$(ts) - ERROR: cannot cd to $VAULT" >> "$LOG"; exit 1; }
 # NEVER carries forward (stateless-by-design); it is routed into the preserved
 # tail instead, so it stays readable in its own day's note above "## Vault
 # Agent" rather than being destroyed or ratcheting into tomorrow.
+# Garden-leave blocks (2026-10-12) are routed the same way: "### Garden leave"
+# through "<!-- /garden-leave -->" is the per-day record write_garden_leave_block
+# puts at the top of the note; it stays in its own day's note, never carries.
 # Machine-written "## " sections (2026-08-19, same principle generalized): any
 # sibling job that appends its own section to the tasks note BEFORE the daily
 # report has written "## Vault Agent" that day (or on a day the report never
@@ -189,16 +192,18 @@ carry_forward_prior_tasks() {
   # with no agent section. machf collects the machine headings that sat ABOVE
   # "## Vault Agent", i.e. the ones this fix stops sweeping forward, for the log.
   awk -v carryf="$tmp/carry" -v tailf="$tmp/tail" -v fmf="$tmp/fm" -v machf="$tmp/machine" '
-    BEGIN{ inbody=0; intail=0; fmc=0; ws=0 }
+    BEGIN{ inbody=0; intail=0; fmc=0; ws=0; gl=0 }
     { if (NR==1 && $0!="---") inbody=1
       if (!inbody){ print >> fmf; if($0=="---"){fmc++; if(fmc==2)inbody=1} next }
-      if (!intail && ($0 ~ /^## / || $0 ~ /^# Archived/)) { intail=1; ws=0 }
+      if (!intail && ($0 ~ /^## / || $0 ~ /^# Archived/)) { intail=1; ws=0; gl=0 }
       if (intail){
         if ($0 ~ /^## Vault Agent/) va=1
         if (!va && $0 ~ /^## / && $0 !~ /^## Vault Agent/) print >> machf
         print >> tailf; next }
-      if (!ws && $0 ~ /^### Work session/) ws=1
+      if (!ws && !gl && $0 ~ /^### Work session/) ws=1
       if (ws){ print >> tailf; if ($0 ~ /<!-- \/work-session -->/) ws=0; next }
+      if (!gl && $0 ~ /^### Garden leave/) gl=1
+      if (gl){ print >> tailf; if ($0 ~ /<!-- \/garden-leave -->/) gl=0; next }
       if ($0 ~ /^[[:space:]]*- \[[xX-]\][[:space:]]/) next
       if ($0 ~ /^[[:space:]]*- \[[xX-]\]$/) next
       print >> carryf }' "$prior_file"
@@ -230,7 +235,9 @@ carry_forward_prior_tasks() {
 # state. It stops at the first level-2 heading, the same boundary the
 # carry-forward splitter uses, so an alert bullet a sibling job wrote into
 # today's note before the report landed is never aged as one of P's errands
-# (2026-08-19; previously it stopped only at "## Vault Agent").
+# (2026-08-19; previously it stopped only at "## Vault Agent"). Work-session
+# and garden-leave blocks are skipped for the same reason (2026-10-12 for the
+# latter): machine-written, never P's errands.
 # Format: YYYY-MM-DD<TAB>normalized line text; append-only, deduped on
 # the exact line text (an edited line is a new identity and restarts its age;
 # accepted). Pure bash/BSD, no network, bash-3.2 safe (no arrays needed).
@@ -244,6 +251,8 @@ update_triage_first_seen() {
        /^## / || /^# Archived/ {exit}
        /^### Work session/ {ws=1}
        ws==1 {if ($0 ~ /<!-- \/work-session -->/) ws=0; next}
+       /^### Garden leave/ {gl=1}
+       gl==1 {if ($0 ~ /<!-- \/garden-leave -->/) gl=0; next}
        {print}' "$today_file" \
     | sed -E 's/^[[:space:]]*- \[[ xX-]\][[:space:]]*//; s/^[[:space:]]*-[[:space:]]+//; s/[[:space:]]+/ /g; s/^ //; s/ $//' \
     | grep -v '^$' | sort -u > "$tmp"
@@ -253,6 +262,179 @@ update_triage_first_seen() {
   done < "$tmp"
   rm -f "$tmp"
   echo "$(ts) - triage first-seen: recorded $added new line(s)" >> "$log"
+}
+
+# --- garden leave daily block (2026-10-12) -----------------------------------
+# P's garden leave program (admin/betterment/project_garden_leave.md, read it):
+# six skill goals with a Dec 13 test each, and seven things he does every day.
+# This writes the day's record at the TOP of today's tasks note, after the
+# carry-forward has prepended his region and before the claude call:
+#
+#   ### Garden leave: day N of T, Ddd YYYY-MM-DD (L days to <end>)
+#   - [ ] read #leave/read                       (seven boxes, one tag each)
+#   - skill advanced today, tick each one that moved:
+#       - [ ] shirt #leave/skill/shirt
+#           - next: <first unchecked box of that skill's project file>
+#   - at the houses, open #at/ boxes: <count and top 3 per place>
+#   <!-- /garden-leave -->
+#
+# Why the top of the note and not a "## " section: his region is 600 lines on
+# a normal day and a "## " section lands below it, where he would never scroll
+# on the phone. The block is a level-3 heading with a terminator, so the
+# carry-forward routes it into its own day's preserved tail exactly like a
+# work-session block (it never rides into tomorrow, and yesterday's ticks stay
+# in yesterday's note), update_triage_first_seen skips it, and the claude
+# triage step is told not to classify it (obsidian-daily.md step 3c). The
+# dashboard (admin/betterment/dashboard_garden_leave.md) counts the ticks by
+# tag and done date. Heartbeat check 37 reports a morning the report landed
+# without this block.
+#
+# Roster, window and labels come from the program note's frontmatter, so P can
+# change the skills or the end date in Obsidian without touching this script:
+#   gl_start: YYYY-MM-DD        gl_end: YYYY-MM-DD
+#   gl_skills: [shirt, kintsugi, ...]      gl_skill_<name>: <vault-relative path>
+#   gl_label_<name>: <display label>       (optional; defaults to the name)
+# Idempotent: a note that already holds the terminator is left alone, so the
+# 30-minute retry grid never writes a second block. Outside the window, or with
+# the program note missing, it logs one line and does nothing. No network.
+# Written for macOS bash 3.2 and BSD awk/sed/find/xargs; no date -v / date -d
+# (the day arithmetic is the civil-to-days formula in awk so the same code
+# runs under GNU tools in a test VM).
+
+# Day number of YYYY-MM-DD (days since 1970-01-01), pure awk, no date binary.
+gl_daynum() {
+  printf '%s\n' "$1" | awk -F- '{
+    y=$1+0; m=$2+0; d=$3+0
+    if (m<=2) y--
+    era=int(y/400); yoe=y-era*400
+    mp=(m>2)?m-3:m+9
+    doy=int((153*mp+2)/5)+d-1
+    doe=yoe*365+int(yoe/4)-int(yoe/100)+doy
+    print era*146097+doe-719468 }'
+}
+
+# One frontmatter scalar from a note: gl_fm_get <file> <key>. Strips quotes.
+gl_fm_get() {
+  awk 'NR==1 && $0!="---"{exit} NR==1{next} /^---[[:space:]]*$/{exit} {print}' "$1" \
+    | sed -n "s/^$2:[[:space:]]*//p" | head -1 | sed -e 's/^"//' -e 's/"$//' -e "s/^'//" -e "s/'$//" | tr -d '\r'
+}
+
+# The first unchecked "- [ ]" line of a note, as P would read it in the block:
+# checkbox and tags removed, the 🆔 id kept in parentheses, a 📅 date kept as
+# "due <date>", scheduled/start/created/recurrence fields dropped, long lines
+# cut at a word boundary. Emoji are matched as literal byte strings, never in a
+# character class, so this works under launchd's C locale as well as UTF-8.
+gl_next_action() {
+  local f="$1"
+  [ -f "$f" ] || { printf 'project file not found: %s' "$f"; return 0; }
+  local line
+  line="$(awk 'NR==1 && $0=="---"{fm=1; next} fm==1{ if ($0 ~ /^---[[:space:]]*$/) fm=0; next }
+               /^[[:space:]]*- \[ \][[:space:]]/{print; exit}' "$f")"
+  [ -n "$line" ] || { printf 'no open box in %s: write one' "$(basename "$f" .md)"; return 0; }
+  printf '%s\n' "$line" \
+    | sed -E 's/^[[:space:]]*- \[ \][[:space:]]*//' \
+    | sed -E 's/🆔 ([A-Za-z0-9_-]+)/(\1)/g; s/📅 ([0-9]{4}-[0-9]{2}-[0-9]{2})/due \1/g' \
+    | sed -E 's/ ?(⏳|🛫|➕|✅) ?[0-9-]*//g; s/ ?🔁 [^#(]*//g' \
+    | sed -E 's/\[\[([^]|]*\|)?([^]]*)\]\]/\2/g; s/\[[a-zA-Z_]+:: ?[^]]*\]//g; s/#[^[:space:]]+//g; s/[[:space:]]+/ /g; s/^ //; s/ $//' \
+    | awk '{ if (length($0) > 200) { out=""; for (i=1; i<=NF; i++) { if (length(out " " $i) > 190) break; out=(out=="" ? $i : out " " $i) } print out " ..." } else print }'
+}
+
+# Open "- [ ]" lines carrying #at/<place>: the whole vault with the same
+# exclusion set as count_open_tasks plus _corpora and oura/raw (opaque and
+# historical trees), and daily_notes/ excluded for the same reason it is there
+# (the Vault Agent proposals quote #at/ tags in their own boxes), plus P's own
+# region of today's note read separately (everything above the first "## "),
+# which is where his loose #at/ lines live. Printed as "<count>" then up to
+# three stripped texts, one per line; wikilinks are reduced to their display
+# text so a truncated line never carries a broken [[...
+gl_at_place() {
+  local vault="$1" place="$2" today_file="$3" tmp
+  tmp="$(mktemp)"
+  { find "$vault" -type d \( -name trash -o -name .obsidian -o -name .git -o -name daily_notes \
+        -o -name _archive -o -name _logs -o -name _corpora -o -path '*/oura/raw' \) -prune \
+      -o -type f -name '*.md' ! -name 'pn.md' -print0 2>/dev/null \
+      | xargs -0 grep -hE "^[[:space:]]*- \[ \][[:space:]].*#at/${place}([^A-Za-z0-9_/]|\$)" /dev/null 2>/dev/null
+    [ -f "$today_file" ] && awk '/^## / || /^# Archived/ {exit} {print}' "$today_file" \
+      | grep -E "^[[:space:]]*- \[ \][[:space:]].*#at/${place}([^A-Za-z0-9_/]|\$)" 2>/dev/null
+  } | sed -E 's/^[[:space:]]*- \[ \][[:space:]]*//; s/🆔 [A-Za-z0-9_-]+//g; s/📅 [0-9-]+//g; s/ ?(⏳|🛫|➕|✅) ?[0-9-]*//g; s/\[\[([^]|]*\|)?([^]]*)\]\]/\2/g; s/\[[a-zA-Z_]+:: ?[^]]*\]//g; s/#[^[:space:]]+//g; s/[[:space:]]+/ /g; s/^ //; s/ $//' \
+    | grep -v '^$' | sort -u > "$tmp"
+  wc -l < "$tmp" | tr -d ' '
+  head -3 "$tmp" | awk '{ if (length($0) > 70) print substr($0, 1, 67) "..."; else print }'
+  rm -f "$tmp"
+}
+
+write_garden_leave_block() {
+  local today="$1" today_file="$2" vault="$3" log="$4"
+  local prog="$vault/admin/betterment/project_garden_leave.md"
+  [ -f "$today_file" ] || { echo "$(ts) - garden-leave: today file missing, skip" >> "$log"; return 0; }
+  [ -f "$prog" ] || { echo "$(ts) - garden-leave: program note missing ($prog), skip" >> "$log"; return 0; }
+  if grep -qF '<!-- /garden-leave -->' "$today_file"; then
+    echo "$(ts) - garden-leave: block already present in $(basename "$today_file"), left as is" >> "$log"
+    return 0
+  fi
+  local start end
+  start="$(gl_fm_get "$prog" gl_start)"; end="$(gl_fm_get "$prog" gl_end)"
+  case "$start" in [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]) ;; *)
+    echo "$(ts) - garden-leave: gl_start unreadable in program note ('${start}'), skip" >> "$log"; return 0 ;; esac
+  case "$end" in [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]) ;; *)
+    echo "$(ts) - garden-leave: gl_end unreadable in program note ('${end}'), skip" >> "$log"; return 0 ;; esac
+  if [ "$today" \< "$start" ] || [ "$today" \> "$end" ]; then
+    echo "$(ts) - garden-leave: $today is outside the window $start to $end, skip" >> "$log"; return 0
+  fi
+  local d_start d_end d_today day total left dow
+  d_start="$(gl_daynum "$start")"; d_end="$(gl_daynum "$end")"; d_today="$(gl_daynum "$today")"
+  day=$((d_today - d_start + 1)); total=$((d_end - d_start + 1)); left=$((d_end - d_today))
+  # 1970-01-01 was a Thursday, so the weekday is the day number mod 7 from Thu.
+  dow="$(printf '%s\n' "$d_today" | awk '{ split("Thu Fri Sat Sun Mon Tue Wed", n, " "); print n[($1 % 7) + 1] }')"
+  local skills s label path next
+  skills="$(gl_fm_get "$prog" gl_skills | sed -e 's/^\[//' -e 's/\]$//' | tr ',' ' ')"
+  [ -n "$skills" ] || { echo "$(ts) - garden-leave: gl_skills empty in program note, skip" >> "$log"; return 0; }
+  local tab tmp; tab="$(printf '\t')"
+  tmp="$(mktemp -d "$(dirname "$today_file")/.gl.XXXXXX")"
+  # shellcheck disable=SC2064
+  trap "rm -rf '$tmp'" RETURN
+  {
+    printf '### Garden leave: day %s of %s, %s %s (%s days to %s)\n' "$day" "$total" "$dow" "$today" "$left" "$end"
+    printf -- '- [ ] read #leave/read\n'
+    printf -- '- [ ] admin (the admin set in [[project_garden_leave]]) #leave/admin\n'
+    printf -- '- [ ] exercise (stretch and strength, not sport) #leave/exercise\n'
+    printf -- '- [ ] fix something at the house (add #at/<place> when you tick) #leave/fix\n'
+    printf -- '- skill advanced today, tick each one that moved:\n'
+    for s in $skills; do
+      label="$(gl_fm_get "$prog" "gl_label_$s")"; [ -n "$label" ] || label="$s"
+      path="$(gl_fm_get "$prog" "gl_skill_$s")"
+      printf -- '%s- [ ] %s #leave/skill/%s\n' "$tab" "$label" "$s"
+      if [ -n "$path" ]; then
+        next="$(gl_next_action "$vault/$path")"
+        printf -- '%s%s- next: %s [[%s]]\n' "$tab" "$tab" "$next" "$(basename "$path" .md)"
+      else
+        printf -- '%s%s- next: no gl_skill_%s path in [[project_garden_leave]]\n' "$tab" "$tab" "$s"
+      fi
+    done
+    printf -- '- [ ] sport, or sport prep (write which) #leave/sport\n'
+    printf -- '- [ ] relax with Madi #leave/madi\n'
+    local place n lines summary=""
+    for place in new_canaan collinsville montreal toronto; do
+      lines="$(gl_at_place "$vault" "$place" "$today_file")"
+      n="$(printf '%s\n' "$lines" | head -1)"
+      summary="${summary}${summary:+, }${place} ${n}"
+      printf '%s\n' "$lines" | tail -n +2 | awk -v p="$place" -v t="$tab" 'NF { printf "%s- %s: %s\n", t, p, $0 }' > "$tmp/at_$place"
+    done
+    printf -- '- at the houses, open #at/ boxes ([[dashboard_places]]): %s\n' "$summary"
+    for place in new_canaan collinsville montreal toronto; do cat "$tmp/at_$place"; done
+    printf '<!-- /garden-leave -->\n'
+  } > "$tmp/block"
+  # Insert after the frontmatter, above the carried region; a note with no
+  # frontmatter (should not happen after ensure_tasks_frontmatter) gets it at line 1.
+  awk -v blockf="$tmp/block" '
+    BEGIN{ fmc=0; inbody=0; pc=0 }
+    { if (NR==1 && $0!="---") inbody=1
+      if(!inbody){ print; if($0=="---"){fmc++; if(fmc==2)inbody=1} next }
+      if(!pc){ print ""; while((getline l < blockf)>0) print l; close(blockf); pc=1 }
+      print }
+    END{ if(!pc){ print ""; while((getline l < blockf)>0) print l; close(blockf) } }' \
+    "$today_file" > "$tmp/today" && mv "$tmp/today" "$today_file"
+  echo "$(ts) - garden-leave: wrote day $day of $total block into $(basename "$today_file") (skills: $(echo $skills | tr ' ' ','); at-houses: $summary)" >> "$log"
 }
 
 # --- open_tasks frontmatter stamp (P decision 2026-08-07) ---------------------
@@ -442,6 +624,11 @@ fi
 # Carry yesterday's above-Vault-Agent region forward into today (see function
 # definition above). Runs whether or not the pre-flight just created the file.
 carry_forward_prior_tasks "$TODAY" "$VAULT/daily_notes/tasks" "$TODAYS_TASKS" "$LOG"
+
+# Write the garden leave block at the top of today's note (see the function
+# above). After carry-forward so it sits above the carried region, before the
+# triage first-seen scan so its lines are never aged as errands.
+write_garden_leave_block "$TODAY" "$TODAYS_TASKS" "$VAULT" "$LOG"
 
 # Record first-seen dates for the post-carry open lines in P's region: the age
 # source for the claude triage step's errand staleness flags (project_task_triage).

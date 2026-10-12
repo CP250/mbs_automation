@@ -674,6 +674,30 @@ if [ "$DEFER_DAILY" -eq 0 ] \
   add_finding "morning report landed without its ### Triage subsection - the capture-triage step did not run; check ~/dev/mbs_automation/commands/obsidian-daily.md step 3c and ~/.mbs_automation/mbs_daily.log"
 fi
 
+# --- check 37: the garden leave block landed in today's note (added 2026-10-12)
+# mbs_daily.sh writes a "### Garden leave ... <!-- /garden-leave -->" block at
+# the top of today's tasks note every morning inside the window named by
+# admin/betterment/project_garden_leave.md (gl_start, gl_end in frontmatter),
+# after the carry-forward and before the claude call. Same shape as check 9:
+# it fires only when a REAL report landed without the block, which is "the
+# daily ran but the block writer silently did nothing". No report at all is
+# checks 2/3. Window read from the vault note (local file, no network); if
+# the note or its dates are unreadable the check is skipped, since the writer
+# skips on the same condition and logs it. Presence only: never recounts ticks.
+GL_PROG="$VAULT/admin/betterment/project_garden_leave.md"
+if [ "$DEFER_DAILY" -eq 0 ] && [ -f "$GL_PROG" ] && [ -f "$TASKS_NOTE" ] \
+   && grep -qE '^## Vault Agent' "$TASKS_NOTE" \
+   && ! grep -qE '^## Vault Agent \(skipped' "$TASKS_NOTE"; then
+  GL_START="$(awk 'NR==1{next} /^---[[:space:]]*$/{exit} {print}' "$GL_PROG" | sed -n 's/^gl_start:[[:space:]]*//p' | head -1 | tr -d '" ')"
+  GL_END="$(awk 'NR==1{next} /^---[[:space:]]*$/{exit} {print}' "$GL_PROG" | sed -n 's/^gl_end:[[:space:]]*//p' | head -1 | tr -d '" ')"
+  case "$GL_START" in [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]) GL_OK=1 ;; *) GL_OK=0 ;; esac
+  case "$GL_END" in [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]) ;; *) GL_OK=0 ;; esac
+  if [ "$GL_OK" -eq 1 ] && [ ! "$TODAY" \< "$GL_START" ] && [ ! "$TODAY" \> "$GL_END" ] \
+     && ! grep -qF '<!-- /garden-leave -->' "$TASKS_NOTE"; then
+    add_finding "today's tasks note has no garden leave block (the morning report landed, the '### Garden leave' block did not) - write_garden_leave_block in mbs_daily.sh skipped or failed; read the garden-leave lines in ~/.mbs_automation/mbs_daily.log and the gl_* frontmatter of admin/betterment/project_garden_leave.md"
+  fi
+fi
+
 # --- check 10: review prep drafted into the current review notes (2026-08-01)
 # project_task_triage phase 2: com.mbs.review-{monthly,quarterly,yearly} run
 # review_reminder.sh (note + notification), then claude drafts a "## Agent
