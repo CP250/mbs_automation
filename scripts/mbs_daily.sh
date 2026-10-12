@@ -389,6 +389,28 @@ clear_skip_banner() {
   return 0
 }
 
+# --- frontmatter self-heal (2026-10-12) -------------------------------------
+# The Obsidian Archiver plugin (Cmd+A on hoest) creates today's tasks note on
+# its own when P archives before this job has run (midnight to the first
+# successful run), and it creates it with NO frontmatter, body "# Archived".
+# Every later step assumes frontmatter: open_tasks stamping skips the file, and
+# carry-forward's insert awk never leaves its frontmatter branch, so it appends
+# the carried region at the END, below "# Archived", where the next morning's
+# carry boundary stops short of it and P's open items stop rolling forward.
+# Fix: give such a file the same frontmatter the pre-flight would have written,
+# above its existing body, before anything else touches it.
+ensure_tasks_frontmatter() {
+  local file="$1" day="$2" count="$3" log="$4"
+  [ -f "$file" ] || return 0
+  [ "$(head -1 "$file")" = "---" ] && return 0
+  local tmp; tmp="$(mktemp "${file%.md}.fmheal.XXXXXX")"
+  {
+    printf '%s\n' '---' 'journal: tasks' "journal-date: $day" "open_tasks: $count" '---' '' '' ''
+    cat "$file"
+  } > "$tmp" && mv "$tmp" "$file"
+  echo "$(ts) - pre-flight: $(basename "$file") existed without frontmatter (made outside this job, e.g. by the Archiver), prepended it" >> "$log"
+}
+
 # Pre-flight: guarantee today's tasks file exists on this Mac's local disk
 # BEFORE invoking Claude. Why: the Journals plugin's `tasks.autoCreate` is now
 # intentionally disabled (to prevent phone-Mac sync races - phone Journals would
@@ -398,6 +420,7 @@ clear_skip_banner() {
 # whatever) and the user always has somewhere to write. See SETUP.md.
 TODAYS_TASKS="$VAULT/daily_notes/tasks/tasks_${TODAY}.md"
 OPEN_TASKS="$(count_open_tasks "$VAULT")"
+ensure_tasks_frontmatter "$TODAYS_TASKS" "$TODAY" "$OPEN_TASKS" "$LOG"
 if [ ! -f "$TODAYS_TASKS" ]; then
   mkdir -p "$(dirname "$TODAYS_TASKS")"
   cat > "$TODAYS_TASKS" <<EOF
