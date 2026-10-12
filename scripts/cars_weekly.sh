@@ -16,7 +16,10 @@
 # Stamp is written only on success.
 #
 # What it does: sweeps the major auction/dealer platforms for new LHD listings
-# of the four candidate models, dedupes against the registry by chassis, files
+# of the four candidate models, plus listings of any drive for the Autech Zagato
+# Stelvio AZ1 / Gavia and the Lotus 340R (added 2026-10-12 at P's request; RHD
+# in scope, colour on every car note, every hit flagged to P), dedupes against
+# the registry by chassis, files
 # hits into the Obsidian registry under admin/transportation/cars/luxury/, and
 # appends a summary to today's tasks daily note. Asset (image) capture is NOT
 # done unattended - it is on-demand and may need a browser session.
@@ -84,8 +87,9 @@ This is the unattended weekly LHD collectible-car listing sweep for P's vault at
 
 First read these for conventions and the per-car schema:
 - admin/transportation/cars/luxury/ref_lhd_registry_method.md
-- the four project notes: admin/transportation/cars/luxury/<slug>/project_*.md
-Slugs: aston_martin_virage, aston_martin_v8_zagato, lagonda_series_iv, bristol_blenheim.
+- the six project notes: admin/transportation/cars/luxury/<slug>/project_*.md
+- the CLAUDE.md in admin/transportation/cars/luxury/autech_zagato/ and .../lotus_340r/ (their naming and colour rules)
+Slugs: aston_martin_virage, aston_martin_v8_zagato, lagonda_series_iv, bristol_blenheim, autech_zagato, lotus_340r.
 
 SCOPE - LHD cars only (P is US-Eastern; alert geography = US, Canada, continental Europe; UK listings are mostly RHD and usually not relevant). The four models:
 1. Aston Martin Virage / V8 Coupe / V8 Vantage (1988-2000)
@@ -93,16 +97,21 @@ SCOPE - LHD cars only (P is US-Eastern; alert geography = US, Canada, continenta
 3. Aston Martin Lagonda Series IV / Series 4 (1987-1990)
 4. Bristol Blenheim car (1994-2009) - scope queries to "car" or "saloon" to avoid the WWII aircraft.
 
+EXCEPTIONS (P, 2026-10-12) - two more registries where RHD AND LHD are both in scope:
+5. Autech Zagato Stelvio AZ1 (1989-1991, about 104 built) and Autech Zagato Gavia (1993-1995, about 16 built), slug autech_zagato. Nissan Leopard F31 based, almost all RHD and in Japan. Always include "Autech", "Zagato" or "AZ1" in queries: "Stelvio" alone returns the Alfa Romeo. Japanese terms: オーテックザガート ステルビオ, ステルビオ AZ1, ザガート ガビア.
+6. Lotus 340R (2000, 340 built), slug lotus_340r. Most are RHD (UK, Japan, Hong Kong); about 40 to 110 LHD. Bring a Trailer files it under the Elise (bringatrailer.com/listing/2000-lotus-elise-340r-N/).
+For these two registries: every car note MUST record exterior and interior colour (original and current; write "unknown" when the source does not say, never omit the field). File them under their own folder's naming rules (see each folder's CLAUDE.md).
+
 CITATION RULE (mandatory, non-negotiable): every car, price, sale, sighting, or factual claim you report MUST carry the verbatim source URL it came from, inline in the same bullet, as a markdown link. A claim with no URL may NOT be presented as fact. If something appears only in a search-result summary and you do not have a specific retrievable page URL, you must EITHER (a) fetch the page and get the real URL, or (b) write it as "UNVERIFIED - no source URL (search query: <the exact query you ran>)" and never state it as though confirmed. When a source actually resolves a fact (e.g. a VIN that turns out to be RHD), report the resolved fact with its link rather than leaving it "unconfirmed." Prefer three sourced items over ten unsourced ones. A report containing any unsourced, un-tagged claim is a failed run.
 
 DO each run:
-1. Search the web (and fetch server-rendered sites such as classic.com, bonhams.com, rmsothebys.com) for listings posted or updated in roughly the last 7-10 days, across Bring a Trailer, Collecting Cars, Car and Classic, The Market, Bonhams, RM Sotheby's, classic.com, Classic Driver. Prefer LHD; skip obvious RHD-only UK cars unless notable.
+1. Search the web (and fetch server-rendered sites such as classic.com, bonhams.com, rmsothebys.com) for listings posted or updated in roughly the last 7-10 days, across Bring a Trailer, Collecting Cars, Car and Classic, The Market, Bonhams, RM Sotheby's, classic.com, Classic Driver. For models 1-4 prefer LHD and skip obvious RHD-only UK cars unless notable. For models 5 and 6 also search UK and Japanese sources: PistonHeads, Iconic Auctioneers, H&H, Historics, Classic Car Auctions, SELOC classifieds; Carsensor and Goo-net (Japan), and the public sales shown on the Exclusive Car Registry model pages (exclusivecarregistry.com/model/autech/zagatostelvio, /model/autech/zagatogavia, /model/lotus/340r).
 2. Capture per hit, each with its source URL: model, chassis or VIN if shown, year, drive, exterior and interior colour, asking or sold price with date, platform, listing URL. For any car whose drive is unclear, try to resolve it from the source (VIN drive code, the listing's own LHD/RHD field) before reporting; report the resolved answer with the link.
-3. Dedupe against existing notes in each model's cars/ folder by chassis number. If the chassis already has a note, append a dated line to its "## Ownership and sales timeline" with the new sighting and URL. If the chassis is new and the car is LHD or likely LHD, create cars/<chassis>.md using the schema in the method note, provenance lead - including the source URL in its "## Source" section.
+3. Dedupe against existing notes in each model's cars/ folder by chassis number. If the chassis already has a note, append a dated line to its "## Ownership and sales timeline" with the new sighting and URL. If the chassis is new and the car is LHD or likely LHD (models 1-4), or is any Autech Zagato or Lotus 340R whatever its drive (models 5-6), create cars/<chassis>.md using the schema in the method note, provenance lead - including the source URL in its "## Source" section.
 4. Append every new hit as a dated bullet to the "## New listings to triage" section of the matching index_<slug>.md note - each bullet MUST contain at least one markdown link to its source (or the explicit UNVERIFIED tag from the citation rule).
 5. Do NOT scrape or download images unattended - only record URLs. Asset capture is on-demand. If a listing page is JavaScript-rendered and you cannot retrieve its content, say so explicitly and give the URL anyway so P can open it.
 
-OUTPUT: append a concise summary to today's daily note at daily_notes/tasks/tasks_YYYY-MM-DD.md under a "## Vault Agent - car sweep" heading: new hits per model, any standout LHD cars, anything needing P's attention. Every factual line in the summary carries its source link per the citation rule. If zero new LHD listings across all four, say so in one line.
+OUTPUT: append a concise summary to today's daily note at daily_notes/tasks/tasks_YYYY-MM-DD.md under a "## Vault Agent - car sweep" heading: new hits per model, any standout LHD cars, anything needing P's attention. FLAG RULE (P, 2026-10-12): every Autech Zagato Stelvio AZ1, Autech Zagato Gavia or Lotus 340R that is for sale or at auction in the window goes at the top of the summary under a bold "Needs your eye" line, with price, exterior and interior colour, drive, location, end date if an auction, and the source link. Every factual line in the summary carries its source link per the citation rule. If zero new LHD listings across all four, say so in one line.
 EOF
 
 # Retry ladder (added 2026-08-19). Modeled on mbs_daily.sh's, deliberately
