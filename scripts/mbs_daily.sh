@@ -324,6 +324,9 @@ gl_fm_get() {
 # "due <date>", scheduled/start/created/recurrence fields dropped, long lines
 # cut at a word boundary. Emoji are matched as literal byte strings, never in a
 # character class, so this works under launchd's C locale as well as UTF-8.
+# Angle brackets are dropped from every copied line (here and in gl_at_place):
+# Obsidian reads a bare <word> as an unclosed HTML tag, and Live Preview then
+# stops rendering the rest of the block as checkboxes (2026-10-14).
 gl_next_action() {
   local f="$1"
   [ -f "$f" ] || { printf 'project file not found: %s' "$f"; return 0; }
@@ -335,7 +338,7 @@ gl_next_action() {
     | sed -E 's/^[[:space:]]*- \[ \][[:space:]]*//' \
     | sed -E 's/🆔 ([A-Za-z0-9_-]+)/(\1)/g; s/📅 ([0-9]{4}-[0-9]{2}-[0-9]{2})/due \1/g' \
     | sed -E 's/ ?(⏳|🛫|➕|✅) ?[0-9-]*//g; s/ ?🔁 [^#(]*//g' \
-    | sed -E 's/\[\[([^]|]*\|)?([^]]*)\]\]/\2/g; s/\[[a-zA-Z_]+:: ?[^]]*\]//g; s/#[^[:space:]]+//g; s/[[:space:]]+/ /g; s/^ //; s/ $//' \
+    | sed -E 's/\[\[([^]|]*\|)?([^]]*)\]\]/\2/g; s/\[[a-zA-Z_]+:: ?[^]]*\]//g; s/#[^[:space:]]+//g; s/[<>]//g; s/[[:space:]]+/ /g; s/^ //; s/ $//' \
     | awk '{ if (length($0) > 200) { out=""; for (i=1; i<=NF; i++) { if (length(out " " $i) > 190) break; out=(out=="" ? $i : out " " $i) } print out " ..." } else print }'
 }
 
@@ -356,7 +359,7 @@ gl_at_place() {
       | xargs -0 grep -hE "^[[:space:]]*- \[ \][[:space:]].*#at/${place}([^A-Za-z0-9_/]|\$)" /dev/null 2>/dev/null
     [ -f "$today_file" ] && awk '/^## / || /^# Archived/ {exit} {print}' "$today_file" \
       | grep -E "^[[:space:]]*- \[ \][[:space:]].*#at/${place}([^A-Za-z0-9_/]|\$)" 2>/dev/null
-  } | sed -E 's/^[[:space:]]*- \[ \][[:space:]]*//; s/🆔 [A-Za-z0-9_-]+//g; s/📅 [0-9-]+//g; s/ ?(⏳|🛫|➕|✅) ?[0-9-]*//g; s/\[\[([^]|]*\|)?([^]]*)\]\]/\2/g; s/\[[a-zA-Z_]+:: ?[^]]*\]//g; s/#[^[:space:]]+//g; s/[[:space:]]+/ /g; s/^ //; s/ $//' \
+  } | sed -E 's/^[[:space:]]*- \[ \][[:space:]]*//; s/🆔 [A-Za-z0-9_-]+//g; s/📅 [0-9-]+//g; s/ ?(⏳|🛫|➕|✅) ?[0-9-]*//g; s/\[\[([^]|]*\|)?([^]]*)\]\]/\2/g; s/\[[a-zA-Z_]+:: ?[^]]*\]//g; s/#[^[:space:]]+//g; s/[<>]//g; s/[[:space:]]+/ /g; s/^ //; s/ $//' \
     | grep -v '^$' | sort -u > "$tmp"
   wc -l < "$tmp" | tr -d ' '
   head -3 "$tmp" | awk '{ if (length($0) > 70) print substr($0, 1, 67) "..."; else print }'
@@ -398,7 +401,7 @@ write_garden_leave_block() {
     printf -- '- [ ] read #leave/read\n'
     printf -- '- [ ] admin (the admin set in [[project_garden_leave]]) #leave/admin\n'
     printf -- '- [ ] exercise (stretch and strength, not sport) #leave/exercise\n'
-    printf -- '- [ ] fix something at the house (add #at/<place> when you tick) #leave/fix\n'
+    printf -- '- [ ] fix something at the house (add the place tag when you tick) #leave/fix\n'
     printf -- '- skill advanced today, tick each one that moved:\n'
     for s in $skills; do
       label="$(gl_fm_get "$prog" "gl_label_$s")"; [ -n "$label" ] || label="$s"
