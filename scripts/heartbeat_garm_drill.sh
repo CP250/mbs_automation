@@ -27,7 +27,7 @@ PASS=0; FAIL=0
 ok()  { PASS=$((PASS + 1)); echo "  ok   $1"; }
 bad() { FAIL=$((FAIL + 1)); echo "  FAIL $1"; }
 findings() {
-  STATE_DIR="$STATE_DIR" HOME="$HOME" VAULT="$T/vault" LD_EXPECTED_COMMON="${LD_TEST:-com.mbs.aws-repo-backup com.mbs.weekly-blocks}" /bin/bash -c '
+  STATE_DIR="$STATE_DIR" HOME="$HOME" VAULT="$T/vault" LD_EXPECTED_COMMON="${LD_TEST:-com.mbs.aws-repo-backup com.mbs.mount-garm-assets}" /bin/bash -c '
     set -uo pipefail
     hostname() { echo "${HB_HOST:-garm}"; }
     add_finding() { echo "FINDING: $1"; }
@@ -137,13 +137,13 @@ unset AWS_BACKUP_RELAY_MAX_HOURS
 printf -- '---\ntype: state\n---\nno epoch here\n' > "$RELAY"
 expect_has "relay file without a readable epoch" "no readable last_success_epoch"
 write_relay "$(( $(now) - 500 * 3600 ))"
-LD_TEST="com.mbs.weekly-blocks"
+LD_TEST="com.mbs.mount-garm-assets"
 expect_none "not armed when aws-repo-backup is not in the laptop list, even with a stale relay"
 unset LD_TEST
 rm -f "$RELAY"; export AWS_BACKUP_RELAY_GRACE_START="$(date +%Y-%m-%d)"
 
 echo "check 38: this machine's transcripts are archived"
-LD_TEST="com.mbs.weekly-blocks"
+LD_TEST="com.mbs.mount-garm-assets"
 SAS="$HOME/.claude/projects"; SAD="$HOME/storage_mbs_assets/admin/claude_code_sessions/garm"
 mkdir -p "$SAS/proj A/sess1/subagents" "$SAS/proj A/memory" "$SAD"
 printf 'hello\n' > "$SAS/proj A/s1.jsonl"; printf 'sub\n' > "$SAS/proj A/sess1/subagents/a.jsonl"; printf 'm\n' > "$SAS/proj A/memory/MEMORY.md"

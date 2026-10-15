@@ -1314,17 +1314,19 @@ fi
 # KEEPING THIS LIST HONEST: it is a snapshot of what SHOULD be loaded, taken
 # 2026-08-19 from `launchctl list`. Adding a job means adding it here. Booting
 # one out means removing it here, or this reports it missing forever.
-# com.mbs.weekly-blocks is on the list on purpose: it is paused by zeroing
-# every thread's weekly_minutes, NOT by being booted out, so it is still loaded
-# and still fires Sunday 17:00 (creating nothing). If it is ever really booted
-# out, delete it from this list at the same time.
+# com.mbs.weekly-blocks is OFF the list since 2026-10-15: P booted it out and ran
+# launchctl disable on hoest (print-disabled shows it "disabled"), after the
+# 2026-08-19 pause had left it loaded and firing Sunday 17:00, calling claude -p
+# for zero events every week. Its plist symlink stays in ~/Library/LaunchAgents
+# on hoest so a restore is two commands: launchctl enable, then launchctl
+# bootstrap. Put it back in LD_EXPECTED_COMMON in the same commit as a restore.
 # PER HOST (2026-10-06, garm). LD_EXPECTED_COMMON is what the laptop (hoest) runs
 # until each job is cut over. LD_EXPECTED_GARM is what garm runs: deploy and
 # deadman live only there, and every cut-over job moves from COMMON to GARM in
 # the SAME commit that boots it out on hoest, so neither machine reports the
 # other's jobs missing. Decided on hostname -s, so a machine that is neither
 # gets the laptop list.
-LD_EXPECTED_COMMON="com.mbs.aws-repo-backup com.mbs.weekly-blocks com.mbs.mount-garm-assets"
+LD_EXPECTED_COMMON="com.mbs.aws-repo-backup com.mbs.mount-garm-assets"
 LD_EXPECTED_GARM="com.mbs.deploy com.mbs.deadman com.mbs.vault-index com.mbs.alcohol-stamp com.mbs.pointer-check com.mbs.oslo-weekly com.mbs.oslo-monthly com.mbs.review-monthly com.mbs.review-quarterly com.mbs.review-yearly com.mbs.cars-weekly com.mbs.weekly com.mbs.oura-sync com.mbs.oura-watch com.mbs.oura-trends com.mbs.team-brief com.mbs.web-watchers com.mbs.instagram-refresh com.mbs.the-record com.mbs.music-discovery com.mbs.mychart-sync com.mbs.daily com.mbs.vault-backup com.mbs.bulk-sync com.mbs.heartbeat"
 case "$(hostname -s)" in
   garm) LD_EXPECTED="$LD_EXPECTED_GARM" ;;
