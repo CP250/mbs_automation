@@ -751,43 +751,14 @@ if [ "$DEFER_TEAM_BRIEF" -eq 0 ] && [ -f "$HOME/Library/LaunchAgents/com.mbs.tea
   fi
 fi
 
-# --- check 12: session-awareness sweep landed (added 2026-08-03) -------------
-# Artifact-only, per the watchdog rule: is there a report in the canonical
-# folder with an mtime inside the last 35 days. The sweep is a Cowork scheduled
-# task (monthly, 1st at 08:39), not launchd, so there is no plist to gate on
-# and no stamp file to read - the report IS the only evidence it ran.
-#
-# Be honest about what this buys: at monthly cadence a dead job stays invisible
-# for up to five weeks. This check satisfies the manual's rule that every job
-# P depends on gets a watchdog, and nothing more. The real detection is that a
-# report either appears on the 1st or it does not. If the 2026-10-01 retirement
-# review keeps the job, consider having the sweep write a stamp.
-#
-# Self-arming: silent until the folder holds at least one report, so it never
-# fires on a fresh machine.
-SWEEP_DIR="$VAULT/admin/mbs_system/design/session_awareness"
-if [ -d "$SWEEP_DIR" ] && ls "$SWEEP_DIR"/report_*.md >/dev/null 2>&1; then
-  if [ -z "$(find "$SWEEP_DIR" -name 'report_*.md' -mtime -35 -print -quit 2>/dev/null)" ]; then
-    add_finding "session-awareness sweep: no report in admin/mbs_system/design/session_awareness/ modified in the last 35 days - the monthly Cowork task (1st, 08:39) may have stopped running or is writing elsewhere; check Cowork sidebar > Scheduled"
-  fi
-
-  # --- check 12b: the newest report is a report, not a stub (2026-08-20) -----
-  # Floor only, no shrink ledger, and that asymmetry is the point: a new month's
-  # report legitimately covers fewer sessions than a busy month before it, so a
-  # month-over-month drop is normal here and a ledger would cry wolf every time
-  # P had a quiet month. What is never normal is a report of a few hundred bytes.
-  # Grounded in the real folder: the fourteen reports on disk run 4,597 to 11,984
-  # bytes, so 1,000 sits well clear of the smallest genuine one and still catches
-  # a frontmatter-only stub from a sweep that died after creating its file.
-  SWEEP_NEWEST="$(ls -t "$SWEEP_DIR"/report_*.md 2>/dev/null | head -1)"
-  if [ -n "$SWEEP_NEWEST" ]; then
-    SWEEP_BYTES="$(wc -c < "$SWEEP_NEWEST" 2>/dev/null | tr -d ' ')"
-    case "${SWEEP_BYTES:-0}" in ''|*[!0-9]*) SWEEP_BYTES=0 ;; esac
-    if [ "$SWEEP_BYTES" -lt 1000 ]; then
-      add_finding "session-awareness sweep: $(basename "$SWEEP_NEWEST") is only ${SWEEP_BYTES} bytes (real reports run 4,600 to 12,000) - the sweep created its file and died before writing it; check Cowork sidebar > Scheduled"
-    fi
-  fi
-fi
+# --- check 12 / 12b: RETIRED 2026-10-15 ---------------------------------------
+# Watched the session-awareness sweep's reports in
+# admin/mbs_system/design/session_awareness/. P retired the sweep on 2026-10-15
+# and its Cowork scheduled task was disabled the same day, so the 35-day report
+# check would have raised a false finding from about 2026-11-16. Removed rather
+# than gated. Diagnosis: _logs/log_2026-10-15_sweep_broken_diagnosis.md in that
+# folder. The numbers 12 and 12b stay unused so other check numbers keep their
+# meaning in logs and docs.
 
 # --- check 13: the-record has no transcript stuck unprocessed (added 2026-08-07)
 # com.mbs.the-record is EVENT-anchored (WatchPaths on the raw/ drop-zone), not
