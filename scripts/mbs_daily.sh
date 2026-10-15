@@ -886,6 +886,18 @@ Daily report not generated: claude exited cleanly on all ${MAX_ATTEMPTS} attempt
 
 BANNER
     echo "$(ts) - wrote no-report skipped banner to $TODAYS_TASKS" >> "$LOG"
+  elif [ "$rc" -eq 6 ]; then
+    # run_claude_p returns 6 when claude exited 0 but a hook blocked the prompt
+    # before the model ran (2026-10-10). Without this branch the else below
+    # would call it a no-network morning.
+    cat >> "$TODAYS_TASKS" <<BANNER
+
+## Vault Agent (skipped, model never ran)
+
+Daily report not generated: on all ${MAX_ATTEMPTS} attempts claude exited cleanly but a hook blocked the prompt before the model ran (zero model turns), so no report was attempted. The usual cause is the vault gate in ~/.claude/settings.json, which refuses every Claude Code run while the vault manual (brain/CLAUDE.md) is unreadable. The network and auth were fine. The hook's message is in ~/.mbs_automation/mbs_daily.log and the same line is in ~/.mbs_automation/launchd.err.log (heartbeat check 24 reports it). A fresh attempt runs on the next trigger. If a later attempt today succeeds, this banner is struck automatically and replaced by the real report.
+
+BANNER
+    echo "$(ts) - wrote model-never-ran skipped banner to $TODAYS_TASKS" >> "$LOG"
   else
     cat >> "$TODAYS_TASKS" <<BANNER
 

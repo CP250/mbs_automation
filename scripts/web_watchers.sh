@@ -408,6 +408,27 @@ PROMPT_EOF
   local temp
   temp="$(mktemp -t web_watchers_claude.XXXXXX)"
   claude -p "$prompt" --model opus --dangerously-skip-permissions > "$temp" 2>>"$LOG"
+  # Hook-blocked run (2026-10-10). When a UserPromptSubmit hook blocks the prompt
+  # (the vault gate in ~/.claude/settings.json, while brain/CLAUDE.md is
+  # unreadable), text-mode claude -p exits 0 and prints the hook's message PLUS
+  # THE WHOLE ORIGINAL PROMPT, page text included. That is a non-empty answer, so
+  # the loop below would store it as a baseline, or on a watcher that has one
+  # read it twice, "confirm" it as a CHANGE DETECTED, notify, and overwrite the
+  # baseline with the block message. Print nothing and return 6 instead: the
+  # caller sees an empty answer, counts an error and keeps the baseline.
+  # Ordered BEFORE the credit and auth checks on purpose: the echoed prompt
+  # carries scraped page text, and a page that says "session expired" must not
+  # be read as a 401 and set the re-auth sentinel.
+  # WATCHDOG: the stderr copy lands in web_watchers.err.log, which heartbeat
+  # check 24 sweeps (3-day window, cleared by truncating the file).
+  if head -c 80 "$temp" 2>/dev/null | grep -q '^UserPromptSubmit operation blocked by hook'; then
+    local hook_msg
+    hook_msg="$(sed -n 2p "$temp" | sed 's/^.*\]: //' | cut -c1-160)"
+    echo "$(ts) - ask_claude: NO MODEL TURN RAN, a hook blocked the prompt (${hook_msg}); returning an empty answer so the caller counts an error and keeps the baseline" >> "$LOG"
+    echo "$(ts) - web_watchers: NO MODEL TURN RAN, a hook blocked the prompt (${hook_msg}); no watcher can be checked until it clears" >&2
+    rm -f "$temp"
+    return 6
+  fi
   if la_is_credit_failure "$temp"; then
     alert_tasks_note "Automated run failed: web-watchers is out of Claude usage credits (model: opus). Some watchers did not run - top up (/usage-credits) or switch model (/model)."
     touch "$STATE_DIR/.web_watchers_auth_failed"

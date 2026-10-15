@@ -389,7 +389,7 @@ unalert_tasks_note() {
 #      latency, so a creeping stall is visible across days in the job log.
 #
 # Callers see the same contract as before: run_claude_p "$PROMPT" "$LOG"
-# returns 0 / 2 (auth) / 3 (credits) / 124 (killed) / other. Two optional
+# returns 0 / 2 (auth) / 3 (credits) / 6 (no model turn) / 124 (killed) / other. Two optional
 # arguments (2026-09-09, for team_brief.sh): $3 = a file to receive the result
 # text INSTEAD of the log (stderr lines still go to the log), $4 = a file fed to
 # claude on stdin (default /dev/null). Per-job overrides: export
@@ -532,6 +532,50 @@ _la_trace_summary() {
     | tail -1
 }
 
+# Did the run end without the model ever running? Prints "hook" when the result
+# text is the CLI's hook-block message, "zero" when the result event reports
+# num_turns 0 for any other reason, and nothing otherwise (2026-10-10).
+#
+# WHY: a UserPromptSubmit hook that exits 2 (the vault gate in
+# ~/.claude/settings.json, which refuses every run while brain/CLAUDE.md is
+# unreadable) blocks the prompt, and `claude -p` then exits 0 with
+# is_error:false, num_turns:0, cost 0. Verified on 2.1.296 and on hoest's
+# 2.1.285. Every exit-code test downstream reads that as success. The "hook"
+# signal is the message text (verified on 2.1.296 only); "zero" is the
+# signature verified on both versions, so the two back each other up.
+_la_trace_no_work() {
+  local trace="$1" last
+  [ -f "$trace" ] || return 0
+  if _la_have_jq; then
+    last="$(grep '^{' "$trace" 2>/dev/null \
+      | jq -rR 'fromjson? | select(.type=="result")
+          | if ((.result // "") | tostring | startswith("UserPromptSubmit operation blocked by hook")) then "hook"
+            elif .num_turns == 0 then "zero"
+            else "" end' 2>/dev/null \
+      | tail -1)"
+  else
+    last="$(grep '"type":"result"' "$trace" 2>/dev/null | tail -1)"
+    case "$last" in
+      *'"result":"UserPromptSubmit operation blocked by hook'*) last="hook" ;;
+      *'"num_turns":0,'*|*'"num_turns":0}'*) last="zero" ;;
+      *) last="" ;;
+    esac
+  fi
+  printf '%s' "$last"
+}
+
+# First line of the message a failing hook wrote to stderr (the vault gate says
+# "VAULT NOT ACCESSIBLE: ..."), for the failure line. Empty without jq or when
+# no hook failed; the full hook text is in the job log either way.
+_la_trace_hook_reason() {
+  local trace="$1"
+  [ -f "$trace" ] && _la_have_jq || return 0
+  grep '^{' "$trace" 2>/dev/null \
+    | jq -rR 'fromjson? | select(.type=="system" and .subtype=="hook_response" and ((.exit_code // 0) != 0))
+        | (.stderr // .output // "") | split("\n") | map(select(length > 0)) | first // empty' 2>/dev/null \
+    | tail -1 | cut -c1-200
+}
+
 # Forensics for a killed attempt, written into the job log so the log itself
 # says what the run was doing when it died. Reads only the trace.
 _la_trace_forensics() {
@@ -601,6 +645,9 @@ _la_prune_traces() {
 #   0   = success
 #   2   = auth failure (401 / authentication_error in output)
 #   3   = out of usage credits
+#   6   = the CLI exited 0 but the model never ran (a hook blocked the prompt;
+#         the vault gate is the known cause). Not a success: callers treat it
+#         like any other failure, so no stamp, no manifest entry, retry ladder.
 #   124 = killed (hard cap or idle watchdog; the log line says which)
 #   other = other claude failure (transient API, network, etc.)
 #
@@ -610,7 +657,7 @@ run_claude_p() {
   local log="$2"
   local outfile="${3:-}"
   local stdin_file="${4:-}"
-  local job stamp trace dbg verdict rc t0 wall summary first
+  local job stamp trace dbg verdict rc t0 wall summary first nowork reason msg
   job="$(basename "$log" .log)"
   mkdir -p "$CLAUDE_TRACE_DIR" 2>/dev/null
   stamp="$(date +%Y-%m-%d_%H%M%S)"
@@ -656,6 +703,33 @@ run_claude_p() {
   summary="$(_la_trace_summary "$trace")"
   if [ "${LA_FIRST_OUTPUT:--1}" -ge 0 ]; then first="first output after ${LA_FIRST_OUTPUT}s"; else first="no output at all"; fi
   echo "$(_la_ts) - claude -p exited ${rc} after ${wall}s (${first}${summary:+; ${summary}}); trace: $trace${dbg:+; debug: $dbg}" >> "$log"
+  # No-model-turn detection (2026-10-10). Exit 0 with no model turn is a hook
+  # block, not a success (see _la_trace_no_work). Return 6 so every caller's
+  # existing failure path runs instead of its success path: the-record does not
+  # append its manifest, cars_weekly / mbs_weekly / mbs_review_prep /
+  # weekly_blocks do not stamp, and the retry ladders retry.
+  # Ordered BEFORE the credit and auth detectors on purpose: the CLI echoes the
+  # original prompt back inside the hook-block text, so a prompt that happens to
+  # contain an auth phrase must not be read as a 401 and set the re-auth
+  # sentinel. A zero-turn run whose text DOES look like an auth or credit
+  # failure still falls through to its own code (2 / 3).
+  # WATCHDOG: the line below goes to the job log AND to stderr. Every claude
+  # job's plist writes stderr to ~/.mbs_automation/<job>.err.log, which
+  # mbs_heartbeat.sh check 24 sweeps (3-day window, cleared by truncating the
+  # file). The per-job checks (10 review prep, 13 the-record manifest, 21
+  # weekly stamps) now also see the missing artifact, which they could not
+  # while this returned 0.
+  if [ "$rc" -eq 0 ]; then
+    nowork="$(_la_trace_no_work "$trace")"
+    if [ "$nowork" = "hook" ] || { [ "$nowork" = "zero" ] && ! la_is_credit_failure "$verdict" && ! la_is_auth_failure "$verdict"; }; then
+      reason="$(_la_trace_hook_reason "$trace")"
+      msg="$(_la_ts) - claude -p exited 0 but NO MODEL TURN RAN (${nowork}${reason:+: ${reason}}); a hook blocked the prompt, so this is not a success. Returning 6: the caller must not stamp, record or consume anything. Hook text and trace: $trace"
+      echo "$msg" >> "$log"
+      echo "$msg" >&2
+      rm -f "$verdict"
+      return 6
+    fi
+  fi
   # Usage-credit exhaustion. Like a 401, retrying inside this session is
   # pointless until P tops up credits (/usage-credits) or switches model
   # (/model) - but unlike a 401 it must stay visible in the vault, so drop a
