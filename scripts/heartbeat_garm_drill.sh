@@ -1,5 +1,5 @@
 #!/bin/bash
-# heartbeat_garm_drill.sh - exercises heartbeat checks 32 to 36 and the per-host
+# heartbeat_garm_drill.sh - exercises heartbeat checks 32 to 38b and the per-host
 # LD_EXPECTED switch by extracting those blocks from mbs_heartbeat.sh and running
 # them against a temp HOME with a stubbed add_finding. Uses macOS date -j, so run
 # it on the Mac. Touches nothing outside the temp dir.
@@ -11,6 +11,12 @@ T="$(mktemp -d "${TMPDIR:-/tmp}/hb_drill.XXXXXX")"
 trap 'rm -rf "$T"' EXIT
 export HOME="$T/home"; STATE_DIR="$HOME/.mbs_automation"
 mkdir -p "$STATE_DIR" "$HOME/Library/LaunchAgents" "$HOME/dev" "$T/vault/admin/mbs_system/homelab"
+# Checks 36 and 38b count a missing-relay grace from a fixed build date. Pin both
+# to today so every case that expects silence stays silent on any later run.
+# Before this (found 2026-10-15) check 36's grace ran out on 2026-10-11 and the
+# drill failed twelve unrelated cases from then on.
+export AWS_BACKUP_RELAY_GRACE_START="$(date +%Y-%m-%d)"
+export SESSION_ARCHIVE_RELAY_GRACE_START="$(date +%Y-%m-%d)"
 
 S="$(grep -n '^# --- check 32:' "$HB" | cut -d: -f1)"
 E="$(grep -n '^# --- verdict' "$HB" | cut -d: -f1)"
@@ -23,6 +29,7 @@ bad() { FAIL=$((FAIL + 1)); echo "  FAIL $1"; }
 findings() {
   STATE_DIR="$STATE_DIR" HOME="$HOME" VAULT="$T/vault" LD_EXPECTED_COMMON="${LD_TEST:-com.mbs.aws-repo-backup com.mbs.weekly-blocks}" /bin/bash -c '
     set -uo pipefail
+    hostname() { echo "${HB_HOST:-garm}"; }
     add_finding() { echo "FINDING: $1"; }
     source "$1"
   ' _ "$T/region.sh" 2>&1
@@ -133,7 +140,60 @@ write_relay "$(( $(now) - 500 * 3600 ))"
 LD_TEST="com.mbs.weekly-blocks"
 expect_none "not armed when aws-repo-backup is not in the laptop list, even with a stale relay"
 unset LD_TEST
-rm -f "$RELAY"; unset AWS_BACKUP_RELAY_GRACE_START
+rm -f "$RELAY"; export AWS_BACKUP_RELAY_GRACE_START="$(date +%Y-%m-%d)"
+
+echo "check 38: this machine's transcripts are archived"
+LD_TEST="com.mbs.weekly-blocks"
+SAS="$HOME/.claude/projects"; SAD="$HOME/storage_mbs_assets/admin/claude_code_sessions/garm"
+mkdir -p "$SAS/proj A/sess1/subagents" "$SAS/proj A/memory" "$SAD"
+printf 'hello\n' > "$SAS/proj A/s1.jsonl"; printf 'sub\n' > "$SAS/proj A/sess1/subagents/a.jsonl"; printf 'm\n' > "$SAS/proj A/memory/MEMORY.md"
+touch -t 202601010000 "$SAS/proj A/s1.jsonl" "$SAS/proj A/sess1/subagents/a.jsonl" "$SAS/proj A/memory/MEMORY.md"
+expect_none "hook not registered: silent"
+mkdir -p "$HOME/.claude"; echo '{"hooks":{"SessionEnd":[{"hooks":[{"command":"/usr/bin/python3 /x/session_archive.py --hook"}]}]}}' > "$HOME/.claude/settings.json"
+expect_has "registered, nothing archived" "2 file(s) under"
+mkdir -p "$SAD/proj A/sess1/subagents"; printf 'hello\n' > "$SAD/proj A/s1.jsonl"
+expect_has "one still missing" "(1 missing, 0 shorter"
+printf 'sub\n' > "$SAD/proj A/sess1/subagents/a.jsonl"
+expect_none "both archived (memory/ excluded)"
+printf 'he' > "$SAD/proj A/s1.jsonl"
+expect_has "archive copy shorter than the source" "(0 missing, 1 shorter"
+printf 'hello\n' > "$SAD/proj A/s1.jsonl"
+printf 'new\n' > "$SAS/proj A/s2.jsonl"
+expect_none "a file modified within the settle window is not yet owed"
+touch -t 202601010000 "$SAS/proj A/s2.jsonl"
+expect_has "the same file once settled" "first: proj A/s2.jsonl"
+printf 'new\n' > "$SAD/proj A/s2.jsonl"
+printf 'shrunk_skipped: 2\n' > "$STATE_DIR/session_archive_state.txt"
+expect_has "status shrunk_skipped 2" "2 transcript file(s) on garm are now SMALLER"
+printf 'shrunk_skipped: 0\n' > "$STATE_DIR/session_archive_state.txt"
+expect_none "status shrunk_skipped 0"
+
+echo "check 38b: hoest relay"
+rm -f "$HOME/.claude/settings.json"
+SBR="$T/vault/admin/mbs_system/homelab/state_hoest_session_archive.md"
+HOD="$HOME/storage_mbs_assets/admin/claude_code_sessions/hoest/p"; mkdir -p "$HOD"
+for i in 1 2 3; do echo x > "$HOD/f$i.jsonl"; done
+relay() { printf -- '---\ntype: state\nhost: hoest\nlast_run_epoch: %s\nlast_success_epoch: %s\nsource_files: 3\nsource_bytes: 6\narchived_files: %s\npending_files: %s\nshrunk_skipped: %s\nlast_result: %s\n---\n\nbody\n' "$1" "$2" "$3" "$4" "$5" "$6" > "$SBR"; }
+expect_none "relay missing, inside the 3 day grace"
+SESSION_ARCHIVE_RELAY_GRACE_START=2026-01-01 expect_has "relay missing, past the grace" "no relay file from hoest"
+relay "$(now)" "$(now)" 3 0 0 "completed successfully"
+expect_none "healthy relay, 3 archived and 3 present"
+HB_HOST=hoest expect_none "on hoest itself the check does not run"
+relay "$(now)" "$(( $(now) - 121 * 3600 ))" 3 0 0 "deferred (share not mounted: x)"
+expect_has "last success 121 hours ago" "121 hours ago"
+relay "$(now)" "$(( $(now) - 119 * 3600 ))" 3 0 0 "deferred (share not mounted: x)"
+expect_none "last success 119 hours ago"
+relay "$(now)" "" 0 3 0 "deferred (share not mounted: x)"
+expect_has "never succeeded" "no successful run yet (last result: deferred"
+relay "$(( $(now) - 25 * 3600 ))" "$(( $(now) - 25 * 3600 ))" 3 2 0 "partial"
+expect_has "pending left by a run 25 hours ago" "left 2 file(s) pending"
+relay "$(( $(now) - 3600 ))" "$(( $(now) - 3600 ))" 3 2 0 "partial"
+expect_none "pending from a run 1 hour ago"
+relay "$(now)" "$(now)" 3 0 1 "completed successfully"
+expect_has "shrunk_skipped 1" "1 transcript file(s) on hoest are now SMALLER"
+relay "$(now)" "$(now)" 5 0 0 "completed successfully"
+expect_has "relay claims 5, garm holds 3" "reports 5 archived file(s) but only 3 exist"
+rm -f "$SBR"; rm -rf "$HOME/.claude" "$HOME/storage_mbs_assets" "$STATE_DIR/session_archive_state.txt"; unset LD_TEST
 
 echo "per-host LD_EXPECTED"
 LDS="$(grep -n '^case "\$(hostname -s)" in' "$HB" | cut -d: -f1)"

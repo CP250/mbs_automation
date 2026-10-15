@@ -94,6 +94,12 @@
 # reaching Instagram. Self-arming on plist presence; silent while no account
 # has a refresh cadence.
 #
+# 2026-10-15: checks 38 and 38b, the Claude Code session archive (claude_mbs
+# plugins/session-archive). 38 asserts the invariant between this machine's
+# ~/.claude/projects/ and its archive copy; 38b reads hoest's vault relay and
+# cross-checks it against the files hoest actually wrote onto this disk. Both are
+# exercised by scripts/heartbeat_garm_drill.sh.
+#
 # Idempotence: per-day stamp, written ONLY on a healthy check. A failing check
 # deliberately leaves no stamp, so every later trigger re-checks and re-nudges
 # until the underlying problem is fixed. That nag is the feature.
@@ -2024,6 +2030,130 @@ case " ${LD_EXPECTED_COMMON:-} " in
     fi
     ;;
 esac
+
+# --- check 38: this machine's Claude Code transcripts are archived (2026-10-15) --
+# The session-archive hook (claude_mbs plugins/session-archive) copies every file
+# under ~/.claude/projects/ into the asset mirror at
+# admin/claude_code_sessions/<host>/, from SessionEnd and SessionStart hooks
+# registered in ~/.claude/settings.json. A hook writes no stamp a schedule could
+# check, and a session that never ends cleanly fires no SessionEnd, so this
+# asserts the INVARIANT between the two trees instead of a freshness threshold:
+# every source file last modified more than two hours ago has an archive copy at
+# least as large. Two hours gives the next SessionStart catch-up room to pick up
+# a tail that the asynchronous transcript write left short. The <project>/memory/
+# folders and .DS_Store are excluded on both sides, matching the script. Also
+# fires when the script's own status file records shrunk_skipped above 0 (a
+# source file got smaller than its archived copy, which the copy refuses to
+# overwrite). Armed only when the hook is registered in this machine's settings,
+# so it is silent until the install. Local files only (ADR 2026-07-26).
+SA_SETTINGS="${SESSION_ARCHIVE_SETTINGS:-$HOME/.claude/settings.json}"
+SA_SRC="${SESSION_ARCHIVE_SRC:-$HOME/.claude/projects}"
+SA_ROOT="${SESSION_ARCHIVE_ROOT:-$HOME/storage_mbs_assets/admin/claude_code_sessions}"
+SA_DEST="$SA_ROOT/$(hostname -s)"
+SA_MIN="${SESSION_ARCHIVE_SETTLE_MINUTES:-120}"
+if grep -q 'session_archive.py' "$SA_SETTINGS" 2>/dev/null && [ -d "$SA_SRC" ]; then
+  SA_SL="$STATE_DIR/.check38_src.$$"
+  SA_DL="$STATE_DIR/.check38_dst.$$"
+  ( cd "$SA_SRC" && find . -type f -mmin +"$SA_MIN" -exec stat -f '%z %N' {} + 2>/dev/null ) > "$SA_SL"
+  : > "$SA_DL"
+  [ -d "$SA_DEST" ] && ( cd "$SA_DEST" && find . -type f ! -name '.*.tmp.*' -exec stat -f '%z %N' {} + 2>/dev/null ) > "$SA_DL"
+  SA_RES="$(awk '
+    { s = $1; n = substr($0, length($1) + 2) }
+    FILENAME == ARGV[1] { dst[n] = s; next }
+    {
+      k = split(n, p, "/")
+      if (p[k] == ".DS_Store") next
+      if (k >= 4 && p[3] == "memory") next
+      if (!(n in dst)) { miss++; if (first == "") first = n }
+      else if (dst[n] + 0 < s + 0) { short++; if (first == "") first = n }
+    }
+    END { printf "%d %d %s", miss + 0, short + 0, first }
+  ' "$SA_DL" "$SA_SL")"
+  rm -f "$SA_SL" "$SA_DL"
+  SA_MISS="${SA_RES%% *}"; SA_RES="${SA_RES#* }"
+  SA_SHORT="${SA_RES%% *}"; SA_FIRST="${SA_RES#* }"
+  if [ $((SA_MISS + SA_SHORT)) -gt 0 ]; then
+    add_finding "session-archive (check 38): $((SA_MISS + SA_SHORT)) file(s) under ${SA_SRC} last modified over ${SA_MIN} minutes ago are not fully archived in ${SA_DEST} (${SA_MISS} missing, ${SA_SHORT} shorter than the source; first: ${SA_FIRST#./}) - read the last lines of ~/.mbs_automation/session_archive.log, then run /usr/bin/python3 ~/dev/claude_mbs/plugins/session-archive/hooks/session_archive.py --backfill"
+  fi
+  SA_SK="$(sed -n 's/^shrunk_skipped: *//p' "$STATE_DIR/session_archive_state.txt" 2>/dev/null | head -1)"
+  case "$SA_SK" in
+    ''|*[!0-9]*) ;;
+    0) ;;
+    *) add_finding "session-archive (check 38): ${SA_SK} transcript file(s) on $(hostname -s) are now SMALLER than their archived copy, and the archive kept the larger one (high-water rule) - a transcript was truncated or rewritten; compare the two files by size and decide by hand, the archive will not overwrite it" ;;
+  esac
+fi
+
+# --- check 38b: hoest's transcripts are archived, read through the vault (2026-10-15) --
+# Same hook on hoest. Hoest runs no heartbeat, so its hook writes a relay into the
+# vault after every run (admin/mbs_system/homelab/state_hoest_session_archive.md,
+# markdown only) and Obsidian Sync carries it here; modeled on check 36. Four
+# questions: is the last SUCCESS recent (120 hours, P travels and the share is
+# only reachable at home or over the VPN); did a run more than a day ago leave
+# files pending with nothing since; is shrunk_skipped above 0; and the
+# cross-check, which needs no trust in the relay at all: hoest copies over SMB
+# straight onto THIS machine's disk, so the files actually present under
+# admin/claude_code_sessions/hoest/ here must number at least the relay's
+# archived_files. A shortfall means hoest wrote somewhere else, most likely a
+# plain folder left at /Volumes/storage_mbs_assets by an unmounted share (the
+# stale-mount-point trap). A missing relay raises a finding only after a 3 day
+# grace from the build date. Local files only (ADR 2026-07-26).
+if [ "$(hostname -s)" != "hoest" ]; then
+  SB_FILE="${SESSION_ARCHIVE_RELAY:-$VAULT/admin/mbs_system/homelab/state_hoest_session_archive.md}"
+  SB_MAX_H="${SESSION_ARCHIVE_RELAY_MAX_HOURS:-120}"
+  SB_NOW="$(date +%s)"
+  if [ ! -f "$SB_FILE" ]; then
+    SB_G="$(date -j -f %Y-%m-%d "${SESSION_ARCHIVE_RELAY_GRACE_START:-2026-10-15}" +%s 2>/dev/null)"
+    case "$SB_G" in
+      ''|*[!0-9]*) ;;
+      *)
+        if [ $((SB_NOW - SB_G)) -gt 259200 ]; then
+          add_finding "session-archive (check 38b): no relay file from hoest at ${SB_FILE} - either the hook was never installed on hoest (check: /usr/bin/python3 ~/dev/claude_mbs/plugins/session-archive/install_hooks.py --check), it has never run there, or hoest's Obsidian is not running and syncing"
+        fi
+        ;;
+    esac
+  else
+    sb_field() { sed -n "s/^$1: *\([^ ].*\)$/\1/p" "$SB_FILE" 2>/dev/null | head -1; }
+    SB_SUCC="$(sb_field last_success_epoch)"
+    SB_RUN="$(sb_field last_run_epoch)"
+    SB_PEND="$(sb_field pending_files)"
+    SB_SHR="$(sb_field shrunk_skipped)"
+    SB_ARCH="$(sb_field archived_files)"
+    SB_LAST="$(sb_field last_result)"
+    case "$SB_SUCC" in
+      ''|*[!0-9]*)
+        add_finding "session-archive (check 38b): hoest's relay records no successful run yet (last result: ${SB_LAST:-unknown}) - on hoest read ~/.mbs_automation/session_archive.log; if the share was not mounted, the next session started at home or over the VPN copies everything"
+        ;;
+      *)
+        SB_AGE_H=$(( (SB_NOW - SB_SUCC) / 3600 ))
+        if [ "$SB_AGE_H" -ge "$SB_MAX_H" ]; then
+          add_finding "session-archive (check 38b): hoest last archived its transcripts ${SB_AGE_H} hours ago (threshold ${SB_MAX_H} hours; last result: ${SB_LAST:-unknown}) - normal while P is away without the VPN, since the share is unreachable; otherwise read ~/.mbs_automation/session_archive.log on hoest, and check that hoest's Obsidian is running (the relay reaches garm only through Obsidian Sync)"
+        fi
+        ;;
+    esac
+    case "$SB_RUN:$SB_PEND" in
+      *[!0-9:]*|:*|*:) ;;
+      *)
+        if [ "$SB_PEND" -gt 0 ] && [ $((SB_NOW - SB_RUN)) -gt 86400 ]; then
+          add_finding "session-archive (check 38b): hoest's last run, $(( (SB_NOW - SB_RUN) / 3600 )) hours ago, left ${SB_PEND} file(s) pending and nothing has run since - start and quit any Claude Code session on hoest at home, or run /usr/bin/python3 ~/dev/claude_mbs/plugins/session-archive/hooks/session_archive.py --backfill there"
+        fi
+        ;;
+    esac
+    case "$SB_SHR" in
+      ''|*[!0-9]*|0) ;;
+      *) add_finding "session-archive (check 38b): ${SB_SHR} transcript file(s) on hoest are now SMALLER than their archived copy, and the archive kept the larger one - compare by size on hoest and decide by hand" ;;
+    esac
+    case "$SB_ARCH" in
+      ''|*[!0-9]*) ;;
+      *)
+        SB_HERE=0
+        [ -d "$SA_ROOT/hoest" ] && SB_HERE="$(find "$SA_ROOT/hoest" -type f ! -name '.*.tmp.*' 2>/dev/null | wc -l | tr -d ' ')"
+        if [ "$SB_HERE" -lt "$SB_ARCH" ]; then
+          add_finding "session-archive (check 38b): hoest reports ${SB_ARCH} archived file(s) but only ${SB_HERE} exist under ${SA_ROOT}/hoest on this machine - hoest wrote somewhere other than garm's disk, most likely a plain folder left at /Volumes/storage_mbs_assets on hoest by an unmounted share; on hoest run: mount | grep storage_mbs_assets"
+        fi
+        ;;
+    esac
+  fi
+fi
 
 # --- verdict ----------------------------------------------------------------
 if [ "$FINDING_COUNT" -eq 0 ]; then
