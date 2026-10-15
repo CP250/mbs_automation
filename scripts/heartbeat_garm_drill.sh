@@ -1,5 +1,6 @@
 #!/bin/bash
-# heartbeat_garm_drill.sh - exercises heartbeat checks 32 to 38b and the per-host
+# heartbeat_garm_drill.sh - exercises heartbeat checks 32 to 38b, check 29 (moved
+# beside them 2026-10-15) and the per-host
 # LD_EXPECTED switch by extracting those blocks from mbs_heartbeat.sh and running
 # them against a temp HOME with a stubbed add_finding. Uses macOS date -j, so run
 # it on the Mac. Touches nothing outside the temp dir.
@@ -17,6 +18,7 @@ mkdir -p "$STATE_DIR" "$HOME/Library/LaunchAgents" "$HOME/dev" "$T/vault/admin/m
 # drill failed twelve unrelated cases from then on.
 export AWS_BACKUP_RELAY_GRACE_START="$(date +%Y-%m-%d)"
 export SESSION_ARCHIVE_RELAY_GRACE_START="$(date +%Y-%m-%d)"
+export SECRET_STORE_RELAY_GRACE_START="$(date +%Y-%m-%d)"
 
 S="$(grep -n '^# --- check 32:' "$HB" | cut -d: -f1)"
 E="$(grep -n '^# --- verdict' "$HB" | cut -d: -f1)"
@@ -194,6 +196,38 @@ expect_has "shrunk_skipped 1" "1 transcript file(s) on hoest are now SMALLER"
 relay "$(now)" "$(now)" 5 0 0 "completed successfully"
 expect_has "relay claims 5, garm holds 3" "reports 5 archived file(s) but only 3 exist"
 rm -f "$SBR"; rm -rf "$HOME/.claude" "$HOME/storage_mbs_assets" "$STATE_DIR/session_archive_state.txt"; unset LD_TEST
+
+echo "check 29: hoest Obsidian secret-store relay"
+SSR="$T/vault/admin/mbs_system/homelab/state_hoest_obsidian_secret_store.md"
+ssrelay() { printf -- '---\ntype: state\nhost: hoest\nlast_probe_epoch: %s\nlast_probe: 2026-10-15 16:30:49\nsecret_count: %s\nencryption_available: %s\nbrat_token_name: %s\nbrat_token_resolves: %s\nprobe: mbs-companion 0.3.5\n---\n\nbody\n' "$1" "$2" "$3" "$4" "$5" > "$SSR"; }
+rm -f "$SSR"
+expect_none "relay missing, inside the 3 day grace"
+SECRET_STORE_RELAY_GRACE_START=2026-01-01 expect_has "relay missing, past the grace" "no relay file from hoest at"
+ssrelay "$(now)" 3 true '"brat-pat"' true
+expect_none "healthy relay"
+ssrelay "$(now)" 0 true '"brat-pat"' false
+HB_HOST=hoest expect_none "on hoest itself the check does not run, even on a bad reading"
+ssrelay "$(now)" 0 true '"brat-pat"' false
+expect_has "zero secrets" "ZERO secrets in hoest's Obsidian secret store"
+ssrelay "$(now)" 2 true '"brat-pat"' false
+expect_has "BRAT name no longer resolves" "BRAT on hoest points at secret 'brat-pat' but it no longer resolves"
+ssrelay "$(now)" 2 true none none
+expect_none "no BRAT token configured is not a finding"
+ssrelay "$(now)" 2 false '"brat-pat"' true
+expect_has "encryption unavailable" "encryption UNAVAILABLE"
+ssrelay "$(now)" 2 unknown '"brat-pat"' true
+expect_none "encryption unknown (older Obsidian) is not a finding"
+ssrelay "$(( $(now) - 169 * 3600 ))" 3 true '"brat-pat"' true
+expect_has "reading 169 hours old" "last reported 169 hours ago"
+ssrelay "$(( $(now) - 167 * 3600 ))" 3 true '"brat-pat"' true
+expect_none "reading 167 hours old (under the 168 hour threshold)"
+ssrelay "$(( $(now) - 2 * 3600 ))" 3 true '"brat-pat"' true
+SECRET_STORE_RELAY_MAX_HOURS=1 expect_has "threshold override to 1 hour, reading 2 hours old" "threshold 1 hours"
+printf -- '---\ntype: state\nsecretCount: 3\n---\n' > "$SSR"
+expect_has "relay with drifted field names" "no readable last_probe_epoch/secret_count"
+ssrelay "$(now)" "" true none none
+expect_has "relay with an empty secret_count" "no readable last_probe_epoch/secret_count"
+rm -f "$SSR"
 
 echo "per-host LD_EXPECTED"
 LDS="$(grep -n '^case "\$(hostname -s)" in' "$HB" | cut -d: -f1)"

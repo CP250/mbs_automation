@@ -87,6 +87,9 @@
 # data.json still named the token correctly. Nothing outside Obsidian can read
 # that store, so MBS Companion 0.3.4 writes a reading into $STATE_DIR and this
 # check asserts against it. Silent until that file first appears.
+# 2026-10-15: that reading never existed (0.3.4 was never released) and would
+# have landed on hoest, out of garm's sight. Companion 0.3.5 writes a vault relay
+# instead and check 29 reads it like checks 36 and 38b; see the check itself.
 #
 # 2026-09-30: check 31, archived Instagram accounts are actually refreshing
 # (com.mbs.instagram-refresh, media-tools plugin). Same two-layer split as 20:
@@ -1484,64 +1487,8 @@ if [ -d "$OURA_RAW/sleep" ] && [ -d "$OURA_RAW/heartrate" ]; then
   fi
 fi
 
-# --- check 29: Obsidian's secret store is still intact (added 2026-09-10) ----
-# WHY: Obsidian keeps every plugin secret for a vault in ONE blob in local
-# storage, encrypted through Electron safeStorage. Read out of the running app
-# on 2026-09-10, the desktop adapter's load() does this:
-#
-#   if (blob) { try { assign(out, JSON.parse(decrypt(blob))) }
-#               catch (e) { console.error("Failed to decrypt secrets:", e) } }
-#   if (blob && keys(out).length === 0) await save(out)
-#
-# and save({}) writes null over the stored blob. One failed decrypt at startup
-# therefore DELETES every secret in the vault rather than degrading for a single
-# session, and the only thing that says so is a console line nobody reads.
-#
-# The symptom is silent by construction. A plugin keeps the secret's NAME in its
-# own data.json, so nothing on disk looks wrong; it just starts making
-# unauthenticated requests. That is how this was found: BRAT turned five private
-# CP250 repos into GitHub 404s at launch while its data.json still named the
-# token correctly. A check asserting the NAME is present could never have fired,
-# which is why this one asserts the VALUE still resolves.
-#
-# Nothing outside Obsidian can read that store, so this check does not try.
-# MBS Companion 0.3.4 writes a reading into $STATE_DIR on load and every 30
-# minutes; this asserts against that. Two artifacts whose contents are
-# derivationally linked, per the 2026-09-01 rule, rather than a threshold on one.
-#
-# SILENT UNTIL THE FILE FIRST APPEARS, deliberately: Companion 0.3.4 ships
-# through the tag / Action / BRAT loop, and a check that nags for a week about
-# its own rollout teaches P to ignore it. A missing file is logged, never raised.
-# Once it HAS appeared, staleness IS a finding, because from then on absence
-# means the probe stopped rather than never started.
-SECRET_STATE="$STATE_DIR/obsidian_secret_store.json"
-if [ -f "$SECRET_STATE" ]; then
-  SS_TS="$(sed -n 's/.*"ts"[ ]*:[ ]*\([0-9][0-9]*\).*/\1/p' "$SECRET_STATE" | head -1)"
-  SS_COUNT="$(sed -n 's/.*"secretCount"[ ]*:[ ]*\([0-9][0-9]*\).*/\1/p' "$SECRET_STATE" | head -1)"
-  SS_ISO="$(sed -n 's/.*"iso"[ ]*:[ ]*"\([^"]*\)".*/\1/p' "$SECRET_STATE" | head -1)"
-  SS_ENC="$(sed -n 's/.*"encryptionAvailable"[ ]*:[ ]*\([a-z][a-z]*\).*/\1/p' "$SECRET_STATE" | head -1)"
-  SS_BRAT="$(sed -n 's/.*"bratTokenResolves"[ ]*:[ ]*\([a-z][a-z]*\).*/\1/p' "$SECRET_STATE" | head -1)"
-  SS_NAME="$(sed -n 's/.*"bratTokenName"[ ]*:[ ]*"\([^"]*\)".*/\1/p' "$SECRET_STATE" | head -1)"
-  if [ -z "$SS_TS" ] || [ -z "$SS_COUNT" ]; then
-    # The file exists but does not parse. Never read that as healthy: it means
-    # the probe and this reader have drifted apart, which is precisely the state
-    # in which a green heartbeat is a lie.
-    add_finding "obsidian secret store (check 29): $SECRET_STATE exists but carries no readable ts/secretCount - the MBS Companion probe and this check have drifted apart, so this check is currently proving nothing; reconcile the field names in writeSecretStoreState (src/main.ts) and here before trusting either"
-  else
-    SS_AGE_D=$(( ( $(date +%s) - (SS_TS / 1000) ) / 86400 ))
-    if [ "$SS_COUNT" -eq 0 ]; then
-      add_finding "obsidian secret store (check 29): ZERO secrets in the store as of ${SS_ISO} - Obsidian's encrypted secret blob has been emptied, which its loader does by DELETING it after a failed decrypt, so every plugin credential in this vault is gone and each will silently fall back to unauthenticated calls. Re-add them in Settings (the BRAT one is the GitHub PAT, kept in 1Password) and check the Obsidian console for 'Failed to decrypt secrets:' to catch the cause"
-    elif [ -n "$SS_NAME" ] && [ "$SS_BRAT" = "false" ]; then
-      add_finding "obsidian secret store (check 29): BRAT points at secret '${SS_NAME}' but it no longer resolves (reading from ${SS_ISO}; ${SS_COUNT} other secret(s) still present) - the name in BRAT's data.json survived and the value did not, so BRAT is calling GitHub unauthenticated and every private CP250 repo will 404. Re-link it in Settings, BRAT, from the PAT in 1Password"
-    elif [ "$SS_ENC" = "false" ]; then
-      add_finding "obsidian secret store (check 29): Electron safeStorage reports encryption UNAVAILABLE as of ${SS_ISO} - Obsidian is holding secrets without OS encryption, and its loader deletes the whole blob the first time a decrypt fails, so this is the state immediately before losing all of them. Investigate the login keychain before trusting any stored secret"
-    elif [ "$SS_AGE_D" -gt 7 ]; then
-      add_finding "obsidian secret store (check 29): the Companion probe last wrote ${SECRET_STATE} on ${SS_ISO}, ${SS_AGE_D} days ago - either Obsidian has not been opened since, or MBS Companion stopped loading; until it writes again this check is asserting nothing about the secret store"
-    fi
-  fi
-else
-  echo "$(ts) - check 29: $SECRET_STATE absent; MBS Companion 0.3.4 (the probe) has not run yet, so the secret-store check is inactive by design and raises nothing." >> "$LOG"
-fi
+# --- check 29 moved (2026-10-15): it now reads a vault relay and sits after check
+# 38b, with the other relay checks, just above the verdict.
 
 # --- check 27: no vault file gained a duplicated block (added 2026-09-01) ----
 # WHY: see the 2026-09-01 note in the header. Obsidian Sync garbles by
@@ -2122,6 +2069,86 @@ if [ "$(hostname -s)" != "hoest" ]; then
         [ -d "$SA_ROOT/hoest" ] && SB_HERE="$(find "$SA_ROOT/hoest" -type f ! -name '.*.tmp.*' 2>/dev/null | wc -l | tr -d ' ')"
         if [ "$SB_HERE" -lt "$SB_ARCH" ]; then
           add_finding "session-archive (check 38b): hoest reports ${SB_ARCH} archived file(s) but only ${SB_HERE} exist under ${SA_ROOT}/hoest on this machine - hoest wrote somewhere other than garm's disk, most likely a plain folder left at /Volumes/storage_mbs_assets on hoest by an unmounted share; on hoest run: mount | grep storage_mbs_assets"
+        fi
+        ;;
+    esac
+  fi
+fi
+
+# --- check 29: hoest's Obsidian secret store is intact, read through the vault (2026-09-10, relay 2026-10-15) --
+# WHY: Obsidian keeps every plugin secret for a vault in ONE blob in local
+# storage, encrypted through Electron safeStorage. Read out of the running app
+# on 2026-09-10, the desktop adapter's load() does this:
+#
+#   if (blob) { try { assign(out, JSON.parse(decrypt(blob))) }
+#               catch (e) { console.error("Failed to decrypt secrets:", e) } }
+#   if (blob && keys(out).length === 0) await save(out)
+#
+# and save({}) writes null over the stored blob. One failed decrypt at startup
+# therefore DELETES every secret in the vault rather than degrading for a single
+# session, and the only thing that says so is a console line nobody reads.
+#
+# The symptom is silent by construction. A plugin keeps the secret's NAME in its
+# own data.json, so nothing on disk looks wrong; it just starts making
+# unauthenticated requests. That is how this was found: BRAT turned five private
+# CP250 repos into GitHub 404s at launch while its data.json still named the
+# token correctly. A check asserting the NAME is present could never have fired,
+# which is why this one asserts the VALUE still resolves.
+#
+# Nothing outside Obsidian can read that store, so MBS Companion probes it from
+# inside the app. Until 2026-10-15 the probe (0.3.4, cd42fb2) was meant to write
+# ~/.mbs_automation/obsidian_secret_store.json on the machine running Obsidian,
+# but 0.3.4 was never tagged, hoest kept running 0.3.3, and after the garm cutover
+# that file would have landed on hoest, where garm's heartbeat cannot see it. So
+# check 29 had never once been live. Since Companion 0.3.5 the probe writes a
+# markdown relay into the vault instead
+# (admin/mbs_system/homelab/state_<host>_obsidian_secret_store.md: secret_count,
+# encryption_available, brat_token_name, brat_token_resolves, last_probe_epoch;
+# counts, booleans and a NAME, never a value), rewritten when the reading changes
+# or is 6 hours old, and Obsidian Sync carries hoest's copy here. Modeled on
+# checks 36 and 38b. Companion is enabled only on hoest (garm's Obsidian runs
+# with it off), so this reads hoest's relay and does not run on hoest itself.
+# Stale after 168 hours: the probe runs only while Obsidian is open on hoest. A
+# missing relay raises a finding only after a 3 day grace from the build date.
+# Local files only (ADR 2026-07-26).
+if [ "$(hostname -s)" != "hoest" ]; then
+  SS_FILE="${SECRET_STORE_RELAY:-$VAULT/admin/mbs_system/homelab/state_hoest_obsidian_secret_store.md}"
+  SS_MAX_H="${SECRET_STORE_RELAY_MAX_HOURS:-168}"
+  if [ ! -f "$SS_FILE" ]; then
+    SS_G="$(date -j -f %Y-%m-%d "${SECRET_STORE_RELAY_GRACE_START:-2026-10-15}" +%s 2>/dev/null)"
+    case "$SS_G" in
+      ''|*[!0-9]*) ;;
+      *)
+        if [ $(( $(date +%s) - SS_G )) -gt 259200 ]; then
+          add_finding "obsidian secret store (check 29): no relay file from hoest at ${SS_FILE} - MBS Companion 0.3.5 or later is not installed on hoest (in Obsidian on hoest run 'BRAT: Check for updates to all beta plugins'), it is installed but disabled, or hoest's Obsidian has not been open and syncing since"
+        fi
+        ;;
+    esac
+  else
+    ss_field() { sed -n "s/^$1: *\(.*[^ ]\) *\$/\1/p" "$SS_FILE" 2>/dev/null | head -1 | sed 's/^"//; s/"$//'; }
+    SS_E="$(ss_field last_probe_epoch)"
+    SS_COUNT="$(ss_field secret_count)"
+    SS_ISO="$(ss_field last_probe)"
+    SS_ENC="$(ss_field encryption_available)"
+    SS_BRAT="$(ss_field brat_token_resolves)"
+    SS_NAME="$(ss_field brat_token_name)"
+    case "$SS_E:$SS_COUNT" in
+      *[!0-9:]*|:*|*:)
+        # The file exists but does not parse. Never read that as healthy: it means
+        # the probe and this reader have drifted apart, which is precisely the
+        # state in which a green heartbeat is a lie.
+        add_finding "obsidian secret store (check 29): ${SS_FILE} has no readable last_probe_epoch/secret_count - the MBS Companion probe and this check have drifted apart, so this check is currently proving nothing; reconcile the field names in writeSecretStoreState (src/main.ts in obsidian-mbs-companion) and here before trusting either. The file is machine-written; do not edit it by hand"
+        ;;
+      *)
+        SS_AGE_H=$(( ($(date +%s) - SS_E) / 3600 ))
+        if [ "$SS_COUNT" -eq 0 ]; then
+          add_finding "obsidian secret store (check 29): ZERO secrets in hoest's Obsidian secret store as of ${SS_ISO} - Obsidian's encrypted secret blob has been emptied, which its loader does by DELETING it after a failed decrypt, so every plugin credential in this vault is gone on hoest and each will silently fall back to unauthenticated calls. Re-add them in Obsidian on hoest, Settings (the BRAT one is the GitHub PAT, kept in 1Password), and check the Obsidian console for 'Failed to decrypt secrets:' to catch the cause"
+        elif [ -n "$SS_NAME" ] && [ "$SS_NAME" != "none" ] && [ "$SS_BRAT" = "false" ]; then
+          add_finding "obsidian secret store (check 29): BRAT on hoest points at secret '${SS_NAME}' but it no longer resolves (reading from ${SS_ISO}; ${SS_COUNT} other secret(s) still present) - the name in BRAT's data.json survived and the value did not, so BRAT is calling GitHub unauthenticated and every private CP250 repo will 404. Re-link it in Obsidian on hoest, Settings, BRAT, from the PAT in 1Password"
+        elif [ "$SS_ENC" = "false" ]; then
+          add_finding "obsidian secret store (check 29): Electron safeStorage on hoest reports encryption UNAVAILABLE as of ${SS_ISO} - Obsidian is holding secrets without OS encryption, and its loader deletes the whole blob the first time a decrypt fails, so this is the state immediately before losing all of them. Investigate hoest's login keychain before trusting any stored secret"
+        elif [ "$SS_AGE_H" -ge "$SS_MAX_H" ]; then
+          add_finding "obsidian secret store (check 29): the Companion probe on hoest last reported ${SS_AGE_H} hours ago (${SS_ISO}; threshold ${SS_MAX_H} hours) - Obsidian on hoest has not been open since, MBS Companion stopped loading there, or hoest's Obsidian is not syncing (the relay reaches garm only through Obsidian Sync); until it reports again this check asserts nothing about the secret store"
         fi
         ;;
     esac
