@@ -135,7 +135,8 @@ cd "$VAULT" || { echo "$(ts) - ERROR: cannot cd to $VAULT" >> "$LOG"; exit 1; }
 # --- carry-forward: pull yesterday's above-Vault-Agent region into today ------
 # Moves the region above the first "## Vault Agent" heading from the most-recent
 # prior tasks note into today's note (verbatim, minus resolved - [x] / - [-]
-# lines) and blanks that region in the source. Runs after the skeleton pre-flight
+# lines, which are archived in the source since 2026-10-15) and blanks that
+# region in the source. Runs after the skeleton pre-flight
 # below and before the claude -p call, so the morning report sees the carried
 # tasks. Deterministic and idempotent: blanking the source means a launchd retry
 # on the same day finds nothing to carry. Never touches the "## Vault Agent"
@@ -191,36 +192,90 @@ carry_forward_prior_tasks() {
   # "## Vault Agent"; a "# Archived" also stops carry as a fallback for notes
   # with no agent section. machf collects the machine headings that sat ABOVE
   # "## Vault Agent", i.e. the ones this fix stops sweeping forward, for the log.
-  awk -v carryf="$tmp/carry" -v tailf="$tmp/tail" -v fmf="$tmp/fm" -v machf="$tmp/machine" '
-    BEGIN{ inbody=0; intail=0; fmc=0; ws=0; gl=0 }
+  # Ticked lines (2026-10-15, P: "unacceptable" that they vanished). A resolved
+  # - [x] / - [-] line in P's region, with its indented children, is no longer
+  # dropped: it goes to donef with the Archiver's own metadata (lock + date +
+  # spider + heading chain, the format task-archiver writes on Cmd+A), stamped
+  # with the PRIOR note's date, and is appended to that note's "# Archived"
+  # section below. Same morning, the archived-comment sweep (obsidian-daily.md
+  # step 3d) reads exactly those lines. Lines P already archived with Cmd+A are
+  # under "# Archived" in the tail and are not touched again.
+  awk -v carryf="$tmp/carry" -v tailf="$tmp/tail" -v fmf="$tmp/fm" -v machf="$tmp/machine" \
+      -v donef="$tmp/done" -v stamp="🔒 [[$prior_date]] 🕸️" -v chain0="tasks_$prior_date" '
+    BEGIN{ inbody=0; intail=0; fmc=0; ws=0; gl=0; dind=-1; chain=chain0 }
     { if (NR==1 && $0!="---") inbody=1
       if (!inbody){ print >> fmf; if($0=="---"){fmc++; if(fmc==2)inbody=1} next }
-      if (!intail && ($0 ~ /^## / || $0 ~ /^# Archived/)) { intail=1; ws=0; gl=0 }
+      if (!intail && ($0 ~ /^## / || $0 ~ /^# Archived/)) { intail=1; ws=0; gl=0; dind=-1 }
       if (intail){
         if ($0 ~ /^## Vault Agent/) va=1
         if (!va && $0 ~ /^## / && $0 !~ /^## Vault Agent/) print >> machf
         print >> tailf; next }
-      if (!ws && !gl && $0 ~ /^### Work session/) ws=1
+      if (!ws && !gl && $0 ~ /^### Work session/) { ws=1; dind=-1 }
       if (ws){ print >> tailf; if ($0 ~ /<!-- \/work-session -->/) ws=0; next }
-      if (!gl && $0 ~ /^### Garden leave/) gl=1
+      if (!gl && $0 ~ /^### Garden leave/) { gl=1; dind=-1 }
       if (gl){ print >> tailf; if ($0 ~ /<!-- \/garden-leave -->/) gl=0; next }
-      if ($0 ~ /^[[:space:]]*- \[[xX-]\][[:space:]]/) next
+      if (dind >= 0) {
+        if ($0 ~ /^[ \t]*$/) dind=-1
+        else { match($0, /^[ \t]*/)
+               if (RLENGTH > dind) { print substr($0, dind+1) >> donef; next }
+               dind=-1 } }
       if ($0 ~ /^[[:space:]]*- \[[xX-]\]$/) next
+      if ($0 ~ /^[[:space:]]*- \[[xX-]\][[:space:]]/) {
+        match($0, /^[ \t]*/); dind=RLENGTH
+        line=substr($0, dind+1); sub(/[ \t]+$/, "", line)
+        print line " " stamp " " chain >> donef; next }
+      if ($0 ~ /^#+ /) { chain=$0; sub(/^#+ +/, "", chain) }
       print >> carryf }' "$prior_file"
-  [ -f "$tmp/fm" ] || : > "$tmp/fm"; [ -f "$tmp/carry" ] || : > "$tmp/carry"; [ -f "$tmp/tail" ] || : > "$tmp/tail"
-  grep -q '[^[:space:]]' "$tmp/carry" || { echo "$(ts) - carry-forward: empty region, skip" >> "$log"; return 0; }
+  [ -f "$tmp/fm" ] || : > "$tmp/fm"; [ -f "$tmp/carry" ] || : > "$tmp/carry"
+  [ -f "$tmp/tail" ] || : > "$tmp/tail"; [ -f "$tmp/done" ] || : > "$tmp/done"
+  local has_carry=0 n_done
+  grep -q '[^[:space:]]' "$tmp/carry" && has_carry=1
+  n_done="$(grep -c '🔒' "$tmp/done" | tr -d ' ')"
+  if [ "$has_carry" -eq 0 ] && [ ! -s "$tmp/done" ]; then
+    echo "$(ts) - carry-forward: empty region, skip" >> "$log"; return 0
+  fi
+  # Tail with the ticked lines appended to the end of its "# Archived" section,
+  # or a new "# Archived" section at the end when the note has none.
+  if [ -s "$tmp/done" ]; then
+    awk -v donef="$tmp/done" '
+      { L[++n]=$0 }
+      END{ a=0; for(i=1;i<=n;i++) if (L[i] ~ /^# Archived/) { a=i; break }
+        if (!a) {
+          last=0; for(i=1;i<=n;i++) if (L[i] ~ /[^ \t]/) last=i
+          for(i=1;i<=last;i++) print L[i]
+          if (last) print ""
+          print "# Archived"; print ""
+          while ((getline d < donef) > 0) print d
+          exit }
+        e=n; for(i=a+1;i<=n;i++) if (L[i] ~ /^# / || L[i] ~ /^## /) { e=i-1; break }
+        last=a; for(i=a+1;i<=e;i++) if (L[i] ~ /[^ \t]/) last=i
+        for(i=1;i<=last;i++) print L[i]
+        if (last==a) print ""
+        while ((getline d < donef) > 0) print d
+        if (e < n) print ""
+        for(i=last+1;i<=n;i++) if (i > e || L[i] ~ /[^ \t]/) print L[i] }' \
+      "$tmp/tail" > "$tmp/tail2" && mv "$tmp/tail2" "$tmp/tail"
+  fi
   # Today = today frontmatter + carried region + today's existing body (prepend).
-  awk -v carryf="$tmp/carry" '
-    BEGIN{ fmc=0; inbody=0; pc=0 }
-    { if(!inbody){ print; if($0=="---"){fmc++; if(fmc==2)inbody=1} next }
-      if(!pc){ print ""; while((getline l < carryf)>0) print l; close(carryf); pc=1 }
-      print }
-    END{ if(!pc){ print ""; while((getline l < carryf)>0) print l; close(carryf) } }' \
-    "$today_file" > "$tmp/today"
+  if [ "$has_carry" -eq 1 ]; then
+    awk -v carryf="$tmp/carry" '
+      BEGIN{ fmc=0; inbody=0; pc=0 }
+      { if(!inbody){ print; if($0=="---"){fmc++; if(fmc==2)inbody=1} next }
+        if(!pc){ print ""; while((getline l < carryf)>0) print l; close(carryf); pc=1 }
+        print }
+      END{ if(!pc){ print ""; while((getline l < carryf)>0) print l; close(carryf) } }' \
+      "$today_file" > "$tmp/today"
+  fi
   # Source = its frontmatter + 3-line writing gap + tail (agent + archived kept).
   { cat "$tmp/fm"; printf '\n\n\n'; cat "$tmp/tail"; } > "$tmp/prior"
-  mv "$tmp/today" "$today_file"; mv "$tmp/prior" "$prior_file"
-  echo "$(ts) - carry-forward: moved $prior_date region into $today, blanked source" >> "$log"
+  [ "$has_carry" -eq 1 ] && mv "$tmp/today" "$today_file"
+  mv "$tmp/prior" "$prior_file"
+  if [ "$has_carry" -eq 1 ]; then
+    echo "$(ts) - carry-forward: moved $prior_date region into $today, blanked source" >> "$log"
+  else
+    echo "$(ts) - carry-forward: nothing open to carry from $prior_date" >> "$log"
+  fi
+  [ -s "$tmp/done" ] && echo "$(ts) - carry-forward: archived ${n_done} ticked line(s) into $prior_date # Archived" >> "$log"
   # Name every machine-written section left behind, so an unexpected one (P
   # starting a "## " heading of his own) is visible here rather than silent.
   if [ -s "$tmp/machine" ]; then
