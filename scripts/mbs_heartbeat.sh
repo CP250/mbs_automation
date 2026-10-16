@@ -435,10 +435,13 @@ fi
 #
 # The daily note's oura frontmatter fields (sleep_score, readiness_score,
 # ...) were considered and rejected as the canary: daily_notes/health/daily/
-# is created by the Journals plugin only when Obsidian is opened (see this
-# script's own "Known non-findings" note in SETUP.md), so its absence means
-# "P didn't open Obsidian today," not "oura sync failed" - using it would
-# conflate two independent failure modes into one noisy, wrong signal.
+# is created by the Journals plugin in a running Obsidian, so its absence
+# says something about Obsidian, not about oura sync - using it would conflate
+# two independent failure modes into one noisy, wrong signal. (Corrected
+# 2026-10-16: this used to say the note appears only when P opens Obsidian, the
+# laptop-era truth. Since the 2026-10-08 cutover garm's Obsidian never closes
+# and Journals makes the note there about 00:20, so a missing health note on
+# garm is a finding in its own right: check 39, part b.)
 #
 # Not gated on which launchd label owns the job (com.cpreston.mbs-oura-sync
 # vs. the renamed com.mbs.oura-sync, see Phase 1 build report): the archive
@@ -1330,7 +1333,7 @@ fi
 # other's jobs missing. Decided on hostname -s, so a machine that is neither
 # gets the laptop list.
 LD_EXPECTED_COMMON="com.mbs.aws-repo-backup com.mbs.mount-garm-assets"
-LD_EXPECTED_GARM="com.mbs.deploy com.mbs.deadman com.mbs.vault-index com.mbs.alcohol-stamp com.mbs.pointer-check com.mbs.oslo-weekly com.mbs.oslo-monthly com.mbs.review-monthly com.mbs.review-quarterly com.mbs.review-yearly com.mbs.cars-weekly com.mbs.weekly com.mbs.oura-sync com.mbs.oura-watch com.mbs.oura-trends com.mbs.team-brief com.mbs.web-watchers com.mbs.instagram-refresh com.mbs.the-record com.mbs.music-discovery com.mbs.mychart-sync com.mbs.daily com.mbs.vault-backup com.mbs.bulk-sync com.mbs.heartbeat"
+LD_EXPECTED_GARM="com.mbs.deploy com.mbs.deadman com.mbs.vault-index com.mbs.alcohol-stamp com.mbs.pointer-check com.mbs.oslo-weekly com.mbs.oslo-monthly com.mbs.review-monthly com.mbs.review-quarterly com.mbs.review-yearly com.mbs.cars-weekly com.mbs.weekly com.mbs.oura-sync com.mbs.oura-watch com.mbs.oura-trends com.mbs.team-brief com.mbs.web-watchers com.mbs.instagram-refresh com.mbs.the-record com.mbs.music-discovery com.mbs.mychart-sync com.mbs.daily com.mbs.vault-backup com.mbs.bulk-sync com.mbs.heartbeat com.mbs.obsidian-keepalive"
 case "$(hostname -s)" in
   garm) LD_EXPECTED="$LD_EXPECTED_GARM" ;;
   *) LD_EXPECTED="$LD_EXPECTED_COMMON" ;;
@@ -2152,6 +2155,82 @@ if [ "$(hostname -s)" != "hoest" ]; then
         fi
         ;;
     esac
+  fi
+fi
+
+# --- check 39: garm's Obsidian is alive and doing its jobs (2026-10-16) -------
+# garm's Obsidian is the only path from garm to hoest and the phone (Obsidian
+# Sync), runs Journals (today's health note, made just after midnight) and runs
+# MBS Multi Git (the hourly vault commit, one line an hour in multi_git.log,
+# "committed" or "no changes"). Before this nothing watched it: no pgrep anywhere
+# in this file, and deadman.sh proves only that the machine is up. Four parts,
+# one finding per failed part, each with the fix as an ssh block run from hoest:
+#   (a)  pgrep -x Obsidian finds it
+#   (b)  today's health note exists (from 01:00; Journals makes it about 00:20)
+#   (c)  multi_git.log was written within 2 hours
+#   (d)  no keepalive pause file older than 24 hours
+# One log line every run says what it saw, so a healthy day is visible too.
+# Local files and processes only, no network, never claude (ADR 2026-07-26).
+# garm only, by hostname: the laptop's Obsidian opens and closes with P.
+# com.mbs.obsidian-keepalive relaunches a dead Obsidian within 5 minutes, so
+# part (a) firing means the relaunch itself failed (check 26 then shows its FAILED line).
+# Check 39b (below) tells P when the keepalive had to act at all.
+if [ "$(hostname -s)" = "garm" ]; then
+  OB_NOW="$(date +%s)"
+  OB_TODAY="$(date +%Y-%m-%d)"
+  OB_ALSO="while garm's Obsidian is down, checks 36 and 38b may fire too, because hoest's relays reach garm only through garm's Obsidian Sync"
+  OB_RUN="no"; OB_HN="absent"; OB_MG="never"; OB_PZ="none"
+  if pgrep -x Obsidian >/dev/null 2>&1; then
+    OB_RUN="yes"
+  else
+    add_finding "Obsidian is NOT running on garm (check 39, part a), so Sync, Journals and Multi Git are all stopped there, and com.mbs.obsidian-keepalive did not bring it back - read its log, then start it by hand, from hoest in Terminal: cd ~ && ssh garm 'tail -5 ~/.mbs_automation/obsidian_keepalive.log; open -ga Obsidian; sleep 20; pgrep -x Obsidian' (proof: a process id on the last line); ${OB_ALSO}"
+  fi
+  OB_HNF="$VAULT/daily_notes/health/daily/daily_note_health_${OB_TODAY}.md"
+  if [ -f "$OB_HNF" ]; then
+    OB_HN="present"
+  elif [ "$(date +%H)" -lt 1 ]; then
+    OB_HN="not yet due (before 01:00)"
+  else
+    add_finding "today's health note does not exist on garm (check 39, part b): Journals in garm's Obsidian makes it just after midnight, so Obsidian there is not running, not loading Journals, or not syncing - restart it, from hoest in Terminal: cd ~ && ssh garm 'osascript -e \"quit app \\\"Obsidian\\\"\"; sleep 15; open -ga Obsidian; sleep 60; ls ~/Vaults/storage_mbs/daily_notes/health/daily/daily_note_health_\$(date +%Y-%m-%d).md' (proof: the path is printed, not 'No such file'); ${OB_ALSO}"
+  fi
+  OB_MGF="$STATE_DIR/multi_git.log"
+  if [ -f "$OB_MGF" ]; then
+    OB_MGM="$(stat -f %m "$OB_MGF" 2>/dev/null)"
+    case "$OB_MGM" in ''|*[!0-9]*) OB_MGM=0 ;; esac
+    OB_MGA=$(( (OB_NOW - OB_MGM) / 60 ))
+    OB_MG="${OB_MGA} min ago"
+  else
+    OB_MGA=999999
+  fi
+  if [ "$OB_MGA" -gt 120 ]; then
+    add_finding "MBS Multi Git on garm has not written ~/.mbs_automation/multi_git.log in over 2 hours (check 39, part c; last: ${OB_MG}; it logs every hour, committed or no changes), so the hourly vault commit that recovers lost lines is not running - restart Obsidian on garm, from hoest in Terminal: cd ~ && ssh garm 'osascript -e \"quit app \\\"Obsidian\\\"\"; sleep 15; open -ga Obsidian; sleep 70; tail -2 ~/.mbs_automation/multi_git.log' (proof: a line timestamped within the last minutes; if none, check for a stale index.lock in ~/Vaults/storage_mbs/.git on garm); ${OB_ALSO}"
+  fi
+  OB_PZF="$STATE_DIR/obsidian_keepalive.pause"
+  if [ -f "$OB_PZF" ]; then
+    OB_PZM="$(stat -f %m "$OB_PZF" 2>/dev/null)"
+    case "$OB_PZM" in ''|*[!0-9]*) OB_PZM=0 ;; esac
+    OB_PZH=$(( (OB_NOW - OB_PZM) / 3600 ))
+    OB_PZ="present, ${OB_PZH} h old"
+    if [ "$OB_PZH" -ge 24 ]; then
+      add_finding "the Obsidian keepalive on garm has been paused for ${OB_PZH} hours (check 39, part d), so a dead Obsidian there would stay dead - if the maintenance is over, resume it, from hoest in Terminal: cd ~ && ssh garm 'rm ~/.mbs_automation/obsidian_keepalive.pause; sleep 330; tail -2 ~/.mbs_automation/obsidian_keepalive.log' (proof: a 'resumed: pause file removed' line)"
+    fi
+  fi
+  echo "$(ts) - check 39: Obsidian running=${OB_RUN}; health note ${OB_TODAY}=${OB_HN}; multi_git.log last written ${OB_MG}; keepalive pause=${OB_PZ}" >> "$LOG"
+
+  # --- check 39b: the keepalive had to relaunch Obsidian in the last 24 hours --
+  # Obsidian died and came back; nothing is broken now, but P should know, and a
+  # repeat is a pattern worth chasing (a crash, an update prompt, a memory leak).
+  OB_KLF="$STATE_DIR/obsidian_keepalive.log"
+  if [ -f "$OB_KLF" ]; then
+    OB_RL="$(grep -E ' - relaunched Obsidian ' "$OB_KLF" 2>/dev/null | tail -1)"
+    if [ -n "$OB_RL" ]; then
+      OB_RLE="$(date -j -f '%Y-%m-%d %H:%M:%S' "$(printf '%s' "$OB_RL" | cut -c1-19)" +%s 2>/dev/null)"
+      case "$OB_RLE" in ''|*[!0-9]*) OB_RLE=0 ;; esac
+      if [ "$OB_RLE" -gt 0 ] && [ $((OB_NOW - OB_RLE)) -lt 86400 ]; then
+        OB_RLN="$(grep -cE ' - relaunched Obsidian ' "$OB_KLF" 2>/dev/null | tr -d ' ')"
+        add_finding "Obsidian on garm died and com.mbs.obsidian-keepalive relaunched it at $(printf '%s' "$OB_RL" | cut -c1-16) (check 39b; ${OB_RLN} relaunch(es) in that log in total) - it is running again, so nothing needs doing unless this repeats; to see why it died, from hoest in Terminal: cd ~ && ssh garm 'grep -E \"relaunched|FAILED\" ~/.mbs_automation/obsidian_keepalive.log | tail -5; ls -t ~/Library/Logs/DiagnosticReports | grep -i obsidian | head -3'"
+      fi
+    fi
   fi
 fi
 

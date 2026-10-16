@@ -1,13 +1,13 @@
 #!/bin/bash
 # heartbeat_garm_drill.sh - exercises heartbeat checks 32 to 38b, check 29 (moved
-# beside them 2026-10-15) and the per-host
+# beside them 2026-10-15), checks 39 and 39b (garm's Obsidian, 2026-10-16) and the per-host
 # LD_EXPECTED switch by extracting those blocks from mbs_heartbeat.sh and running
 # them against a temp HOME with a stubbed add_finding. Uses macOS date -j, so run
 # it on the Mac. Touches nothing outside the temp dir.
 #   bash scripts/heartbeat_garm_drill.sh
 set -uo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
-HB="$HERE/mbs_heartbeat.sh"
+HB="${HB:-$HERE/mbs_heartbeat.sh}"
 T="$(mktemp -d "${TMPDIR:-/tmp}/hb_drill.XXXXXX")"
 trap 'rm -rf "$T"' EXIT
 export HOME="$T/home"; STATE_DIR="$HOME/.mbs_automation"
@@ -19,6 +19,14 @@ mkdir -p "$STATE_DIR" "$HOME/Library/LaunchAgents" "$HOME/dev" "$T/vault/admin/m
 export AWS_BACKUP_RELAY_GRACE_START="$(date +%Y-%m-%d)"
 export SESSION_ARCHIVE_RELAY_GRACE_START="$(date +%Y-%m-%d)"
 export SECRET_STORE_RELAY_GRACE_START="$(date +%Y-%m-%d)"
+# Check 39 (garm's Obsidian) runs in every case below, because the drill's host is
+# garm: give it a healthy world by default (Obsidian running via the pgrep shim,
+# today's health note, a fresh multi_git.log) so it is silent unless a case
+# breaks one part on purpose. Its log line goes to $T/hb.log.
+mkdir -p "$T/vault/daily_notes/health/daily"
+HEALTH_NOTE="$T/vault/daily_notes/health/daily/daily_note_health_$(date +%Y-%m-%d).md"
+: > "$HEALTH_NOTE"
+: > "$STATE_DIR/multi_git.log"
 
 S="$(grep -n '^# --- check 32:' "$HB" | cut -d: -f1)"
 E="$(grep -n '^# --- verdict' "$HB" | cut -d: -f1)"
@@ -29,9 +37,11 @@ PASS=0; FAIL=0
 ok()  { PASS=$((PASS + 1)); echo "  ok   $1"; }
 bad() { FAIL=$((FAIL + 1)); echo "  FAIL $1"; }
 findings() {
-  STATE_DIR="$STATE_DIR" HOME="$HOME" VAULT="$T/vault" LD_EXPECTED_COMMON="${LD_TEST:-com.mbs.aws-repo-backup com.mbs.mount-garm-assets}" /bin/bash -c '
+  STATE_DIR="$STATE_DIR" HOME="$HOME" VAULT="$T/vault" LOG="$T/hb.log" LD_EXPECTED_COMMON="${LD_TEST:-com.mbs.aws-repo-backup com.mbs.mount-garm-assets}" /bin/bash -c '
     set -uo pipefail
     hostname() { echo "${HB_HOST:-garm}"; }
+    pgrep() { [ "${PG_RUN:-1}" = 1 ] || return 1; echo 4242; }
+    ts() { date "+%Y-%m-%d %H:%M:%S"; }
     add_finding() { echo "FINDING: $1"; }
     source "$1"
   ' _ "$T/region.sh" 2>&1
@@ -228,6 +238,45 @@ expect_has "relay with drifted field names" "no readable last_probe_epoch/secret
 ssrelay "$(now)" "" true none none
 expect_has "relay with an empty secret_count" "no readable last_probe_epoch/secret_count"
 rm -f "$SSR"
+
+echo "check 39: garm's Obsidian"
+: > "$T/hb.log"
+expect_none "healthy: Obsidian running, health note present, multi_git fresh, no pause"
+if grep -q 'check 39: Obsidian running=yes; health note .*=present; multi_git.log last written 0 min ago; keepalive pause=none' "$T/hb.log"; then ok "healthy run still logs what it saw"; else bad "check 39 log line ($(tail -1 "$T/hb.log"))"; fi
+PG_RUN=0 expect_has "Obsidian not running: part a" "Obsidian is NOT running on garm (check 39, part a)"
+PG_RUN=0 expect_has "part a names checks 36 and 38b" "checks 36 and 38b may fire too"
+PG_RUN=0 expect_has "part a gives the ssh fix from hoest" "cd ~ && ssh garm 'tail -5 ~/.mbs_automation/obsidian_keepalive.log; open -ga Obsidian"
+PG_RUN=0 HB_HOST=hoest expect_none "not garm: check 39 does not run even with Obsidian dead (negative control on the host gate)"
+rm -f "$HEALTH_NOTE"
+if [ "$(date +%H)" -ge 1 ]; then
+  expect_has "health note missing: part b" "today's health note does not exist on garm (check 39, part b)"
+else
+  expect_none "health note missing before 01:00 is not yet due"
+fi
+: > "$HEALTH_NOTE"
+touch -t "$(date -v-3H +%Y%m%d%H%M)" "$STATE_DIR/multi_git.log"
+expect_has "multi_git.log 3 hours old: part c" "(check 39, part c; last: 18"
+touch -t "$(date -v-1H +%Y%m%d%H%M)" "$STATE_DIR/multi_git.log"
+expect_none "multi_git.log 1 hour old"
+rm -f "$STATE_DIR/multi_git.log"
+expect_has "multi_git.log missing: part c, never" "(check 39, part c; last: never"
+: > "$STATE_DIR/multi_git.log"
+touch -t "$(date -v-25H +%Y%m%d%H%M)" "$STATE_DIR/obsidian_keepalive.pause"
+expect_has "pause 25 hours old: part d" "paused for 25 hours (check 39, part d)"
+touch -t "$(date -v-1H +%Y%m%d%H%M)" "$STATE_DIR/obsidian_keepalive.pause"
+expect_none "pause 1 hour old is not a finding"
+rm -f "$STATE_DIR/obsidian_keepalive.pause"
+
+echo "check 39b: the keepalive relaunched Obsidian in the last 24 hours"
+KL="$STATE_DIR/obsidian_keepalive.log"
+expect_none "no keepalive log"
+printf '%s - relaunched Obsidian (pid 1, up after 5s); completed successfully\n' "$(date -v-2H '+%Y-%m-%d %H:%M:%S')" > "$KL"
+expect_has "relaunch 2 hours ago" "relaunched it at $(date -v-2H '+%Y-%m-%d %H:%M') (check 39b; 1 relaunch(es)"
+printf '%s - relaunched Obsidian (pid 1, up after 5s); completed successfully\n' "$(date -v-30H '+%Y-%m-%d %H:%M:%S')" > "$KL"
+expect_none "relaunch 30 hours ago"
+printf '%s - paused: x\n' "$(date '+%Y-%m-%d %H:%M:%S')" > "$KL"
+expect_none "log without a relaunch"
+rm -f "$KL"
 
 echo "per-host LD_EXPECTED"
 LDS="$(grep -n '^case "\$(hostname -s)" in' "$HB" | cut -d: -f1)"

@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.mbs.obsidian-keepalive</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/cpreston/dev/mbs_automation/scripts/obsidian_keepalive.sh</string>
+    </array>
+
+    <!-- garm only (the script exits 0 on any other host). Every 5 minutes: relaunch Obsidian if it is not running, unless ~/.mbs_automation/obsidian_keepalive.pause exists. Added 2026-10-16; heartbeat checks 39 and 39b. -->
+    <key>StartInterval</key>
+    <integer>300</integer>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>/Users/cpreston/.mbs_automation/obsidian_keepalive.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/cpreston/.mbs_automation/obsidian_keepalive.err.log</string>
+</dict>
+</plist>
