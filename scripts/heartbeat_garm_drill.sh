@@ -303,6 +303,41 @@ expect_has "no tick file" "(check 40; last tick never"
 HB_HOST=hoest expect_none "not garm: check 40 does not run (negative control on the host gate)"
 : > "$STATE_DIR/tasks_rollover_tick"
 
+echo "check 27: duplicate-block ledger, renames carry their count"
+C27S="$(grep -n '^# --- check 27:' "$HB" | cut -d: -f1)"
+C27E="$(awk -v s="$C27S" 'NR > s && /^# --- (check|verdict)/ { print NR; exit }' "$HB")"
+sed -n "${C27S},$((C27E - 1))p" "$HB" > "$T/c27.sh"
+DV="$T/dupvault"; DS="$T/dupstate"; mkdir -p "$DV/a" "$DV/b" "$DS"
+c27() { STATE_DIR="$DS" VAULT="$DV" LOG="$DS/log" /bin/bash -c 'set -uo pipefail; ts() { date; }; add_finding() { echo "FINDING: $1"; }; source "$1"' _ "$T/c27.sh" 2>&1; }
+c27_none() { local out; out="$(c27)"; if [ -z "$out" ]; then ok "$1"; else bad "$1 ($out)"; fi; }
+c27_has()  { local out; out="$(c27)"; case "$out" in *"$2"*) ok "$1" ;; *) bad "$1 (got: $out)" ;; esac; }
+dupfile() { local f="$1" n="$2" i; : > "$f"; for i in $(seq 0 "$n"); do printf '## Same\ntext %s\n' "$i" >> "$f"; done; printf '## Unique\n' >> "$f"; }
+dupfile "$DV/a/legit.md" 3; dupfile "$DV/a/other.md" 1; printf '## One\n' > "$DV/a/clean.md"
+c27_none "first run writes the ledger and reports nothing"
+c27_none "unchanged vault"
+mv "$DV/a/legit.md" "$DV/b/legit.md"
+c27_none "file moved to another folder keeps its count (3 to 3 is not a rise)"
+if grep -q "/b/legit.md	3" "$DS/dupblock_baseline.txt" && ! grep -q "/a/legit.md" "$DS/dupblock_baseline.txt"; then ok "ledger now holds the new path and not the old one"; else bad "ledger after the move: $(cat "$DS/dupblock_baseline.txt")"; fi
+c27_none "the moved file stays silent on the next run"
+mv "$DV/b/legit.md" "$DV/legit.md"; dupfile "$DV/legit.md" 4
+c27_has "moved AND gained a block fires against the carried count" "legit.md (3 to 4)"
+dupfile "$DV/legit.md" 3
+c27_none "back to its carried count"
+dupfile "$DV/a/other.md" 2
+c27_has "an unmoved file that gains a block still fires" "a/other.md (1 to 2)"
+dupfile "$DV/a/other.md" 1
+mkdir -p "$DV/c" "$DV/d" "$DV/e"; dupfile "$DV/c/notes.md" 1; dupfile "$DV/d/notes.md" 1
+c27_has "two new files with duplicates fire from 0" "(0 to 1)"
+printf '%s\t1\n%s\t1\n' "$DV/c/notes.md" "$DV/d/notes.md" >> "$DS/dupblock_baseline.txt"
+sort -o "$DS/dupblock_baseline.txt" "$DS/dupblock_baseline.txt"
+c27_none "both accepted by hand"
+mv "$DV/c/notes.md" "$DV/e/notes.md"; rm "$DV/d/notes.md"
+c27_has "two gone files share the basename: no carry, fires from 0" "e/notes.md (0 to 1)"
+rm "$DV/e/notes.md"
+dupfile "$DV/legit.md" 2
+c27_none "a file that drops below its count is quiet"
+if grep -q "/legit.md	2" "$DS/dupblock_baseline.txt"; then ok "and its ledger count falls"; else bad "ledger did not fall: $(grep legit.md "$DS/dupblock_baseline.txt")"; fi
+
 echo "per-host LD_EXPECTED"
 LDS="$(grep -n '^case "\$(hostname -s)" in' "$HB" | cut -d: -f1)"
 LDB="$(grep -n '^LD_EXPECTED_COMMON=' "$HB" | cut -d: -f1)"

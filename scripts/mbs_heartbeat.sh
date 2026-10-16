@@ -1513,6 +1513,19 @@ fi
 # rather than self-clearing after one mention. A file with no baseline entry
 # counts as 0, so a newly created file with a duplicate block also fires.
 #
+# RENAMES CARRY THEIR COUNT (2026-10-16). The ledger is keyed by full path, so
+# a move used to look like a brand-new file: the old path left the scan, its
+# entry was dropped by the falls-automatically rewrite, and the new path
+# started from 0. Archiving social/people/james_gildersleeve/ into _archive/ on
+# 2026-10-16 fired "0 to 3" on an email note byte-identical to its committed
+# copy (two role profiles, each with its own three headings). Now a ledger
+# entry whose path no longer exists on disk is a rename candidate, and a
+# scanned path with no entry inherits the count of the candidate with the SAME
+# basename, but only when exactly one candidate has that basename (two gone
+# files called notes.md prove nothing). The inherited count moves to the new
+# path in the ledger. A rename that also gained a block still fires, because
+# the comparison is against the carried count, not against 0.
+#
 # First run writes the ledger and reports nothing, same self-baselining shape
 # as check_no_shrink's high-water marks.
 #
@@ -1561,10 +1574,32 @@ if [ -d "$VAULT" ]; then
     cp "$DUP_NOW" "$DUP_BASE" 2>/dev/null
     echo "$(ts) - check 27: duplicate-block ledger created with $(wc -l < "$DUP_BASE" | tr -d " ") pre-existing file(s); reporting starts on the next run." >> "$LOG"
   else
-    DUP_RISEN="$(awk -F'\t' '
-        NR==FNR { b[$1] = $2; next }
-        { o = ($1 in b) ? b[$1] : 0; if ($2 > o) print $1 "\t" o "\t" $2 }
-      ' "$DUP_BASE" "$DUP_NOW")"
+    # Rename candidates: ledger entries whose file is gone, as basename, count.
+    # A basename that more than one gone entry shares is dropped as ambiguous.
+    DUP_GONE="$STATE_DIR/.dupblock_gone.$$"
+    while IFS="$(printf '\t')" read -r DG_P DG_C; do
+      [ -n "$DG_P" ] && [ ! -e "$DG_P" ] && printf '%s\t%s\n' "${DG_P##*/}" "$DG_C"
+    done < "$DUP_BASE" | awk -F'\t' '
+        { n[$1]++; c[$1] = $2 }
+        END { for (k in n) if (n[k] == 1) print k "\t" c[k] }
+      ' > "$DUP_GONE"
+    # Each scanned file with its effective old count: its own ledger entry, else
+    # a unique rename candidate with the same basename, else 0. Feeds both the
+    # finding and the ledger rewrite below.
+    DUP_CMP="$STATE_DIR/.dupblock_cmp.$$"
+    awk -F'\t' '
+        FILENAME == ARGV[1] { g[$1] = $2; next }
+        FILENAME == ARGV[2] { b[$1] = $2; next }
+        {
+          if ($1 in b) { o = b[$1]; k = "own" }
+          else {
+            bn = $1; sub(/.*\//, "", bn)
+            if (bn in g) { o = g[bn]; k = "carried" } else { o = 0; k = "new" }
+          }
+          print $1 "\t" o "\t" $2 "\t" k
+        }
+      ' "$DUP_GONE" "$DUP_BASE" "$DUP_NOW" > "$DUP_CMP"
+    DUP_RISEN="$(awk -F'\t' '$3 > $2 { print $1 "\t" $2 "\t" $3 }' "$DUP_CMP")"
     if [ -n "$DUP_RISEN" ]; then
       DUP_N="$(printf '%s\n' "$DUP_RISEN" | grep -c .)"
       DUP_NAMES="$(printf '%s\n' "$DUP_RISEN" | head -5 | awk -F'\t' -v v="$VAULT/" '{ p=$1; sub("^" v, "", p); printf "%s%s (%s to %s)", (NR>1 ? ", " : ""), p, $2, $3 }')"
@@ -1572,11 +1607,12 @@ if [ -d "$VAULT" ]; then
       add_finding "${DUP_N} vault file(s) gained duplicated heading block(s) since the last check: ${DUP_NAMES} - this is the Obsidian Sync merge-debris signature (it merges per file, restore-on-conflict, and garbles by duplicating). Open each and compare the twin blocks; the newer one is usually a stale copy from a device that had not synced. If a duplicate is legitimate, accept it by raising that file's count in ~/.mbs_automation/dupblock_baseline.txt, which is the only way this clears"
     fi
     # Falls automatically, never rises automatically: see the policy note above.
+    # A carried count is written under the new path, so the rename is absorbed.
     awk -F'\t' '
-        NR==FNR { b[$1] = $2; next }
-        ($1 in b) { print $1 "\t" (b[$1] < $2 ? b[$1] : $2) }
-      ' "$DUP_BASE" "$DUP_NOW" > "${DUP_BASE}.tmp" 2>/dev/null \
+        $4 != "new" { print $1 "\t" ($2 < $3 ? $2 : $3) }
+      ' "$DUP_CMP" | sort > "${DUP_BASE}.tmp" 2>/dev/null \
       && mv "${DUP_BASE}.tmp" "$DUP_BASE"
+    rm -f "$DUP_GONE" "$DUP_CMP"
   fi
   rm -f "$DUP_NOW"
 fi
