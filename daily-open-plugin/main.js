@@ -28,6 +28,24 @@ __export(main_exports, {
 });
 module.exports = __toCommonJS(main_exports);
 var import_obsidian = require("obsidian");
+
+// src/rotation.ts
+function stalePathsToDetach(openPaths, specs, todayExists) {
+  const todayPaths = new Set(specs.map((s) => s.todayPath));
+  const out = [];
+  for (const p of openPaths) {
+    if (todayPaths.has(p))
+      continue;
+    const owner = specs.find((s) => s.pathRe.test(p));
+    if (!owner)
+      continue;
+    if (todayExists.has(owner.todayPath))
+      out.push(p);
+  }
+  return out;
+}
+
+// src/main.ts
 var DEFAULT_SETTINGS = {
   openOnStartup: true,
   pinTabs: true,
@@ -37,7 +55,8 @@ var DEFAULT_SETTINGS = {
     { name: "health", folder: "daily_notes/health/daily", filename: "daily_note_health_{{date}}", dateFormat: "YYYY-MM-DD" },
     { name: "tasks", folder: "daily_notes/tasks", filename: "tasks_{{date}}", dateFormat: "YYYY-MM-DD" }
   ],
-  preferredParentIds: {}
+  preferredParentIds: {},
+  preferredPositions: {}
 };
 function escapeRe(s) {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -102,12 +121,52 @@ var DailyAutoOpenPlugin = class extends import_obsidian.Plugin {
     const vf = (_a = leaf.view) == null ? void 0 : _a.file;
     return vf == null ? void 0 : vf.path;
   }
+  // v0.1.5: resolve a directional position ('leftmost' | 'rightmost') to the id
+  // of the tabs container at that edge of the main root split, at runtime. This
+  // survives workspace rebuilds because we walk the live layout instead of
+  // remembering a UUID. If the edge child is itself a split (nested layout), we
+  // descend along the same edge until we hit a tabs container.
+  edgeTabsId(position) {
+    const root = this.app.workspace.rootSplit;
+    if (!root || !Array.isArray(root.children) || root.children.length === 0)
+      return void 0;
+    const pickEdge = (arr) => position === "leftmost" ? arr[0] : arr[arr.length - 1];
+    let node = pickEdge(root.children);
+    for (let depth = 0; depth < 16; depth++) {
+      if (!node)
+        return void 0;
+      const n = node;
+      if (n.type === "tabs")
+        return n.id;
+      if (!Array.isArray(n.children) || n.children.length === 0)
+        return n.id;
+      if (n.type === "split") {
+        node = pickEdge(n.children);
+        continue;
+      }
+      node = pickEdge(n.children);
+    }
+    return void 0;
+  }
+  // v0.1.5: find any leaf whose parent matches the given tabs container id.
+  // Used to setActiveLeaf so getLeaf('tab') opens in the same parent.
+  findLeafByParentId(parentId) {
+    let found;
+    this.app.workspace.iterateAllLeaves((leaf) => {
+      var _a;
+      if (found)
+        return;
+      const pid = (_a = leaf.parent) == null ? void 0 : _a.id;
+      if (pid === parentId)
+        found = leaf;
+    });
+    return found;
+  }
   async openDailies() {
-    var _a, _b, _c;
+    var _a, _b, _c, _d;
     const specs = this.settings.notes;
     const todayByPath = /* @__PURE__ */ new Map();
     specs.forEach((s) => todayByPath.set(this.todayPath(s), s));
-    const regexes = specs.map((s) => this.specPathRe(s));
     const byPath = /* @__PURE__ */ new Map();
     this.app.workspace.iterateAllLeaves((leaf) => {
       const p = this.leafPath(leaf);
@@ -132,59 +191,72 @@ var DailyAutoOpenPlugin = class extends import_obsidian.Plugin {
     }
     let missing = 0;
     let settingsDirty = false;
+    const todayExists = /* @__PURE__ */ new Set();
     for (const [path, spec] of todayByPath.entries()) {
       const existing = byPath.get(path) || [];
       let keep = existing[0] || null;
       existing.slice(1).forEach((l) => l.detach());
+      const position = (_a = this.settings.preferredPositions) == null ? void 0 : _a[spec.name];
       if (!keep) {
         const af = this.app.vault.getAbstractFileByPath(path);
         if (!(af instanceof import_obsidian.TFile)) {
           missing++;
           continue;
         }
-        const staleLeaves = staleBySpec.get(path) || [];
-        if (staleLeaves.length > 0) {
-          this.app.workspace.setActiveLeaf(staleLeaves[0], { focus: false });
-        } else {
-          const savedId = (_a = this.settings.preferredParentIds) == null ? void 0 : _a[spec.name];
-          if (savedId) {
-            let target;
-            this.app.workspace.iterateAllLeaves((leaf) => {
-              var _a2;
-              if (target)
-                return;
-              const pid = (_a2 = leaf.parent) == null ? void 0 : _a2.id;
-              if (pid === savedId)
-                target = leaf;
-            });
-            if (target)
+        let placed = false;
+        if (position) {
+          const edgeId = this.edgeTabsId(position);
+          if (edgeId) {
+            const target = this.findLeafByParentId(edgeId);
+            if (target) {
               this.app.workspace.setActiveLeaf(target, { focus: false });
+              placed = true;
+            }
+          }
+        }
+        if (!placed) {
+          const staleLeaves = staleBySpec.get(path) || [];
+          if (staleLeaves.length > 0) {
+            this.app.workspace.setActiveLeaf(staleLeaves[0], { focus: false });
+            placed = true;
+          }
+        }
+        if (!placed) {
+          const savedId = (_b = this.settings.preferredParentIds) == null ? void 0 : _b[spec.name];
+          if (savedId) {
+            const target = this.findLeafByParentId(savedId);
+            if (target) {
+              this.app.workspace.setActiveLeaf(target, { focus: false });
+              placed = true;
+            }
           }
         }
         keep = this.app.workspace.getLeaf("tab");
         await keep.openFile(af, { active: false });
-        const newParentId = (_b = keep.parent) == null ? void 0 : _b.id;
-        if (newParentId) {
-          if (!this.settings.preferredParentIds)
-            this.settings.preferredParentIds = {};
-          if (this.settings.preferredParentIds[spec.name] !== newParentId) {
-            this.settings.preferredParentIds[spec.name] = newParentId;
-            settingsDirty = true;
+        if (!position) {
+          const newParentId = (_c = keep.parent) == null ? void 0 : _c.id;
+          if (newParentId) {
+            if (!this.settings.preferredParentIds)
+              this.settings.preferredParentIds = {};
+            if (this.settings.preferredParentIds[spec.name] !== newParentId) {
+              this.settings.preferredParentIds[spec.name] = newParentId;
+              settingsDirty = true;
+            }
           }
         }
       }
+      if (keep)
+        todayExists.add(path);
       if (this.settings.pinTabs && keep) {
-        (_c = keep.setPinned) == null ? void 0 : _c.call(keep, true);
+        (_d = keep.setPinned) == null ? void 0 : _d.call(keep, true);
       }
     }
     if (settingsDirty)
       await this.saveSettings();
     if (this.settings.rotateStale) {
-      for (const [p, leaves] of byPath) {
-        if (todayByPath.has(p))
-          continue;
-        if (regexes.some((r) => r.test(p)))
-          leaves.forEach((l) => l.detach());
+      const rotationSpecs = specs.map((s) => ({ todayPath: this.todayPath(s), pathRe: this.specPathRe(s) }));
+      for (const p of stalePathsToDetach(byPath.keys(), rotationSpecs, todayExists)) {
+        (byPath.get(p) || []).forEach((l) => l.detach());
       }
     }
     if (missing > 0) {
@@ -251,6 +323,28 @@ var DAOSettingTab = class extends import_obsidian.PluginSettingTab {
           await this.plugin.saveSettings();
         })
       );
+      s.addDropdown((d) => {
+        var _a, _b;
+        d.addOption("", "auto (drag-to-learn)");
+        d.addOption("leftmost", "leftmost pane");
+        d.addOption("rightmost", "rightmost pane");
+        const current = (_b = (_a = this.plugin.settings.preferredPositions) == null ? void 0 : _a[spec.name]) != null ? _b : "";
+        d.setValue(current);
+        d.onChange(async (v) => {
+          if (!this.plugin.settings.preferredPositions)
+            this.plugin.settings.preferredPositions = {};
+          if (v === "") {
+            delete this.plugin.settings.preferredPositions[spec.name];
+          } else {
+            this.plugin.settings.preferredPositions[spec.name] = v;
+          }
+          await this.plugin.saveSettings();
+        });
+      });
+    });
+    containerEl.createEl("p", {
+      text: 'Position picker (v0.1.5): "auto" preserves prior behavior (auto-learns from drags via UUID). "leftmost"/"rightmost" resolve to the actual edge pane of the main split at runtime \u2014 survives workspace rebuilds and saved-workspace loads.',
+      cls: "setting-item-description"
     });
   }
 };

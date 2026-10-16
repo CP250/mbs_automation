@@ -8,7 +8,7 @@ On app launch (after a short delay so the Journals plugin can auto-create today'
 
 - **Open on startup** — open today's notes when Obsidian launches (default on).
 - **Pin as tabs** — pin the opened notes so they persist as tabs on desktop / stay open on mobile (default on).
-- **Rotate stale tabs** — on open, close *previous days'* daily-note tabs so only today's stay open (default on). Without this, pinned tabs would accumulate one per day.
+- **Rotate stale tabs** — on open, close *previous days'* daily-note tabs so only today's stay open (default on). Without this, pinned tabs would accumulate one per day. Since 0.1.6 a journal's old tabs close only once that journal's note for today exists, so a tasks tab is never closed just because today's health note appeared first.
 - **Startup delay (ms)** — how long to wait after launch before opening (default 1200), so the Journals plugin creates today's notes first.
 - **Notes opened each day** — a list of `{ folder, filename ({{date}}), dateFormat }`. Defaults match the vault's two journals:
   - `daily_notes/health/daily/daily_note_health_{{date}}`

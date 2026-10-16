@@ -1,8 +1,6 @@
 # Releasing Daily Auto-Open
 
-This plugin is developed at `mbs_automation/daily-open-plugin/` (a dev mirror) and published from its own repo, `CP250/obsidian-daily-auto-open`, installed via BRAT. Same pattern as `obsidian-mbs-companion`.
-
-All `git` steps are for **P to run by hand** (P uses HTTPS GitHub auth, not SSH).
+Development happens here, in `~/dev/obsidian-daily-auto-open` (the repo `CP250/obsidian-daily-auto-open`), which is also what BRAT installs from. `~/dev/mbs_automation/daily-open-plugin/` is a reference copy only, brought up to each release; never build from it (corrected 2026-10-16: it had fallen behind at 0.1.4 while 0.1.5 was installed). Commits and pushes go over the `github-cp250` SSH alias with the CP250 signing key. Tests: `npm test` (node's own runner, pure functions in `src/rotation.ts`).
 
 ## First-time split to its own repo
 

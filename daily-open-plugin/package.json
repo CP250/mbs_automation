@@ -1,13 +1,18 @@
 {
   "name": "daily-auto-open",
-  "version": "0.1.4",
+  "version": "0.1.6",
   "description": "Open today's daily notes on launch (desktop + mobile).",
   "main": "main.js",
   "scripts": {
     "dev": "node esbuild.config.mjs",
-    "build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production"
+    "build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
+    "test": "node --test test/*.test.ts"
   },
-  "keywords": ["obsidian", "plugin", "daily-notes"],
+  "keywords": [
+    "obsidian",
+    "plugin",
+    "daily-notes"
+  ],
   "author": "Chris Preston",
   "license": "MIT",
   "devDependencies": {
