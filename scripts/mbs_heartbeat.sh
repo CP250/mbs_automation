@@ -516,7 +516,7 @@ else
     fi
   done
   if [ -n "$OURA_EMPTY_SLUGS" ]; then
-    add_finding "oura sync: the 2 most recent archive files are both empty (\"data\": []) for ${OURA_EMPTY_SLUGS} - the files are fresh, so the job ran and wrote what it got; whether the ring stopped reaching Oura or the fetch broke needs ~/Library/Logs/mbs-oura-sync.log plus one direct API query"
+    add_finding "oura sync: the 2 most recent archive files are both empty (\"data\": []) for ${OURA_EMPTY_SLUGS} - the files are fresh, so the job ran and wrote what it got; whether the ring stopped reaching Oura or the fetch broke needs the endpoints: lines in ~/.mbs_automation/oura_sync.log plus one direct API query"
   fi
 fi
 
@@ -891,6 +891,27 @@ if [ -f "$HOME/Library/LaunchAgents/com.mbs.oura-watch.plist" ]; then
   fi
 fi
 
+# --- check 14c: oura-sync actually ran (stamp-based, added 2026-10-16) -------
+# Until 2026-10-16 com.mbs.oura-sync ran its Python straight from the plist,
+# wrote no stamp and logged to ~/Library/Logs/, so the only evidence that it
+# ran was check 5's archive mtime: a job that stopped running was inferred
+# two days later from a stale file, never named. scripts/oura_sync.sh (in
+# ~/dev/mbs-oura-sync) now writes last_oura_sync_run on every exit-0 run, so
+# this asks the direct question, check 14's way: TODAY-or-YESTERDAY, because
+# the job fires at 10:00 and this heartbeat at 11:00 (a late wake can run the
+# job after this check). Its failures are read elsewhere: a FAILED last line
+# in ~/.mbs_automation/oura_sync.log by check 26 (oura_sync.py exits 5 when an
+# endpoint has failed on two consecutive runs), stray stderr by check 24.
+# Self-arming on plist presence, same pattern as checks 14 and 19.
+# Brief: admin/mbs_system/design/brief_health_jobs_fixes.md.
+if [ -f "$HOME/Library/LaunchAgents/com.mbs.oura-sync.plist" ]; then
+  LAST_OURA_SYNC="$(cat "$STATE_DIR/last_oura_sync_run" 2>/dev/null || echo none)"
+  OURA_SYNC_YESTERDAY="$(date -v-1d +%Y-%m-%d)"
+  if [ "$LAST_OURA_SYNC" != "$TODAY" ] && [ "$LAST_OURA_SYNC" != "$OURA_SYNC_YESTERDAY" ]; then
+    add_finding "oura-sync has not completed since ${LAST_OURA_SYNC} (expected ${OURA_SYNC_YESTERDAY} or ${TODAY}, given its 10:00 schedule) - check the last lines of ~/.mbs_automation/oura_sync.log and com.mbs.oura-sync"
+  fi
+fi
+
 # --- check 15: oura-trends wrote its section into this month's review --------
 # Artifact-based, mirroring check 10, because unlike oura-watch this job does
 # produce output every period. Two-day grace so a Mac that was off on the 1st
@@ -1089,7 +1110,8 @@ if [ -f "$HOME/Library/LaunchAgents/com.mbs.mychart-sync.plist" ]; then
     # encounters keep arriving and stamping the day, so the stale-stamp check
     # above and check 26 both stay green while the clinical note TEXT (what the
     # 2026-08-19 successor app 59370 was registered to unlock, and the source of
-    # the 895-file attachment archive) silently stops. Clears on next success.
+    # the clinical-document attachment archive, 417 distinct MSK and 86 Weill
+    # Cornell documents as of 2026-10-16) silently stops. Clears on next success.
     if [ -f "$STATE_DIR/mychart_attachments_unauthorized_${MCS_INST}" ]; then
       add_finding "mychart-sync: ${MCS_INST} clinical-document text is NOT being fetched (every attachment request returned 403; marker present since $(cat "$STATE_DIR/mychart_attachments_unauthorized_${MCS_INST}" 2>/dev/null | head -1)) - encounters still arrive, note text does not, so nothing else will report this; consent or the Epic app's Binary scope regressed. Re-consent: cd ~/dev/mbs-mychart-sync && .venv/bin/python scripts/mychart_consent.py --institution ${MCS_INST} --tls --verify, then rm the marker and run src/mychart_sync.py --backfill-attachments"
     fi

@@ -1,12 +1,16 @@
 #!/bin/bash
 # heartbeat_garm_drill.sh - exercises heartbeat checks 32 to 38b, check 29 (moved
-# beside them 2026-10-15), checks 39 and 39b (garm's Obsidian, 2026-10-16) and the per-host
+# beside them 2026-10-15), checks 39 and 39b (garm's Obsidian, 2026-10-16), check
+# 14c with oura-sync's wrapper end to end into check 26 (2026-10-16) and the per-host
 # LD_EXPECTED switch by extracting those blocks from mbs_heartbeat.sh and running
 # them against a temp HOME with a stubbed add_finding. Uses macOS date -j, so run
 # it on the Mac. Touches nothing outside the temp dir.
 #   bash scripts/heartbeat_garm_drill.sh
 set -uo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
+# Captured before HOME moves to the temp dir: the oura-sync wrapper drill runs
+# the real scripts/oura_sync.sh and the real oura_sync.py from this checkout.
+OURA_REPO="${OURA_REPO:-$(cd "$HERE/../../mbs-oura-sync" 2>/dev/null && pwd)}"
 HB="${HB:-$HERE/mbs_heartbeat.sh}"
 T="$(mktemp -d "${TMPDIR:-/tmp}/hb_drill.XXXXXX")"
 trap 'rm -rf "$T"' EXIT
@@ -347,6 +351,92 @@ rm "$DV/e/notes.md"
 dupfile "$DV/legit.md" 2
 c27_none "a file that drops below its count is quiet"
 if grep -q "/legit.md	2" "$DS/dupblock_baseline.txt"; then ok "and its ledger count falls"; else bad "ledger did not fall: $(grep legit.md "$DS/dupblock_baseline.txt")"; fi
+
+echo "check 14c: oura-sync stamp"
+C14S="$(grep -n '^# --- check 14c:' "$HB" | cut -d: -f1)"
+C14E="$(grep -n '^# --- check 15:' "$HB" | cut -d: -f1)"
+C26S="$(grep -n '^# --- check 26:' "$HB" | cut -d: -f1)"
+C26E="$(awk -v s="$C26S" 'NR>s && /^# --- check /{print NR; exit}' "$HB")"
+sed -n "${C14S},$((C14E - 1))p" "$HB" > "$T/c14c.sh"
+sed -n "${C26S},$((C26E - 1))p" "$HB" > "$T/c26.sh"
+OS="$T/oura_state"; mkdir -p "$OS"
+region() {
+  STATE_DIR="$OS" HOME="$T/ohome" TODAY="$(date +%Y-%m-%d)" /bin/bash -c '
+    set -uo pipefail
+    MCS_STALE_REPORTED=0; DEFER_DAILY=0; DEFER_TEAM_BRIEF=0
+    add_finding() { echo "FINDING: $1"; }
+    source "$1"
+  ' _ "$1" 2>&1
+}
+r_none() { local out; out="$(region "$2")"; if [ -z "$out" ]; then ok "$1"; else bad "$1 ($out)"; fi; }
+r_has()  { local out; out="$(region "$2")"; case "$out" in *"$3"*) ok "$1" ;; *) bad "$1 (got: $out)" ;; esac; }
+mkdir -p "$T/ohome/Library/LaunchAgents"
+r_none "no plist: silent even with no stamp" "$T/c14c.sh"
+touch "$T/ohome/Library/LaunchAgents/com.mbs.oura-sync.plist"
+r_has "plist, never stamped" "$T/c14c.sh" "oura-sync has not completed since none"
+date +%Y-%m-%d > "$OS/last_oura_sync_run"
+r_none "stamped today" "$T/c14c.sh"
+date -v-1d +%Y-%m-%d > "$OS/last_oura_sync_run"
+r_none "stamped yesterday (late wake)" "$T/c14c.sh"
+date -v-2d +%Y-%m-%d > "$OS/last_oura_sync_run"
+r_has "stamped two days ago" "$T/c14c.sh" "oura-sync has not completed since $(date -v-2d +%Y-%m-%d)"
+
+echo "oura-sync wrapper into check 26 (real wrapper and oura_sync.py, faked Oura API)"
+if [ -z "$OURA_REPO" ] || [ ! -f "$OURA_REPO/scripts/oura_sync.sh" ] || [ ! -x "$OURA_REPO/.venv/bin/python" ]; then
+  bad "no mbs-oura-sync checkout with scripts/oura_sync.sh and a .venv beside this repo (set OURA_REPO)"
+else
+  SR="$T/oura_repo"; mkdir -p "$SR/scripts" "$SR/src" "$SR/.venv/bin" "$T/ovault"
+  cp "$OURA_REPO/scripts/oura_sync.sh" "$SR/scripts/"
+  ln -s "$OURA_REPO/.venv/bin/python" "$SR/.venv/bin/python"
+  # The driver stands in for src/oura_sync.py: it runs the real module with
+  # api.requests.get answering every call 200 with empty data, except the slug
+  # named in DRILL_FAIL_SLUG, which gets HTTP 500.
+  cat > "$SR/src/oura_sync.py" <<PYEOF
+import os, sys
+sys.path.insert(0, "$OURA_REPO/src")
+import api, oura_sync
+class R:
+    def __init__(self, code): self.status_code = code; self.response = self
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            e = api.requests.HTTPError("HTTP %d" % self.status_code); e.response = self; raise e
+    def json(self): return {"data": [], "next_token": None}
+fail = os.environ.get("DRILL_FAIL_SLUG", "")
+api.requests.get = lambda url, **k: R(500 if fail and url.endswith("/" + fail) else 200)
+sys.exit(oura_sync.main(sys.argv[1:] + ["--vault", "$T/ovault"]))
+PYEOF
+  OH="$T/ohome"
+  owrap() {
+    HOME="$OH" OURA_NET_URL="file:///dev/null" OURA_PERSONAL_ACCESS_TOKEN=drill \
+      OURA_LOCK_PATH="$OH/.mbs_automation/oura_sync.lock" \
+      OURA_FAILURES_PATH="$OH/.mbs_automation/oura_endpoint_failures.txt" \
+      DRILL_FAIL_SLUG="${1:-}" /bin/bash "$SR/scripts/oura_sync.sh"
+  }
+  OS="$OH/.mbs_automation"; rm -rf "$OS"
+  OLOG="$OS/oura_sync.log"
+  lastterm() { grep -E 'completed successfully|FAILED' "$OLOG" | tail -1; }
+  owrap daily_spo2; RC=$?
+  if [ "$RC" -eq 0 ] && lastterm | grep -q "completed successfully; stamped"; then ok "one failing run: exit 0, stamped"; else bad "one failing run: rc=$RC, $(lastterm)"; fi
+  if grep -q 'endpoints: .*failed: daily_spo2=http-500' "$OLOG"; then ok "the endpoints: line names daily_spo2=http-500"; else bad "no endpoints: line naming daily_spo2 ($(grep endpoints: "$OLOG" | tail -1))"; fi
+  if [ "$(grep -c Syncing "$OLOG")" -eq 14 ]; then ok "lookback 14 from the wrapper (14 Syncing lines)"; else bad "Syncing lines: $(grep -c Syncing "$OLOG")"; fi
+  r_none "check 26 silent after one failing run" "$T/c26.sh"
+  owrap daily_spo2; RC=$?
+  if [ "$RC" -eq 0 ] && tail -1 "$OLOG" | grep -q "already ran for"; then ok "stamped day: second fire is a no-op"; else bad "stamped day: rc=$RC, $(tail -1 "$OLOG")"; fi
+  rm -f "$OS/last_oura_sync_run"
+  owrap daily_spo2; RC=$?
+  if [ "$RC" -eq 5 ] && lastterm | grep -q "FAILED (rc=5)"; then ok "second consecutive failing run: exit 5, FAILED"; else bad "second failing run: rc=$RC, $(lastterm)"; fi
+  if [ ! -f "$OS/last_oura_sync_run" ]; then ok "no stamp after FAILED"; else bad "stamp written after FAILED"; fi
+  r_has "check 26 reports oura_sync.log" "$T/c26.sh" "oura_sync.log ($(date +%Y-%m-%d))"
+  owrap; RC=$?
+  if [ "$RC" -eq 0 ] && lastterm | grep -q "completed successfully"; then ok "clean run after FAILED: exit 0"; else bad "clean run: rc=$RC, $(lastterm)"; fi
+  if [ ! -s "$OS/oura_endpoint_failures.txt" ]; then ok "clean run resets the counts"; else bad "counts not reset: $(cat "$OS/oura_endpoint_failures.txt")"; fi
+  r_none "check 26 clears after the clean run" "$T/c26.sh"
+  rm -f "$OS/last_oura_sync_run"; owrap; RC1=$?
+  rm -f "$OS/last_oura_sync_run"; owrap; RC2=$?
+  if [ "$RC1" -eq 0 ] && [ "$RC2" -eq 0 ] && grep 'endpoints:' "$OLOG" | tail -1 | grep -q 'failed: none'; then ok "empty-data 200s on two runs are not failures"; else bad "empty data: rc=$RC1/$RC2"; fi
+  date +%Y-%m-%d > "$OS/last_oura_sync_run"
+  r_none "the wrapper's stamp satisfies check 14c" "$T/c14c.sh"
+fi
 
 echo "per-host LD_EXPECTED"
 LDS="$(grep -n '^case "\$(hostname -s)" in' "$HB" | cut -d: -f1)"
