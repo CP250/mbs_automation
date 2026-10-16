@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.mbs.tasks-rollover</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/cpreston/dev/mbs_automation/scripts/tasks_rollover.sh</string>
+    </array>
+
+    <!-- garm only (the script exits 0 on any other host). Every 5 minutes: once per day, roll the tasks note over (create today's note, carry, garden leave block) as soon as yesterday's note has been quiet for ROLLOVER_QUIET_MINUTES, forced from ROLLOVER_FORCE_AFTER. Added 2026-10-16; heartbeat check 40. -->
+    <key>StartInterval</key>
+    <integer>300</integer>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+        <key>ROLLOVER_QUIET_MINUTES</key>
+        <string>10</string>
+        <key>ROLLOVER_FORCE_AFTER</key>
+        <string>09:00</string>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>/Users/cpreston/.mbs_automation/tasks_rollover.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/cpreston/.mbs_automation/tasks_rollover.err.log</string>
+</dict>
+</plist>

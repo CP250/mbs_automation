@@ -79,6 +79,13 @@ export CLAUDE_IDLE_SECONDS="${CLAUDE_IDLE_SECONDS:-600}"
 # shellcheck source=./lib_auth.sh
 source "$(dirname "$0")/lib_auth.sh"
 
+# Everything that makes or rewrites the tasks note (create, frontmatter heal,
+# open_tasks, carry-forward, residue, rescue, garden leave block, triage
+# first-seen, skip-banner strike, the note lock) lives in lib_tasks_note.sh
+# since 2026-10-16, shared with com.mbs.tasks-rollover (tasks_rollover.sh).
+# shellcheck source=./lib_tasks_note.sh
+source "$(dirname "$0")/lib_tasks_note.sh"
+
 # Pre-flight: if the reauth sentinel is fresh, the API will 401 again. Skip
 # cleanly so launchd doesn't burn cycles, and re-fire the notification.
 if needs_reauth_skip "$LOG"; then
@@ -116,7 +123,7 @@ echo $$ > "$LOCK_DIR/pid"
 # silence: see the day bound in the retry loop below.
 echo "$TODAY" > "$LOCK_DIR/day"
 # Release the lock on any exit path (success, error, SIGTERM from `launchctl bootout`).
-trap 'rm -rf "$LOCK_DIR" 2>/dev/null' EXIT INT TERM
+trap 'tasks_note_lock_release 2>/dev/null; rm -rf "$LOCK_DIR" 2>/dev/null' EXIT INT TERM
 
 # launchd starts jobs with a minimal PATH; prepend the common install locations
 # for the `claude` binary before resolving it.
@@ -132,569 +139,62 @@ echo "$(ts) - starting /obsidian-daily for $TODAY (claude: $CLAUDE_BIN)" >> "$LO
 
 cd "$VAULT" || { echo "$(ts) - ERROR: cannot cd to $VAULT" >> "$LOG"; exit 1; }
 
-# --- carry-forward: pull yesterday's above-Vault-Agent region into today ------
-# Moves the region above the first "## Vault Agent" heading from the most-recent
-# prior tasks note into today's note (verbatim, minus resolved - [x] / - [-]
-# lines, which are archived in the source since 2026-10-15) and blanks that
-# region in the source. Runs after the skeleton pre-flight
-# below and before the claude -p call, so the morning report sees the carried
-# tasks. Deterministic and idempotent: blanking the source means a launchd retry
-# on the same day finds nothing to carry. Never touches the "## Vault Agent"
-# section, the sibling agent sections, or "# Archived" - only P's own region.
-# Work-session blocks (2026-08-02, P's top-of-note placement decision): a
-# "### Work session" heading through its "<!-- /work-session -->" terminator is
-# the on-demand /obsidian-work-session command's own of-the-moment section. It
-# NEVER carries forward (stateless-by-design); it is routed into the preserved
-# tail instead, so it stays readable in its own day's note above "## Vault
-# Agent" rather than being destroyed or ratcheting into tomorrow.
-# Garden-leave blocks (2026-10-12) are routed the same way: "### Garden leave"
-# through "<!-- /garden-leave -->" is the per-day record write_garden_leave_block
-# puts at the top of the note; it stays in its own day's note, never carries.
-# Machine-written "## " sections (2026-08-19, same principle generalized): any
-# sibling job that appends its own section to the tasks note BEFORE the daily
-# report has written "## Vault Agent" that day (or on a day the report never
-# runs at all: 401, no network) lands its section inside P's region, and every
-# following morning sweeps it forward with his real open items. Observed:
-# "## Oslo - Weekly Stale-Drafts (2026-08-17)" and "## ⚠️ Automation alerts"
-# both rode 08-17 -> 08-18 -> 08-19, the Oslo one twice. Fix: the carry boundary
-# is now ANY level-2 heading, not just "## Vault Agent". Everything from the
-# first "## " onward is preserved in its own day's note, exactly like a
-# work-session block, and nothing machine-written ratchets into tomorrow.
-# This is a structural rule, not a registry of known job headings, so a job
-# added later inherits it. Justification, empirical (2026-08-19, scan of all 97
-# tasks notes): every "## " heading that has ever appeared in this journal is
-# machine-written (Vault Agent + its skipped/car-sweep variants, Oslo weekly and
-# monthly, Automation alerts, Web Watchers, Weekly review, The Record). P's own
-# region is plain lines, bullets and checkboxes, never a heading.
-# Known tradeoff, accepted: a line P types BELOW a banner on a broken morning
-# does not carry. It is preserved in that day's note, not lost, and the log line
-# below names every section left behind, which is where to look for it. Fixing
-# that properly needs each writer to emit a terminator the way
-# /obsidian-work-session emits "<!-- /work-session -->"; not done here because
-# one of the writers (com.mbs.oslo-weekly) lives in ~/dev/oslo, out of scope.
-carry_forward_prior_tasks() {
-  local today="$1" tasks_dir="$2" today_file="$3" log="$4"
-  local prior_date prior_file
-  prior_date="$(ls "$tasks_dir"/tasks_*.md 2>/dev/null \
-    | grep -oE 'tasks_[0-9]{4}-[0-9]{2}-[0-9]{2}\.md' \
-    | sed -E 's/tasks_(.*)\.md/\1/' \
-    | awk -v t="$today" '$0 < t' | sort | tail -1)"
-  [ -z "$prior_date" ] && { echo "$(ts) - carry-forward: no prior note, skip" >> "$log"; return 0; }
-  prior_file="$tasks_dir/tasks_${prior_date}.md"
-  [ -f "$today_file" ] || { echo "$(ts) - carry-forward: today file missing, skip" >> "$log"; return 0; }
-  # Temp dir inside the tasks folder so the final mv is same-filesystem (atomic).
-  local tmp; tmp="$(mktemp -d "${tasks_dir}/.carry.XXXXXX")"
-  # shellcheck disable=SC2064
-  trap "rm -rf '$tmp'" RETURN
-  # Split prior note: fm (frontmatter) / carry (region, resolved lines dropped) /
-  # tail (first boundary heading onward, plus any work-session block above it).
-  # Boundary = the first level-2 heading of any kind, which on a healthy day is
-  # "## Vault Agent"; a "# Archived" also stops carry as a fallback for notes
-  # with no agent section. machf collects the machine headings that sat ABOVE
-  # "## Vault Agent", i.e. the ones this fix stops sweeping forward, for the log.
-  # Ticked lines (2026-10-15, P: "unacceptable" that they vanished). A resolved
-  # - [x] / - [-] line in P's region, with its indented children, is no longer
-  # dropped: it goes to donef with the Archiver's own metadata (lock + date +
-  # spider + heading chain, the format task-archiver writes on Cmd+A), stamped
-  # with the PRIOR note's date, and is appended to that note's "# Archived"
-  # section below. Same morning, the archived-comment sweep (obsidian-daily.md
-  # step 3d) reads exactly those lines. Lines P already archived with Cmd+A are
-  # under "# Archived" in the tail and are not touched again.
-  awk -v carryf="$tmp/carry" -v tailf="$tmp/tail" -v fmf="$tmp/fm" -v machf="$tmp/machine" \
-      -v donef="$tmp/done" -v stamp="🔒 [[$prior_date]] 🕸️" -v chain0="tasks_$prior_date" '
-    BEGIN{ inbody=0; intail=0; fmc=0; ws=0; gl=0; dind=-1; chain=chain0 }
-    { if (NR==1 && $0!="---") inbody=1
-      if (!inbody){ print >> fmf; if($0=="---"){fmc++; if(fmc==2)inbody=1} next }
-      if (!intail && ($0 ~ /^## / || $0 ~ /^# Archived/)) { intail=1; ws=0; gl=0; dind=-1 }
-      if (intail){
-        if ($0 ~ /^## Vault Agent/) va=1
-        if (!va && $0 ~ /^## / && $0 !~ /^## Vault Agent/) print >> machf
-        print >> tailf; next }
-      if (!ws && !gl && $0 ~ /^### Work session/) { ws=1; dind=-1 }
-      if (ws){ print >> tailf; if ($0 ~ /<!-- \/work-session -->/) ws=0; next }
-      if (!gl && $0 ~ /^### Garden leave/) { gl=1; dind=-1 }
-      if (gl){ print >> tailf; if ($0 ~ /<!-- \/garden-leave -->/) gl=0; next }
-      if (dind >= 0) {
-        if ($0 ~ /^[ \t]*$/) dind=-1
-        else { match($0, /^[ \t]*/)
-               if (RLENGTH > dind) { print substr($0, dind+1) >> donef; next }
-               dind=-1 } }
-      if ($0 ~ /^[[:space:]]*- \[[xX-]\]$/) next
-      if ($0 ~ /^[[:space:]]*- \[[xX-]\][[:space:]]/) {
-        match($0, /^[ \t]*/); dind=RLENGTH
-        line=substr($0, dind+1); sub(/[ \t]+$/, "", line)
-        print line " " stamp " " chain >> donef; next }
-      if ($0 ~ /^#+ /) { chain=$0; sub(/^#+ +/, "", chain) }
-      print >> carryf }' "$prior_file"
-  [ -f "$tmp/fm" ] || : > "$tmp/fm"; [ -f "$tmp/carry" ] || : > "$tmp/carry"
-  [ -f "$tmp/tail" ] || : > "$tmp/tail"; [ -f "$tmp/done" ] || : > "$tmp/done"
-  local has_carry=0 n_done
-  grep -q '[^[:space:]]' "$tmp/carry" && has_carry=1
-  n_done="$(grep -c '🔒' "$tmp/done" | tr -d ' ')"
-  if [ "$has_carry" -eq 0 ] && [ ! -s "$tmp/done" ]; then
-    echo "$(ts) - carry-forward: empty region, skip" >> "$log"; return 0
-  fi
-  # Tail with the ticked lines appended to the end of its "# Archived" section,
-  # or a new "# Archived" section at the end when the note has none.
-  if [ -s "$tmp/done" ]; then
-    awk -v donef="$tmp/done" '
-      { L[++n]=$0 }
-      END{ a=0; for(i=1;i<=n;i++) if (L[i] ~ /^# Archived/) { a=i; break }
-        if (!a) {
-          last=0; for(i=1;i<=n;i++) if (L[i] ~ /[^ \t]/) last=i
-          for(i=1;i<=last;i++) print L[i]
-          if (last) print ""
-          print "# Archived"; print ""
-          while ((getline d < donef) > 0) print d
-          exit }
-        e=n; for(i=a+1;i<=n;i++) if (L[i] ~ /^# / || L[i] ~ /^## /) { e=i-1; break }
-        last=a; for(i=a+1;i<=e;i++) if (L[i] ~ /[^ \t]/) last=i
-        for(i=1;i<=last;i++) print L[i]
-        if (last==a) print ""
-        while ((getline d < donef) > 0) print d
-        if (e < n) print ""
-        for(i=last+1;i<=n;i++) if (i > e || L[i] ~ /[^ \t]/) print L[i] }' \
-      "$tmp/tail" > "$tmp/tail2" && mv "$tmp/tail2" "$tmp/tail"
-  fi
-  # Today = today frontmatter + carried region + today's existing body (prepend).
-  if [ "$has_carry" -eq 1 ]; then
-    awk -v carryf="$tmp/carry" '
-      BEGIN{ fmc=0; inbody=0; pc=0 }
-      { if(!inbody){ print; if($0=="---"){fmc++; if(fmc==2)inbody=1} next }
-        if(!pc){ print ""; while((getline l < carryf)>0) print l; close(carryf); pc=1 }
-        print }
-      END{ if(!pc){ print ""; while((getline l < carryf)>0) print l; close(carryf) } }' \
-      "$today_file" > "$tmp/today"
-  fi
-  # Source = its frontmatter + 3-line writing gap + tail (agent + archived kept).
-  { cat "$tmp/fm"; printf '\n\n\n'; cat "$tmp/tail"; } > "$tmp/prior"
-  [ "$has_carry" -eq 1 ] && mv "$tmp/today" "$today_file"
-  mv "$tmp/prior" "$prior_file"
-  if [ "$has_carry" -eq 1 ]; then
-    echo "$(ts) - carry-forward: moved $prior_date region into $today, blanked source" >> "$log"
-  else
-    echo "$(ts) - carry-forward: nothing open to carry from $prior_date" >> "$log"
-  fi
-  [ -s "$tmp/done" ] && echo "$(ts) - carry-forward: archived ${n_done} ticked line(s) into $prior_date # Archived" >> "$log"
-  # Name every machine-written section left behind, so an unexpected one (P
-  # starting a "## " heading of his own) is visible here rather than silent.
-  if [ -s "$tmp/machine" ]; then
-    echo "$(ts) - carry-forward: left $(wc -l < "$tmp/machine" | tr -d ' ') machine-written section(s) in $prior_date: $(tr '\n' '|' < "$tmp/machine")" >> "$log"
-  fi
-}
-
-# --- triage first-seen state (project_task_triage phase 1, 2026-08-01) --------
-# Records the date each open line in P's region was first seen, so the claude
-# triage step (obsidian-daily.md step 3c) can age errands with 14-day staleness
-# flags. Runs AFTER carry-forward, so resolved [x]/[-] lines never enter the
-# state. It stops at the first level-2 heading, the same boundary the
-# carry-forward splitter uses, so an alert bullet a sibling job wrote into
-# today's note before the report landed is never aged as one of P's errands
-# (2026-08-19; previously it stopped only at "## Vault Agent"). Work-session
-# and garden-leave blocks are skipped for the same reason (2026-10-12 for the
-# latter): machine-written, never P's errands.
-# Format: YYYY-MM-DD<TAB>normalized line text; append-only, deduped on
-# the exact line text (an edited line is a new identity and restarts its age;
-# accepted). Pure bash/BSD, no network, bash-3.2 safe (no arrays needed).
-update_triage_first_seen() {
-  local today="$1" today_file="$2" state="$3" log="$4"
-  [ -f "$today_file" ] || return 0
-  local tmp tab added=0 line
-  tmp="$(mktemp)"; tab="$(printf '\t')"
-  awk 'NR==1 && $0=="---" {fm=1; next}
-       fm==1 {if ($0=="---") fm=0; next}
-       /^## / || /^# Archived/ {exit}
-       /^### Work session/ {ws=1}
-       ws==1 {if ($0 ~ /<!-- \/work-session -->/) ws=0; next}
-       /^### Garden leave/ {gl=1}
-       gl==1 {if ($0 ~ /<!-- \/garden-leave -->/) gl=0; next}
-       {print}' "$today_file" \
-    | sed -E 's/^[[:space:]]*- \[[ xX-]\][[:space:]]*//; s/^[[:space:]]*-[[:space:]]+//; s/[[:space:]]+/ /g; s/^ //; s/ $//' \
-    | grep -v '^$' | sort -u > "$tmp"
-  touch "$state"
-  while IFS= read -r line; do
-    grep -qF "${tab}${line}" "$state" || { printf '%s\t%s\n' "$today" "$line" >> "$state"; added=$((added + 1)); }
-  done < "$tmp"
-  rm -f "$tmp"
-  echo "$(ts) - triage first-seen: recorded $added new line(s)" >> "$log"
-}
-
-# --- garden leave daily block (2026-10-12) -----------------------------------
-# P's garden leave program (admin/betterment/project_garden_leave.md, read it):
-# six skill goals with a Dec 13 test each, and seven things he does every day.
-# This writes the day's record at the TOP of today's tasks note, after the
-# carry-forward has prepended his region and before the claude call:
-#
-#   ### Garden leave: day N of T, Ddd YYYY-MM-DD (L days to <end>)
-#   - [ ] read #leave/read                       (seven boxes, one tag each)
-#   - skill advanced today, tick each one that moved:
-#       - [ ] shirt #leave/skill/shirt
-#           - next: <first unchecked box of that skill's project file>
-#   - at the houses, open #at/ boxes: <count and top 3 per place>
-#   <!-- /garden-leave -->
-#
-# Why the top of the note and not a "## " section: his region is 600 lines on
-# a normal day and a "## " section lands below it, where he would never scroll
-# on the phone. The block is a level-3 heading with a terminator, so the
-# carry-forward routes it into its own day's preserved tail exactly like a
-# work-session block (it never rides into tomorrow, and yesterday's ticks stay
-# in yesterday's note), update_triage_first_seen skips it, and the claude
-# triage step is told not to classify it (obsidian-daily.md step 3c). The
-# dashboard (admin/betterment/dashboard_garden_leave.md) counts the ticks by
-# tag and done date. Heartbeat check 37 reports a morning the report landed
-# without this block.
-#
-# Roster, window and labels come from the program note's frontmatter, so P can
-# change the skills or the end date in Obsidian without touching this script:
-#   gl_start: YYYY-MM-DD        gl_end: YYYY-MM-DD
-#   gl_skills: [shirt, kintsugi, ...]      gl_skill_<name>: <vault-relative path>
-#   gl_label_<name>: <display label>       (optional; defaults to the name)
-# Idempotent: a note that already holds the terminator is left alone, so the
-# 30-minute retry grid never writes a second block. Outside the window, or with
-# the program note missing, it logs one line and does nothing. No network.
-# Written for macOS bash 3.2 and BSD awk/sed/find/xargs; no date -v / date -d
-# (the day arithmetic is the civil-to-days formula in awk so the same code
-# runs under GNU tools in a test VM).
-
-# Day number of YYYY-MM-DD (days since 1970-01-01), pure awk, no date binary.
-gl_daynum() {
-  printf '%s\n' "$1" | awk -F- '{
-    y=$1+0; m=$2+0; d=$3+0
-    if (m<=2) y--
-    era=int(y/400); yoe=y-era*400
-    mp=(m>2)?m-3:m+9
-    doy=int((153*mp+2)/5)+d-1
-    doe=yoe*365+int(yoe/4)-int(yoe/100)+doy
-    print era*146097+doe-719468 }'
-}
-
-# One frontmatter scalar from a note: gl_fm_get <file> <key>. Strips quotes.
-gl_fm_get() {
-  awk 'NR==1 && $0!="---"{exit} NR==1{next} /^---[[:space:]]*$/{exit} {print}' "$1" \
-    | sed -n "s/^$2:[[:space:]]*//p" | head -1 | sed -e 's/^"//' -e 's/"$//' -e "s/^'//" -e "s/'$//" | tr -d '\r'
-}
-
-# The first unchecked "- [ ]" line of a note, as P would read it in the block:
-# checkbox and tags removed, the 🆔 id kept in parentheses, a 📅 date kept as
-# "due <date>", scheduled/start/created/recurrence fields dropped, long lines
-# cut at a word boundary. Emoji are matched as literal byte strings, never in a
-# character class, so this works under launchd's C locale as well as UTF-8.
-# Angle brackets are dropped from every copied line (here and in gl_at_place):
-# Obsidian reads a bare <word> as an unclosed HTML tag, and Live Preview then
-# stops rendering the rest of the block as checkboxes (2026-10-14).
-gl_next_action() {
-  local f="$1"
-  [ -f "$f" ] || { printf 'project file not found: %s' "$f"; return 0; }
-  local line
-  line="$(awk 'NR==1 && $0=="---"{fm=1; next} fm==1{ if ($0 ~ /^---[[:space:]]*$/) fm=0; next }
-               /^[[:space:]]*- \[ \][[:space:]]/{print; exit}' "$f")"
-  [ -n "$line" ] || { printf 'no open box in %s: write one' "$(basename "$f" .md)"; return 0; }
-  printf '%s\n' "$line" \
-    | sed -E 's/^[[:space:]]*- \[ \][[:space:]]*//' \
-    | sed -E 's/🆔 ([A-Za-z0-9_-]+)/(\1)/g; s/📅 ([0-9]{4}-[0-9]{2}-[0-9]{2})/due \1/g' \
-    | sed -E 's/ ?(⏳|🛫|➕|✅) ?[0-9-]*//g; s/ ?🔁 [^#(]*//g' \
-    | sed -E 's/\[\[([^]|]*\|)?([^]]*)\]\]/\2/g; s/\[[a-zA-Z_]+:: ?[^]]*\]//g; s/#[^[:space:]]+//g; s/[<>]//g; s/[[:space:]]+/ /g; s/^ //; s/ $//' \
-    | awk '{ if (length($0) > 200) { out=""; for (i=1; i<=NF; i++) { if (length(out " " $i) > 190) break; out=(out=="" ? $i : out " " $i) } print out " ..." } else print }'
-}
-
-# Open "- [ ]" lines carrying #at/<place>: the whole vault with the same
-# exclusion set as count_open_tasks plus _corpora and oura/raw (opaque and
-# historical trees), and daily_notes/ excluded for the same reason it is there
-# (the Vault Agent proposals quote #at/ tags in their own boxes), plus P's own
-# region of today's note read separately (everything above the first "## "),
-# which is where his loose #at/ lines live. Printed as "<count>" then up to
-# three stripped texts, one per line; wikilinks are reduced to their display
-# text so a truncated line never carries a broken [[...
-gl_at_place() {
-  local vault="$1" place="$2" today_file="$3" tmp
-  tmp="$(mktemp)"
-  { find "$vault" -type d \( -name trash -o -name .obsidian -o -name .git -o -name daily_notes \
-        -o -name _archive -o -name _logs -o -name _corpora -o -path '*/oura/raw' \) -prune \
-      -o -type f -name '*.md' ! -name 'pn.md' -print0 2>/dev/null \
-      | xargs -0 grep -hE "^[[:space:]]*- \[ \][[:space:]].*#at/${place}([^A-Za-z0-9_/]|\$)" /dev/null 2>/dev/null
-    [ -f "$today_file" ] && awk '/^## / || /^# Archived/ {exit} {print}' "$today_file" \
-      | grep -E "^[[:space:]]*- \[ \][[:space:]].*#at/${place}([^A-Za-z0-9_/]|\$)" 2>/dev/null
-  } | sed -E 's/^[[:space:]]*- \[ \][[:space:]]*//; s/🆔 [A-Za-z0-9_-]+//g; s/📅 [0-9-]+//g; s/ ?(⏳|🛫|➕|✅) ?[0-9-]*//g; s/\[\[([^]|]*\|)?([^]]*)\]\]/\2/g; s/\[[a-zA-Z_]+:: ?[^]]*\]//g; s/#[^[:space:]]+//g; s/[<>]//g; s/[[:space:]]+/ /g; s/^ //; s/ $//' \
-    | grep -v '^$' | sort -u > "$tmp"
-  wc -l < "$tmp" | tr -d ' '
-  head -3 "$tmp" | awk '{ if (length($0) > 70) print substr($0, 1, 67) "..."; else print }'
-  rm -f "$tmp"
-}
-
-write_garden_leave_block() {
-  local today="$1" today_file="$2" vault="$3" log="$4"
-  local prog="$vault/admin/betterment/project_garden_leave.md"
-  [ -f "$today_file" ] || { echo "$(ts) - garden-leave: today file missing, skip" >> "$log"; return 0; }
-  [ -f "$prog" ] || { echo "$(ts) - garden-leave: program note missing ($prog), skip" >> "$log"; return 0; }
-  if grep -qF '<!-- /garden-leave -->' "$today_file"; then
-    echo "$(ts) - garden-leave: block already present in $(basename "$today_file"), left as is" >> "$log"
-    return 0
-  fi
-  local start end
-  start="$(gl_fm_get "$prog" gl_start)"; end="$(gl_fm_get "$prog" gl_end)"
-  case "$start" in [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]) ;; *)
-    echo "$(ts) - garden-leave: gl_start unreadable in program note ('${start}'), skip" >> "$log"; return 0 ;; esac
-  case "$end" in [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]) ;; *)
-    echo "$(ts) - garden-leave: gl_end unreadable in program note ('${end}'), skip" >> "$log"; return 0 ;; esac
-  if [ "$today" \< "$start" ] || [ "$today" \> "$end" ]; then
-    echo "$(ts) - garden-leave: $today is outside the window $start to $end, skip" >> "$log"; return 0
-  fi
-  local d_start d_end d_today day total left dow
-  d_start="$(gl_daynum "$start")"; d_end="$(gl_daynum "$end")"; d_today="$(gl_daynum "$today")"
-  day=$((d_today - d_start + 1)); total=$((d_end - d_start + 1)); left=$((d_end - d_today))
-  # 1970-01-01 was a Thursday, so the weekday is the day number mod 7 from Thu.
-  dow="$(printf '%s\n' "$d_today" | awk '{ split("Thu Fri Sat Sun Mon Tue Wed", n, " "); print n[($1 % 7) + 1] }')"
-  local skills s label path next
-  skills="$(gl_fm_get "$prog" gl_skills | sed -e 's/^\[//' -e 's/\]$//' | tr ',' ' ')"
-  [ -n "$skills" ] || { echo "$(ts) - garden-leave: gl_skills empty in program note, skip" >> "$log"; return 0; }
-  local tab tmp; tab="$(printf '\t')"
-  tmp="$(mktemp -d "$(dirname "$today_file")/.gl.XXXXXX")"
-  # shellcheck disable=SC2064
-  trap "rm -rf '$tmp'" RETURN
-  {
-    printf '### Garden leave: day %s of %s, %s %s (%s days to %s)\n' "$day" "$total" "$dow" "$today" "$left" "$end"
-    printf -- '- [ ] read #leave/read\n'
-    printf -- '- [ ] admin (the admin set in [[project_garden_leave]]) #leave/admin\n'
-    printf -- '- [ ] exercise (stretch and strength, not sport) #leave/exercise\n'
-    printf -- '- [ ] fix something at the house (add the place tag when you tick) #leave/fix\n'
-    printf -- '- skill advanced today, tick each one that moved:\n'
-    for s in $skills; do
-      label="$(gl_fm_get "$prog" "gl_label_$s")"; [ -n "$label" ] || label="$s"
-      path="$(gl_fm_get "$prog" "gl_skill_$s")"
-      printf -- '%s- [ ] %s #leave/skill/%s\n' "$tab" "$label" "$s"
-      if [ -n "$path" ]; then
-        next="$(gl_next_action "$vault/$path")"
-        printf -- '%s%s- next: %s [[%s]]\n' "$tab" "$tab" "$next" "$(basename "$path" .md)"
-      else
-        printf -- '%s%s- next: no gl_skill_%s path in [[project_garden_leave]]\n' "$tab" "$tab" "$s"
-      fi
-    done
-    printf -- '- [ ] sport, or sport prep (write which) #leave/sport\n'
-    printf -- '- [ ] relax with Madi #leave/madi\n'
-    local place n lines summary=""
-    for place in new_canaan collinsville montreal toronto; do
-      lines="$(gl_at_place "$vault" "$place" "$today_file")"
-      n="$(printf '%s\n' "$lines" | head -1)"
-      summary="${summary}${summary:+, }${place} ${n}"
-      printf '%s\n' "$lines" | tail -n +2 | awk -v p="$place" -v t="$tab" 'NF { printf "%s- %s: %s\n", t, p, $0 }' > "$tmp/at_$place"
-    done
-    printf -- '- at the houses, open #at/ boxes ([[dashboard_places]]): %s\n' "$summary"
-    for place in new_canaan collinsville montreal toronto; do cat "$tmp/at_$place"; done
-    printf '<!-- /garden-leave -->\n'
-  } > "$tmp/block"
-  # Insert after the frontmatter, above the carried region; a note with no
-  # frontmatter (should not happen after ensure_tasks_frontmatter) gets it at line 1.
-  awk -v blockf="$tmp/block" '
-    BEGIN{ fmc=0; inbody=0; pc=0 }
-    { if (NR==1 && $0!="---") inbody=1
-      if(!inbody){ print; if($0=="---"){fmc++; if(fmc==2)inbody=1} next }
-      if(!pc){ print ""; while((getline l < blockf)>0) print l; close(blockf); pc=1 }
-      print }
-    END{ if(!pc){ print ""; while((getline l < blockf)>0) print l; close(blockf) } }' \
-    "$today_file" > "$tmp/today" && mv "$tmp/today" "$today_file"
-  echo "$(ts) - garden-leave: wrote day $day of $total block into $(basename "$today_file") (skills: $(echo $skills | tr ' ' ','); at-houses: $summary)" >> "$log"
-}
-
-# --- open_tasks frontmatter stamp (P decision 2026-08-07) ---------------------
-# Counts every unchecked "- [ ]" checkbox in the vault and writes it into
-# today's tasks note frontmatter as `open_tasks:`. Deliberately a MORNING
-# SNAPSHOT, not a live gauge: the value is written once, at note creation, and
-# is never refreshed later in the day (P: "static, morning snapshot only").
-#
-# Counting rules, all P-chosen after an empirical scan on 2026-08-07 (1531):
-#   - open = "- [ ]" only. "- [/]" in progress and "- [-]" cancelled do not count.
-#   - every unchecked box counts, with or without a Tasks-plugin 🆔.
-#   - excluded trees: trash/ and admin/pn.md (opaque by hard rule), _archive/
-#     and _logs/ (ranked historical by the search-tier rule), daily_notes/
-#     (the carry-forward region duplicates lines that also live at source, so
-#     counting it would inflate and would make the note count itself),
-#     plus .obsidian/ and .git/.
-# The /dev/null argument to grep is load-bearing: BSD xargs still runs the
-# command once when the input is empty, and grep with no file argument would
-# then block reading stdin. Written for macOS bash 3.2 and BSD find/xargs/grep.
-count_open_tasks() {
-  local vault="$1"
-  find "$vault" -type d \( -name trash -o -name .obsidian -o -name .git \
-      -o -name _archive -o -name _logs -o -name daily_notes \) -prune \
-    -o -type f -name '*.md' ! -name 'pn.md' -print0 2>/dev/null \
-    | xargs -0 grep -hE '^[[:space:]]*- \[ \][[:space:]]' /dev/null 2>/dev/null \
-    | wc -l | tr -d ' '
-}
-
-# Insert `open_tasks: <count>` into a tasks note's frontmatter, directly after
-# journal-date. Idempotent and non-destructive: if the field is already there
-# (a same-day retry, or P edited it) the value is left alone, which is what
-# "static snapshot" means. Used for notes that already existed when the daily
-# run started, e.g. one created by alert_tasks_note() during an earlier failure.
-ensure_open_tasks_field() {
-  local file="$1" count="$2" log="$3"
-  [ -f "$file" ] || return 0
-  [ "$(head -1 "$file")" = "---" ] || {
-    echo "$(ts) - open_tasks: $(basename "$file") has no frontmatter, skipped" >> "$log"; return 0; }
-  if awk 'NR==1{next} /^---[[:space:]]*$/{exit} {print}' "$file" | grep -q '^open_tasks:'; then
-    echo "$(ts) - open_tasks: already present in $(basename "$file"), left as is" >> "$log"
-    return 0
-  fi
-  local tmp; tmp="$(mktemp "${file%.md}.opentasksXXXXXX")"
-  awk -v c="$count" '
-    BEGIN{ fm=0; done=0 }
-    NR==1 && $0=="---" { print; fm=1; next }
-    fm==1 && done==0 && $0 ~ /^journal-date:/ { print; print "open_tasks: " c; done=1; next }
-    fm==1 && done==0 && $0 ~ /^---[[:space:]]*$/ { print "open_tasks: " c; print; done=1; fm=0; next }
-    fm==1 && $0 ~ /^---[[:space:]]*$/ { fm=0 }
-    { print }' "$file" > "$tmp" && mv "$tmp" "$file"
-  echo "$(ts) - open_tasks: stamped $count into $(basename "$file")" >> "$log"
-}
-
-# --- skip-banner self-heal (2026-08-22) --------------------------------------
-# Strikes a "## Vault Agent (skipped...)" banner that an EARLIER ladder wrote
-# into today's note, so a later grid fire that succeeds does not append a real
-# "## Vault Agent" report underneath a banner announcing that no report was
-# generated. Before the 30-minute grid there could only be one ladder per day,
-# so the banner was always the last word and this could not happen.
-#
-# Same self-healing principle as lib_auth.sh's unalert_tasks_note (2026-08-19),
-# and the same lesson behind it: an alert with no way to un-fire outlives the
-# condition it describes and then rides the carry-forward for days.
-#
-# Called once per run, AFTER carry-forward (so yesterday's note keeps its own
-# banner in its own day, which is accurate history) and BEFORE the claude
-# ladder (so the claude step never sees a "(skipped" heading it might try to
-# refresh instead of appending a clean one). If this run also fails, the ladder
-# rewrites the banner at the end, which is again accurate.
-#
-# Matching is anchored on the "(skipped" suffix, so the real "## Vault Agent"
-# section is never touched. Removes the heading, the blank line above it, and
-# every line down to the next "## " heading or EOF. Best-effort: any implausible
-# rewrite is discarded and logged rather than moved into place. bash 3.2 / BSD safe.
-clear_skip_banner() {
-  local note="$1" log="$2"
-  [ -f "$note" ] || return 0
-  grep -qE '^## Vault Agent \(skipped' "$note" 2>/dev/null || return 0
-  local tmp
-  tmp="$(mktemp "${note%.md}.skipbannerXXXXXX" 2>/dev/null)" || return 0
-  awk '
-    { lines[NR] = $0 }
-    END {
-      for (i = 1; i <= NR; i++) drop[i] = 0
-      for (i = 1; i <= NR; i++) {
-        if (lines[i] ~ /^## Vault Agent \(skipped/) {
-          drop[i] = 1
-          # Take the blank line above the heading too. The banner heredoc opens
-          # with a blank, so that line is the banner\047s own. Leaving it behind
-          # would add one blank line per write-then-strike cycle and, on a day
-          # that fails a dozen ladders, ratchet the note full of them. Same trap
-          # unalert_tasks_note documents.
-          if (i > 1 && lines[i-1] == "") drop[i-1] = 1
-          # Boundary is the next heading at ANY level, not just "## ". Found
-          # the hard way on the real 2026-08-21 note: com.mbs.pointer-check
-          # appends a "### Pointer check" section, so a "## "-only boundary ran
-          # to EOF and swallowed it. The sanity check below caught the rewrite
-          # and refused it, which would have made this function a silent no-op
-          # in exactly the case it exists for.
-          for (j = i + 1; j <= NR; j++) {
-            if (substr(lines[j], 1, 1) == "#") break
-            drop[j] = 1
-          }
-        }
-      }
-      # Re-separate on the way out: taking the blank above the heading can glue
-      # the line before the banner onto the heading that followed it. Repair
-      # ONLY at that seam, i.e. where the line we are about to print follows a
-      # line we dropped. Reformatting headings elsewhere is not this function\047s
-      # business and would touch sections it has no reason to rewrite.
-      prev = ""; started = 0
-      for (i = 1; i <= NR; i++) {
-        if (drop[i]) continue
-        if (started && substr(lines[i], 1, 1) == "#" && prev != "" && drop[i-1]) print ""
-        print lines[i]
-        prev = lines[i]; started = 1
-      }
-    }' "$note" > "$tmp" 2>/dev/null || { rm -f "$tmp"; return 0; }
-  local before after
-  before="$(wc -l < "$note" 2>/dev/null | tr -d ' ')"
-  after="$(wc -l < "$tmp" 2>/dev/null | tr -d ' ')"
-  case "$before$after" in
-    *[!0-9]*|'') rm -f "$tmp"; return 0 ;;
-  esac
-  # A banner is 6 lines at most (blank, heading, blank, one paragraph, blank).
-  # Anything bigger means the awk matched something it should not have.
-  if [ "$after" -lt 1 ] || [ "$after" -ge "$before" ] || [ $((before - after)) -gt 12 ]; then
-    rm -f "$tmp"
-    echo "$(ts) - skip-banner: implausible rewrite (${before} -> ${after} lines), left as is" >> "$log"
-    return 0
-  fi
-  mv "$tmp" "$note" 2>/dev/null || rm -f "$tmp"
-  echo "$(ts) - skip-banner: struck stale skip banner from $(basename "$note")" >> "$log"
-  return 0
-}
-
-# --- frontmatter self-heal (2026-10-12) -------------------------------------
-# The Obsidian Archiver plugin (Cmd+A on hoest) creates today's tasks note on
-# its own when P archives before this job has run (midnight to the first
-# successful run), and it creates it with NO frontmatter, body "# Archived".
-# Every later step assumes frontmatter: open_tasks stamping skips the file, and
-# carry-forward's insert awk never leaves its frontmatter branch, so it appends
-# the carried region at the END, below "# Archived", where the next morning's
-# carry boundary stops short of it and P's open items stop rolling forward.
-# Fix: give such a file the same frontmatter the pre-flight would have written,
-# above its existing body, before anything else touches it.
-ensure_tasks_frontmatter() {
-  local file="$1" day="$2" count="$3" log="$4"
-  [ -f "$file" ] || return 0
-  [ "$(head -1 "$file")" = "---" ] && return 0
-  local tmp; tmp="$(mktemp "${file%.md}.fmheal.XXXXXX")"
-  {
-    printf '%s\n' '---' 'journal: tasks' "journal-date: $day" "open_tasks: $count" '---' '' '' ''
-    cat "$file"
-  } > "$tmp" && mv "$tmp" "$file"
-  echo "$(ts) - pre-flight: $(basename "$file") existed without frontmatter (made outside this job, e.g. by the Archiver), prepended it" >> "$log"
-}
-
-# Pre-flight: guarantee today's tasks file exists on this Mac's local disk
-# BEFORE invoking Claude. Why: the Journals plugin's `tasks.autoCreate` is now
-# intentionally disabled (to prevent phone-Mac sync races - phone Journals would
-# otherwise create an empty competing version while Mac Obsidian is closed).
-# Mac is now solely responsible for tasks-file creation; pre-flight here means
-# the file exists even if the Claude call later fails (API overload, network,
-# whatever) and the user always has somewhere to write. See SETUP.md.
+# Pre-flight: today's tasks note. Since 2026-10-16 the note is normally rolled
+# over just after midnight by com.mbs.tasks-rollover on garm (P works past
+# midnight and that work counts for the new day). This run then only finishes
+# the morning's note work; if the rollover has not happened (job not installed,
+# not garm, or still waiting for P to pause), this run does it itself, through
+# the same functions, guard and deadline. All of it happens under the note
+# lock shared with the rollover job, released before the Claude ladder.
+# Why the note must exist before Claude runs: Journals' tasks autoCreate is
+# off everywhere (phone-Mac sync races, SETUP), so this estate is solely
+# responsible for creating it, and P always has somewhere to write even if the
+# Claude call fails.
 TODAYS_TASKS="$VAULT/daily_notes/tasks/tasks_${TODAY}.md"
 OPEN_TASKS="$(count_open_tasks "$VAULT")"
-ensure_tasks_frontmatter "$TODAYS_TASKS" "$TODAY" "$OPEN_TASKS" "$LOG"
-if [ ! -f "$TODAYS_TASKS" ]; then
-  mkdir -p "$(dirname "$TODAYS_TASKS")"
-  cat > "$TODAYS_TASKS" <<EOF
----
-journal: tasks
-journal-date: ${TODAY}
-open_tasks: ${OPEN_TASKS}
----
-
-
-
-EOF
-  echo "$(ts) - pre-flight: created minimal $TODAYS_TASKS" >> "$LOG"
-  echo "$(ts) - open_tasks: stamped ${OPEN_TASKS} at creation" >> "$LOG"
-else
-  ensure_open_tasks_field "$TODAYS_TASKS" "$OPEN_TASKS" "$LOG"
+if ! tasks_note_lock_acquire "$STATE_DIR" "$LOG" "$TASKS_NOTE_LOCK_WAIT_SECONDS"; then
+  echo "$(ts) - the tasks note lock stayed busy; not stamping, the next grid fire retries" >> "$LOG"
+  exit 0
 fi
+if ! tasks_rollover_done "$TODAY" "$STATE_DIR"; then
+  # Why the 06:00 fallback is rolling: the rollover job is not ticking at all
+  # (not installed, or not garm), or it is ticking and had not rolled yet.
+  RO_TICK_AGE=999999
+  [ -f "$STATE_DIR/tasks_rollover_tick" ] && RO_TICK_AGE=$(( ($(date +%s) - $(_tn_mtime "$STATE_DIR/tasks_rollover_tick")) / 60 ))
+  if [ "$RO_TICK_AGE" -le 15 ]; then RO_WHY="the rollover job had not rolled yet"; else RO_WHY="the rollover job is not running here"; fi
+  RO_PRIOR="$(tasks_prior_date "$TODAY" "$VAULT/daily_notes/tasks")"
+  if [ -n "$RO_PRIOR" ] && ! tasks_quiet_check "$VAULT/daily_notes/tasks/tasks_${RO_PRIOR}.md" "$LOG" "$STATE_DIR" daily; then
+    tasks_note_lock_release
+    echo "$(ts) - rollover not done and tasks_${RO_PRIOR} is not quiet yet; not stamping, the report waits for the next grid fire" >> "$LOG"
+    exit 0
+  fi
+  if ! RO_SAID="$(tasks_rollover_steps "$TODAY" "$VAULT" "$STATE_DIR" "$LOG" "mbs_daily (06:00 fallback: ${RO_WHY})")"; then
+    tasks_note_lock_release
+    echo "$(ts) - rollover: FAILED inside mbs_daily; not stamping, the next grid fire retries" >> "$LOG"
+    exit 1
+  fi
+  echo "$(ts) - rollover: ${RO_SAID} by mbs_daily (${RO_WHY})" >> "$LOG"
+else
+  echo "$(ts) - rollover: already done for $TODAY ($(sed -n 2p "$STATE_DIR/last_tasks_rollover" 2>/dev/null))" >> "$LOG"
+  # Residue: lines typed into the primary source after the rollover (a phone
+  # still showing yesterday). Then the rescue, which is a no-op on a normal day.
+  RO_PRIOR="$(tasks_prior_date "$TODAY" "$VAULT/daily_notes/tasks")"
+  [ -n "$RO_PRIOR" ] && carry_extra_source residue "$TODAY" "$RO_PRIOR" "$VAULT/daily_notes/tasks" "$TODAYS_TASKS" "$LOG" "$STATE_DIR"
+  carry_rescue "$TODAY" "$VAULT/daily_notes/tasks" "$TODAYS_TASKS" "$LOG" "$STATE_DIR"
+fi
+ensure_tasks_frontmatter "$TODAYS_TASKS" "$TODAY" "$OPEN_TASKS" "$LOG"
+# open_tasks stays a 06:00 snapshot (P, 2026-08-07): stamped here, never by the rollover.
+ensure_open_tasks_field "$TODAYS_TASKS" "$OPEN_TASKS" "$LOG"
 
-# Carry yesterday's above-Vault-Agent region forward into today (see function
-# definition above). Runs whether or not the pre-flight just created the file.
-carry_forward_prior_tasks "$TODAY" "$VAULT/daily_notes/tasks" "$TODAYS_TASKS" "$LOG"
-
-# Write the garden leave block at the top of today's note (see the function
-# above). After carry-forward so it sits above the carried region, before the
-# triage first-seen scan so its lines are never aged as errands.
-write_garden_leave_block "$TODAY" "$TODAYS_TASKS" "$VAULT" "$LOG"
-
-# Record first-seen dates for the post-carry open lines in P's region: the age
-# source for the claude triage step's errand staleness flags (project_task_triage).
+# Record first-seen dates for the open lines in P's region (again after the
+# residue pass): the age source for the claude triage step's errand staleness
+# flags (project_task_triage). Idempotent.
 update_triage_first_seen "$TODAY" "$TODAYS_TASKS" "$STATE_DIR/triage_first_seen" "$LOG"
 
 # Strike any "(skipped" banner an earlier ladder left in today's note, so this
 # run's report does not land underneath a notice saying it was never generated.
 clear_skip_banner "$TODAYS_TASKS" "$LOG"
+tasks_note_lock_release
 
 # Headless run. NOTE: custom slash commands (/obsidian-daily) do NOT expand in
 # `claude -p` non-interactive mode - they only work in an interactive session. So

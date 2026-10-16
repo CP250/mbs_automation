@@ -1333,7 +1333,7 @@ fi
 # other's jobs missing. Decided on hostname -s, so a machine that is neither
 # gets the laptop list.
 LD_EXPECTED_COMMON="com.mbs.aws-repo-backup com.mbs.mount-garm-assets"
-LD_EXPECTED_GARM="com.mbs.deploy com.mbs.deadman com.mbs.vault-index com.mbs.alcohol-stamp com.mbs.pointer-check com.mbs.oslo-weekly com.mbs.oslo-monthly com.mbs.review-monthly com.mbs.review-quarterly com.mbs.review-yearly com.mbs.cars-weekly com.mbs.weekly com.mbs.oura-sync com.mbs.oura-watch com.mbs.oura-trends com.mbs.team-brief com.mbs.web-watchers com.mbs.instagram-refresh com.mbs.the-record com.mbs.music-discovery com.mbs.mychart-sync com.mbs.daily com.mbs.vault-backup com.mbs.bulk-sync com.mbs.heartbeat com.mbs.obsidian-keepalive"
+LD_EXPECTED_GARM="com.mbs.deploy com.mbs.deadman com.mbs.vault-index com.mbs.alcohol-stamp com.mbs.pointer-check com.mbs.oslo-weekly com.mbs.oslo-monthly com.mbs.review-monthly com.mbs.review-quarterly com.mbs.review-yearly com.mbs.cars-weekly com.mbs.weekly com.mbs.oura-sync com.mbs.oura-watch com.mbs.oura-trends com.mbs.team-brief com.mbs.web-watchers com.mbs.instagram-refresh com.mbs.the-record com.mbs.music-discovery com.mbs.mychart-sync com.mbs.daily com.mbs.vault-backup com.mbs.bulk-sync com.mbs.heartbeat com.mbs.obsidian-keepalive com.mbs.tasks-rollover"
 case "$(hostname -s)" in
   garm) LD_EXPECTED="$LD_EXPECTED_GARM" ;;
   *) LD_EXPECTED="$LD_EXPECTED_COMMON" ;;
@@ -1875,9 +1875,9 @@ if [ -f "$TK_FILE" ]; then
     *)
       TK_AGE_DAYS=$(( ($(date +%s) - TK_EPOCH) / 86400 ))
       if [ "$TK_AGE_DAYS" -ge 365 ]; then
-        add_finding "the Claude setup-token (created ${TK_DATE}) is ${TK_AGE_DAYS} days old and has passed its one-year life - headless claude -p will answer 401; run: claude setup-token on garm, store it where the jobs read it, then write today's date to ~/.mbs_automation/claude_token_created"
+        add_finding "the Claude setup-token (created ${TK_DATE}) is ${TK_AGE_DAYS} days old and has passed its one-year life - headless claude -p will answer 401; renew it from hoest, in Terminal: cd ~/dev/mbs_automation && scripts/garm_claude_token_renew.sh (it ends: token renewed: completed successfully)"
       elif [ "$TK_AGE_DAYS" -ge 335 ]; then
-        add_finding "the Claude setup-token (created ${TK_DATE}) expires in about $((365 - TK_AGE_DAYS)) days - renew it before then: claude setup-token on garm (interactive), store it where the jobs read it, then write today's date to ~/.mbs_automation/claude_token_created"
+        add_finding "the Claude setup-token (created ${TK_DATE}) expires in about $((365 - TK_AGE_DAYS)) days - renew it before then, from hoest, in Terminal: cd ~/dev/mbs_automation && scripts/garm_claude_token_renew.sh (it ends: token renewed: completed successfully)"
       fi
       ;;
   esac
@@ -2231,6 +2231,34 @@ if [ "$(hostname -s)" = "garm" ]; then
         add_finding "Obsidian on garm died and com.mbs.obsidian-keepalive relaunched it at $(printf '%s' "$OB_RL" | cut -c1-16) (check 39b; ${OB_RLN} relaunch(es) in that log in total) - it is running again, so nothing needs doing unless this repeats; to see why it died, from hoest in Terminal: cd ~ && ssh garm 'grep -E \"relaunched|FAILED\" ~/.mbs_automation/obsidian_keepalive.log | tail -5; ls -t ~/Library/Logs/DiagnosticReports | grep -i obsidian | head -3'"
       fi
     fi
+  fi
+fi
+
+# --- check 40: the midnight rollover rolled today's tasks note (2026-10-16) ---
+# com.mbs.tasks-rollover (scripts/tasks_rollover.sh, every 5 minutes, garm only)
+# rolls the tasks note over just after midnight once yesterday's note has been
+# quiet for 10 minutes, forced from 09:00; mbs_daily.sh does it at 06:00 if the
+# job has not. Two questions, local files only (no network, never claude):
+#   (a) last_tasks_rollover's first line is today (whoever rolled it);
+#   (b) tasks_rollover_tick is younger than 15 minutes (the job is ticking).
+# One log line every run names who rolled today's note and when (line 2 of
+# last_tasks_rollover), so the 06:00 fallback rolling instead of the job is
+# visible even on a healthy day. garm only, by hostname, like check 39.
+if [ "$(hostname -s)" = "garm" ]; then
+  RO_NOW="$(date +%s)"
+  RO_DAY="$(head -1 "$STATE_DIR/last_tasks_rollover" 2>/dev/null)"
+  RO_WHO="$(sed -n 2p "$STATE_DIR/last_tasks_rollover" 2>/dev/null)"
+  RO_TM="$(stat -f %m "$STATE_DIR/tasks_rollover_tick" 2>/dev/null)"
+  case "$RO_TM" in ''|*[!0-9]*) RO_TM=0 ;; esac
+  if [ "$RO_TM" -gt 0 ]; then RO_TA="$(( (RO_NOW - RO_TM) / 60 )) min ago"; else RO_TA="never"; fi
+  if [ "$RO_DAY" = "$(date +%Y-%m-%d)" ]; then
+    echo "$(ts) - check 40: today's tasks note rolled at ${RO_WHO:-an unrecorded time}; rollover tick ${RO_TA}" >> "$LOG"
+  else
+    echo "$(ts) - check 40: today's tasks note NOT rolled yet (last: ${RO_DAY:-never}${RO_WHO:+, $RO_WHO}); rollover tick ${RO_TA}" >> "$LOG"
+    add_finding "today's tasks note has not been rolled over (check 40; last rollover ${RO_DAY:-never}${RO_WHO:+, $RO_WHO}) - neither com.mbs.tasks-rollover nor the 06:00 run did it, so yesterday's open items are still in yesterday's note; read why, from hoest in Terminal: cd ~ && ssh garm 'tail -5 ~/.mbs_automation/tasks_rollover.log; grep rollover ~/.mbs_automation/mbs_daily.log | tail -3' (a long run of 'deferred' lines means the old note kept changing; a FAILED line names the step)"
+  fi
+  if [ "$RO_TM" -eq 0 ] || [ $((RO_NOW - RO_TM)) -gt 900 ]; then
+    add_finding "com.mbs.tasks-rollover has not ticked in 15 minutes (check 40; last tick ${RO_TA}; it fires every 5) - the 06:00 run still rolls the note, but the midnight rollover is not running; check it is loaded, from hoest in Terminal: cd ~ && ssh garm 'launchctl print gui/\$(id -u)/com.mbs.tasks-rollover | grep -E \"state|last exit\"; tail -3 ~/.mbs_automation/tasks_rollover.log; cat ~/.mbs_automation/tasks_rollover.err.log' (proof: state = not running between ticks, last exit code = 0)"
   fi
 fi
 
