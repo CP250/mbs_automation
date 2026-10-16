@@ -2205,6 +2205,10 @@ fi
 #   (b)  today's health note exists (from 01:00; Journals makes it about 00:20)
 #   (c)  multi_git.log was written within 2 hours
 #   (d)  no keepalive pause file older than 24 hours
+#   (e)  Multi Git's last vault commit attempt was not refused (2026-10-16:
+#        part (c) passed while every hourly run said "commit GUARD blocked",
+#        because a refused run still writes its log line; the log being
+#        fresh never meant the commit happened)
 # One log line every run says what it saw, so a healthy day is visible too.
 # Local files and processes only, no network, never claude (ADR 2026-07-26).
 # garm only, by hostname: the laptop's Obsidian opens and closes with P.
@@ -2241,6 +2245,14 @@ if [ "$(hostname -s)" = "garm" ]; then
   if [ "$OB_MGA" -gt 120 ]; then
     add_finding "MBS Multi Git on garm has not written ~/.mbs_automation/multi_git.log in over 2 hours (check 39, part c; last: ${OB_MG}; it logs every hour, committed or no changes), so the hourly vault commit that recovers lost lines is not running - restart Obsidian on garm, from hoest in Terminal: cd ~ && ssh garm 'osascript -e \"quit app \\\"Obsidian\\\"\"; sleep 15; open -ga Obsidian; sleep 70; tail -2 ~/.mbs_automation/multi_git.log' (proof: a line timestamped within the last minutes; if none, check for a stale index.lock in ~/Vaults/storage_mbs/.git on garm); ${OB_ALSO}"
   fi
+  OB_MGL="$(grep -E '\[notes\] commit' "$OB_MGF" 2>/dev/null | tail -1)"
+  case "$OB_MGL" in
+    *"commit GUARD blocked: "*)
+      OB_MGB="${OB_MGL#*GUARD blocked: }"
+      add_finding "MBS Multi Git on garm is refusing every hourly vault commit (check 39, part e): its credential guard blocks any commit while a NEW untracked file has token, secret, credential, .pem or .key in its name, and the last run said: GUARD blocked: ${OB_MGB} - so no vault history is being recorded on garm. Open that file and check it holds no secret value; if it does not, track it once so the guard stops matching it, from hoest in Terminal: cd ~ && ssh garm 'cd ~/Vaults/storage_mbs && git add -- ${OB_MGB} && git status --short -- ${OB_MGB}' (proof: the line starts with A; the next hourly line in ~/.mbs_automation/multi_git.log says committed)" ;;
+    *"commit ERROR: "*)
+      add_finding "MBS Multi Git on garm failed its last vault commit (check 39, part e): $(printf '%s' "${OB_MGL#*commit ERROR: }" | cut -c1-200) - read the log, from hoest in Terminal: cd ~ && ssh garm 'grep -E \"ERROR|GUARD\" ~/.mbs_automation/multi_git.log | tail -5; cd ~/Vaults/storage_mbs && git status --short | head'" ;;
+  esac
   OB_PZF="$STATE_DIR/obsidian_keepalive.pause"
   if [ -f "$OB_PZF" ]; then
     OB_PZM="$(stat -f %m "$OB_PZF" 2>/dev/null)"
