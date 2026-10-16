@@ -420,7 +420,12 @@ if [ -z "$OURA_REPO" ] || [ ! -f "$OURA_REPO/scripts/oura_sync.sh" ] || [ ! -x "
 else
   SR="$T/oura_repo"; mkdir -p "$SR/scripts" "$SR/src" "$SR/.venv/bin" "$T/ovault"
   cp "$OURA_REPO/scripts/oura_sync.sh" "$SR/scripts/"
-  ln -s "$OURA_REPO/.venv/bin/python" "$SR/.venv/bin/python"
+  # A wrapper, not a symlink: a venv python reached through a symlink in another
+  # directory looks for pyvenv.cfg beside the link, misses it, and loses the
+  # venv's site-packages (found on garm 2026-10-16: "No module named requests";
+  # hoest's venv happened to tolerate the symlink).
+  printf '#!/bin/bash\nexec "%s/.venv/bin/python" "$@"\n' "$OURA_REPO" > "$SR/.venv/bin/python"
+  chmod +x "$SR/.venv/bin/python"
   # The driver stands in for src/oura_sync.py: it runs the real module with
   # api.requests.get answering every call 200 with empty data, except the slug
   # named in DRILL_FAIL_SLUG, which gets HTTP 500.
