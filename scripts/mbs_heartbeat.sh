@@ -1355,7 +1355,7 @@ fi
 # other's jobs missing. Decided on hostname -s, so a machine that is neither
 # gets the laptop list.
 LD_EXPECTED_COMMON="com.mbs.aws-repo-backup com.mbs.mount-garm-assets"
-LD_EXPECTED_GARM="com.mbs.deploy com.mbs.deadman com.mbs.vault-index com.mbs.alcohol-stamp com.mbs.pointer-check com.mbs.oslo-weekly com.mbs.oslo-monthly com.mbs.review-monthly com.mbs.review-quarterly com.mbs.review-yearly com.mbs.cars-weekly com.mbs.weekly com.mbs.oura-sync com.mbs.oura-watch com.mbs.oura-trends com.mbs.team-brief com.mbs.web-watchers com.mbs.instagram-refresh com.mbs.the-record com.mbs.music-discovery com.mbs.mychart-sync com.mbs.daily com.mbs.vault-backup com.mbs.bulk-sync com.mbs.heartbeat com.mbs.obsidian-keepalive com.mbs.tasks-rollover"
+LD_EXPECTED_GARM="com.mbs.deploy com.mbs.deadman com.mbs.vault-index com.mbs.alcohol-stamp com.mbs.pointer-check com.mbs.oslo-weekly com.mbs.oslo-monthly com.mbs.review-monthly com.mbs.review-quarterly com.mbs.review-yearly com.mbs.cars-weekly com.mbs.weekly com.mbs.oura-sync com.mbs.oura-watch com.mbs.oura-trends com.mbs.team-brief com.mbs.web-watchers com.mbs.instagram-refresh com.mbs.the-record com.mbs.music-discovery com.mbs.mychart-sync com.mbs.daily com.mbs.vault-backup com.mbs.bulk-sync com.mbs.heartbeat com.mbs.obsidian-keepalive com.mbs.tasks-rollover com.mbs.deferred-checks"
 case "$(hostname -s)" in
   garm) LD_EXPECTED="$LD_EXPECTED_GARM" ;;
   *) LD_EXPECTED="$LD_EXPECTED_COMMON" ;;
@@ -2329,6 +2329,59 @@ if [ "$(hostname -s)" = "garm" ]; then
   fi
   if [ "$RO_TM" -eq 0 ] || [ $((RO_NOW - RO_TM)) -gt 900 ]; then
     add_finding "com.mbs.tasks-rollover has not ticked in 15 minutes (check 40; last tick ${RO_TA}; it fires every 5) - the 06:00 run still rolls the note, but the midnight rollover is not running; check it is loaded, from hoest in Terminal: cd ~ && ssh garm 'launchctl print gui/\$(id -u)/com.mbs.tasks-rollover | grep -E \"state|last exit\"; tail -3 ~/.mbs_automation/tasks_rollover.log; cat ~/.mbs_automation/tasks_rollover.err.log' (proof: state = not running between ticks, last exit code = 0)"
+  fi
+fi
+
+# --- check 41: deferred checks are running and none failed (2026-10-16) -----
+# com.mbs.deferred-checks (scripts/deferred_checks.sh, hourly, garm only) runs
+# the checks build sessions commit to checks/pending/ and alerts only when one
+# does not pass. A silent runner and a dead runner look the same from the vault,
+# so this asks, from local files only (no network, never claude):
+#   (a) last_deferred_checks_run (an epoch) is under 3 hours old;
+#   (b) no result written in the last 3 days is FAIL or ERROR (the runner
+#       alerts once; this repeats it daily for 3 days, check 24's window);
+#   (c) no pending check is more than 2 hours past its expiry (header, or due
+#       plus 4 hours) with no result: the runner is up but not evaluating it.
+#       Checks more than 30 days past due are ignored.
+# Self-arming on plist presence, like checks 14, 19 and 31.
+if [ -f "$HOME/Library/LaunchAgents/com.mbs.deferred-checks.plist" ]; then
+  DC_NOW="$(date +%s)"
+  DC_RES="$STATE_DIR/deferred_checks"
+  DC_DIR="${DEFERRED_CHECKS_DIR:-$HOME/dev/mbs_automation/checks/pending}"
+  DC_LAST="$(head -1 "$STATE_DIR/last_deferred_checks_run" 2>/dev/null)"
+  case "$DC_LAST" in ''|*[!0-9]*) DC_LAST=0 ;; esac
+  if [ $((DC_NOW - DC_LAST)) -gt 10800 ]; then
+    if [ "$DC_LAST" -eq 0 ]; then DC_AGO="never"; else DC_AGO="$(( (DC_NOW - DC_LAST) / 3600 )) hours ago"; fi
+    add_finding "com.mbs.deferred-checks has not completed a run in 3 hours (check 41; last run ${DC_AGO}; it fires hourly) - deferred checks are not being evaluated, so their silence proves nothing; from hoest in Terminal: cd ~ && ssh garm 'launchctl print gui/\$(id -u)/com.mbs.deferred-checks | grep -E \"state|last exit\"; tail -3 ~/.mbs_automation/deferred_checks.log; cat ~/.mbs_automation/deferred_checks.err.log'"
+  fi
+  DC_BAD=""
+  DC_D1="$(date +%Y-%m-%d)"; DC_D2="$(date -v-1d +%Y-%m-%d)"; DC_D3="$(date -v-2d +%Y-%m-%d)"
+  for DC_F in "$DC_RES"/*.result; do
+    [ -f "$DC_F" ] || continue
+    DC_V="$(cut -f1 "$DC_F" | head -1)"; DC_W="$(cut -f2 "$DC_F" | head -1)"
+    case "$DC_V" in FAIL|ERROR) ;; *) continue ;; esac
+    case "${DC_W%% *}" in "$DC_D1"|"$DC_D2"|"$DC_D3") ;; *) continue ;; esac
+    DC_BAD="${DC_BAD}${DC_BAD:+, }$(basename "$DC_F" .result) (${DC_V} ${DC_W})"
+  done
+  if [ -n "$DC_BAD" ]; then
+    add_finding "deferred check(s) did not pass in the last 3 days: ${DC_BAD} (check 41) - the first alert line in that day's tasks note names the failing assertion; full detail: from hoest in Terminal, cd ~ && ssh garm 'tail -40 ~/.mbs_automation/deferred_checks.log'"
+  fi
+  DC_LATE=""
+  for DC_C in "$DC_DIR"/*.sh; do
+    [ -f "$DC_C" ] || continue
+    DC_N="$(basename "$DC_C" .sh)"
+    [ -f "$DC_RES/$DC_N.result" ] && continue
+    DC_DUE="$(sed -n 's/^# due:[[:space:]]*//p' "$DC_C" | head -1)"
+    DC_DE="$(date -j -f '%Y-%m-%d %H:%M' "$DC_DUE" +%s 2>/dev/null)"
+    case "$DC_DE" in ''|*[!0-9]*) continue ;; esac
+    DC_EX="$(date -j -f '%Y-%m-%d %H:%M' "$(sed -n 's/^# expires:[[:space:]]*//p' "$DC_C" | head -1)" +%s 2>/dev/null)"
+    case "$DC_EX" in ''|*[!0-9]*) DC_EX=$((DC_DE + 14400)) ;; esac
+    if [ $((DC_NOW - DC_EX)) -gt 7200 ] && [ $((DC_NOW - DC_DE)) -lt 2592000 ]; then
+      DC_LATE="${DC_LATE}${DC_LATE:+, }${DC_N} (due ${DC_DUE})"
+    fi
+  done
+  if [ -n "$DC_LATE" ]; then
+    add_finding "deferred check(s) past their expiry with no result: ${DC_LATE} (check 41) - the runner should have judged these by now, so it is not evaluating them; read: from hoest in Terminal, cd ~ && ssh garm 'grep -E \"${DC_LATE%% *}\" ~/.mbs_automation/deferred_checks.log | tail -3'"
   fi
 fi
 

@@ -1,7 +1,8 @@
 #!/bin/bash
 # heartbeat_garm_drill.sh - exercises heartbeat checks 32 to 38b, check 29 (moved
 # beside them 2026-10-15), checks 39 and 39b (garm's Obsidian, 2026-10-16), check
-# 14c with oura-sync's wrapper end to end into check 26 (2026-10-16) and the per-host
+# 14c with oura-sync's wrapper end to end into check 26 (2026-10-16), check 41
+# (deferred checks, 2026-10-16) and the per-host
 # LD_EXPECTED switch by extracting those blocks from mbs_heartbeat.sh and running
 # them against a temp HOME with a stubbed add_finding. Uses macOS date -j, so run
 # it on the Mac. Touches nothing outside the temp dir.
@@ -351,6 +352,38 @@ rm "$DV/e/notes.md"
 dupfile "$DV/legit.md" 2
 c27_none "a file that drops below its count is quiet"
 if grep -q "/legit.md	2" "$DS/dupblock_baseline.txt"; then ok "and its ledger count falls"; else bad "ledger did not fall: $(grep legit.md "$DS/dupblock_baseline.txt")"; fi
+
+echo "check 41: deferred checks"
+DCC="$T/dc_checks"; mkdir -p "$DCC" "$STATE_DIR/deferred_checks"
+dc() { DEFERRED_CHECKS_DIR="$DCC" findings 2>&1 | grep "check 41" ; }
+dc_none() { local out; out="$(dc)"; if [ -z "$out" ]; then ok "$1"; else bad "$1 ($out)"; fi; }
+dc_has()  { local out; out="$(dc)"; case "$out" in *"$2"*) ok "$1" ;; *) bad "$1 (got: $out)" ;; esac; }
+dc_none "no plist: silent"
+touch "$HOME/Library/LaunchAgents/com.mbs.deferred-checks.plist"
+dc_has "armed, never ran" "last run never"
+echo $(( $(now) - 600 )) > "$STATE_DIR/last_deferred_checks_run"
+dc_none "ran 10 minutes ago, nothing pending"
+echo $(( $(now) - 11000 )) > "$STATE_DIR/last_deferred_checks_run"
+dc_has "ran over 3 hours ago" "not completed a run in 3 hours"
+echo "$(now)" > "$STATE_DIR/last_deferred_checks_run"
+printf 'PASS\t%s 10:00\tall assertions held\n' "$(date +%Y-%m-%d)" > "$STATE_DIR/deferred_checks/ok1.result"
+dc_none "a PASS result is silent"
+printf 'FAIL\t%s 10:00\t1 assertion(s)\n' "$(date -v-1d +%Y-%m-%d)" > "$STATE_DIR/deferred_checks/bad1.result"
+dc_has "a FAIL yesterday is reported" "bad1 (FAIL"
+printf 'ERROR\t%s 10:00\ttimed out\n' "$(date -v-5d +%Y-%m-%d)" > "$STATE_DIR/deferred_checks/old1.result"
+OUT41="$(dc)"; case "$OUT41" in *old1*) bad "an ERROR 5 days old is still reported" ;; *) ok "an ERROR 5 days old has aged out" ;; esac
+rm -f "$STATE_DIR/deferred_checks/bad1.result"
+printf '# due: %s\n' "$(date -v-1H '+%Y-%m-%d %H:%M')" > "$DCC/soon.sh"
+dc_none "a check 1 hour past due, inside its retry window, is not late"
+printf '# due: %s\n' "$(date -v-7H '+%Y-%m-%d %H:%M')" > "$DCC/late1.sh"
+dc_has "7 hours past due (3 past the default expiry) with no result" "late1 (due"
+printf 'PASS\t%s 10:00\tok\n' "$(date +%Y-%m-%d)" > "$STATE_DIR/deferred_checks/late1.result"
+dc_none "the same check once it has a result"
+printf '# due: %s\n# expires: %s\n' "$(date -v-7H '+%Y-%m-%d %H:%M')" "$(date -v+1H '+%Y-%m-%d %H:%M')" > "$DCC/long1.sh"
+dc_none "a long explicit expiry is honoured"
+printf '# due: 2026-01-01 10:00\n' > "$DCC/ancient.sh"
+dc_none "a check over 30 days past due is ignored"
+rm -f "$HOME/Library/LaunchAgents/com.mbs.deferred-checks.plist"
 
 echo "check 14c: oura-sync stamp"
 C14S="$(grep -n '^# --- check 14c:' "$HB" | cut -d: -f1)"
