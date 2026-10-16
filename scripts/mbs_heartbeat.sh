@@ -412,7 +412,7 @@ fi  # end DEFER_DAILY guard over checks 1, 2, 2b, 2c, 3
 # --- check 4: is Claude Code sitting in a known-broken auth state? ----------
 if [ -f "$REAUTH_SENTINEL" ]; then
   FIRST_SEEN="$(cat "$REAUTH_SENTINEL" 2>/dev/null || echo unknown)"
-  add_finding "Claude CLI needs re-auth (first detected ${FIRST_SEEN}) - run \`claude\` then \`/login\` in Terminal"
+  add_finding "Claude CLI needs re-auth (first detected ${FIRST_SEEN}) - $(la_reauth_fix md)"
 fi
 
 # --- check 5: oura sync archive is fresh ------------------------------------

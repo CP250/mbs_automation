@@ -109,7 +109,7 @@ for attempt in $(seq 1 "$MAX_ATTEMPTS"); do
   fi
   if [ "$rc" -eq 2 ]; then
     mark_reauth_needed "$LOG"
-    echo "$(ts) - auth failure; not retrying (next trigger resumes after /login)" >> "$LOG"
+    echo "$(ts) - auth failure; not retrying (next trigger resumes once fixed: $(la_reauth_fix plain))" >> "$LOG"
     exit 2
   fi
   if [ "$rc" -eq 3 ]; then

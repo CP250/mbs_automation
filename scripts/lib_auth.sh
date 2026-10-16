@@ -30,6 +30,28 @@ if [ -z "${CLAUDE_CODE_OAUTH_TOKEN:-}" ] && [ -r "$HOME/.mbs_automation/claude_o
   if [ -n "$CLAUDE_CODE_OAUTH_TOKEN" ]; then export CLAUDE_CODE_OAUTH_TOKEN; else unset CLAUDE_CODE_OAUTH_TOKEN; fi
 fi
 
+# Where the fix for an auth failure lives depends on the host (2026-10-16).
+# On garm the CLI runs on the setup-token file above, so `/login` cannot fix a
+# 401 there: the token has to be renewed from hoest with
+# scripts/garm_claude_token_renew.sh. Every message that tells P how to fix
+# auth takes its text from la_reauth_fix, so the two hosts never get each
+# other's instructions. The host shape is the token file itself, the same test
+# the export above uses (LA_TOKEN_FILE overrides it for drills).
+# The text is CONSTANT per host: alert_tasks_note dedupes on exact text, so a
+# varying message would append a fresh line on every trigger of one outage.
+# $1 = md (commands in backticks, for the vault) or plain (notifications, logs).
+LA_TOKEN_FILE="${LA_TOKEN_FILE:-$HOME/.mbs_automation/claude_oauth_token}"
+la_on_token_host() { [ -f "$LA_TOKEN_FILE" ]; }
+la_reauth_fix() {
+  local q='`'
+  [ "${1:-md}" = "plain" ] && q=""
+  if la_on_token_host; then
+    printf '%s' "the token in ~/.mbs_automation/claude_oauth_token on garm needs renewing (/login cannot fix it there): on hoest, in Terminal, run ${q}cd ~/dev/mbs_automation && scripts/garm_claude_token_renew.sh${q}, which ends with ${q}token renewed: completed successfully${q}"
+  else
+    printf '%s' "run ${q}claude${q} then ${q}/login${q} in Terminal"
+  fi
+}
+
 # ---------------------------------------------------------------------------
 # Failure-string detection - single source of truth (added 2026-07-26).
 #
@@ -153,8 +175,8 @@ needs_reauth_skip() {
   fi
   local first_detected
   first_detected="$(cat "$REAUTH_SENTINEL" 2>/dev/null || echo unknown)"
-  echo "$(_la_ts) - SKIPPING: Claude Code needs re-auth (first detected $first_detected). Run 'claude' then '/login' to fix; this script will resume normally on the next trigger after that." >> "$log"
-  _la_notify "Claude Code needs re-auth" "401 detected. Run: claude then /login. Launchd jobs paused until fixed."
+  echo "$(_la_ts) - SKIPPING: Claude Code needs re-auth (first detected $first_detected). To fix: $(la_reauth_fix plain); this script will resume normally on the next trigger after that." >> "$log"
+  _la_notify "Claude Code needs re-auth" "401 detected. To fix: $(la_reauth_fix plain). Launchd jobs paused until fixed."
   return 0
 }
 
@@ -212,7 +234,7 @@ mark_reauth_needed() {
   echo "$strikes" > "$REAUTH_STRIKES"
 
   echo "$(_la_ts) - AUTH FAILURE detected (401 / expired OAuth session), consecutive strike $strikes. Wrote sentinel at $REAUTH_SENTINEL. Notifying P. Skipping retries (retrying an auth failure is pointless until re-auth)." >> "$log"
-  _la_notify "Claude Code needs re-auth" "Auth failure detected. Run: claude then /login. Launchd jobs paused until fixed."
+  _la_notify "Claude Code needs re-auth" "Auth failure detected. To fix: $(la_reauth_fix plain). Launchd jobs paused until fixed."
 
   # The vault line waits for strike 2. A macOS notification is transient and
   # easy to miss (and never fires at all if the Mac was asleep); the vault is
@@ -222,7 +244,7 @@ mark_reauth_needed() {
     # the strike count would defeat alert_tasks_note's exact-text dedupe and
     # append a fresh line on every trigger of a continuing outage. The count
     # lives in the log, where repetition is free.
-    alert_tasks_note "$REAUTH_ALERT_PREFIX (expired session or 401) on two or more consecutive runs. Reports not generated: run \`claude\` then \`/login\` in Terminal; jobs resume on the next trigger."
+    alert_tasks_note "$REAUTH_ALERT_PREFIX (expired session or 401) on two or more consecutive runs. Reports not generated. To fix: $(la_reauth_fix md); jobs resume on the next trigger."
   else
     echo "$(_la_ts) - holding the vault alert until a second consecutive failure (strike 1 of 2); sentinel and notification are already out. A success before then clears everything." >> "$log"
   fi

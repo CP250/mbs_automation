@@ -830,12 +830,17 @@ BANNER
     # Only write the banner if no ## Vault Agent section exists yet. A report may
     # have landed from a hand-run or a concurrent attempt while this ladder slept;
     # appending "not generated" under a real report is worse than saying nothing.
+    # The fix text comes from la_reauth_fix (lib_auth.sh): on garm it is the
+    # token renewal run from hoest, elsewhere claude then /login. The heredoc
+    # is unquoted so ${REAUTH_FIX} expands; keep literal backticks OUT of it,
+    # since in an unquoted heredoc a backtick is live command substitution.
+    REAUTH_FIX="$(la_reauth_fix md)"
     if [ -f "$TODAYS_TASKS" ] && ! grep -qE '^## Vault Agent' "$TODAYS_TASKS"; then
-      cat >> "$TODAYS_TASKS" <<'BANNER'
+      cat >> "$TODAYS_TASKS" <<BANNER
 
 ## Vault Agent (skipped)
 
-Claude Code authentication expired (HTTP 401 from Anthropic API). Daily report not generated. Re-authenticate by running `claude` then `/login` in Terminal. Once auth is restored, the next launchd trigger produces the report normally and this banner is struck automatically. Triggers run every 30 minutes from 06:00 to 21:30, plus once on each wake from sleep.
+Claude Code authentication expired (HTTP 401 from Anthropic API). Daily report not generated. To fix: ${REAUTH_FIX}. Once auth is restored, the next launchd trigger produces the report normally and this banner is struck automatically. Triggers run every 30 minutes from 06:00 to 21:30, plus once on each wake from sleep.
 
 BANNER
       echo "$(ts) - wrote auth-skipped banner to $TODAYS_TASKS" >> "$LOG"
@@ -899,11 +904,18 @@ Daily report not generated: on all ${MAX_ATTEMPTS} attempts claude exited cleanl
 BANNER
     echo "$(ts) - wrote model-never-ran skipped banner to $TODAYS_TASKS" >> "$LOG"
   else
+    # garm is wired and never sleeps, so the laptop explanation (woke before
+    # Wi-Fi) is wrong there (2026-10-16). Host shape as in la_reauth_fix.
+    if la_on_token_host; then
+      NET_CAUSE='garm is wired and never sleeps, so the New Canaan internet, the UDM or the Anthropic API itself was down. Check from hoest, in Terminal: `cd ~ && ssh garm '"'"'curl -sS -o /dev/null -w "%{http_code}\n" https://api.anthropic.com/'"'"'` (any three-digit code means the API is reachable now)'
+    else
+      NET_CAUSE='most often the Mac waking for the scheduled run before Wi-Fi/DNS reconnected'
+    fi
     cat >> "$TODAYS_TASKS" <<BANNER
 
 ## Vault Agent (skipped, no network)
 
-Daily report not generated: could not reach the Anthropic API after ${MAX_ATTEMPTS} attempts (final exit ${rc}). This was a connection or DNS failure, not an auth problem, most often the Mac waking for the scheduled run before Wi-Fi/DNS reconnected. A fresh attempt runs on the next trigger: every 30 minutes from 06:00 to 21:30, plus once on each wake from sleep. If a later attempt today succeeds, this banner is struck automatically and replaced by the real report. No action needed unless it recurs for several days.
+Daily report not generated: could not reach the Anthropic API after ${MAX_ATTEMPTS} attempts (final exit ${rc}). This was a connection or DNS failure, not an auth problem: ${NET_CAUSE}. A fresh attempt runs on the next trigger: every 30 minutes from 06:00 to 21:30, plus once on each wake from sleep. If a later attempt today succeeds, this banner is struck automatically and replaced by the real report. No action needed unless it recurs for several days.
 
 BANNER
     echo "$(ts) - wrote no-network skipped banner to $TODAYS_TASKS" >> "$LOG"
